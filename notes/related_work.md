@@ -1,4 +1,4 @@
-# Related Work — Detailed Working Notes
+# Related Work Notes
 
 This file collects detailed technical notes on prior work relevant to
 Mixture-of-Experts (MoE) models, multimodal fusion, routing stability, and
