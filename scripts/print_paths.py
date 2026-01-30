@@ -1,0 +1,5 @@
+from src.paths import ZOD_ROOT, ZOD_DINO_DATA, OUTPUTS_DIR
+
+print("ZOD_ROOT:", ZOD_ROOT)
+print("ZOD_DINO_DATA:", ZOD_DINO_DATA)
+print("OUTPUTS_DIR:", OUTPUTS_DIR)
