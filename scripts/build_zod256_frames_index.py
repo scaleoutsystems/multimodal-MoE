@@ -62,8 +62,7 @@ def main():
 
     # Discover frames via metadata.json
     # this is a list of all the metadata.json files in the ZOD256 dataset
-  
-    metadata_files = sorted(ZOD_ROOT.glob("**/metadata.json"))
+    metadata_files = ZOD_ROOT.rglob("metadata.json")
 
     # iterate over the metadata files
     for meta_path in tqdm(metadata_files, desc="Indexing frames"):
