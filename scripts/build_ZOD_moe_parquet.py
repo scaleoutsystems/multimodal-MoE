@@ -7,7 +7,7 @@ Output:
   outputs/index/zod_moe_frames.parquet
 
 Optionally writes resized images to:
-  outputs/ZOD_moe/images/<frame_id>.jpg
+  /home/edgelab/zod_moe/resized_images/<frame_id>_dnat.jpg
 """
 
 from pathlib import Path
@@ -29,7 +29,7 @@ OUT_PATH = Path("outputs/index/zod_moe_frames.parquet")
 WRITE_RESIZED_IMAGES = True
 
 #this is where we'll store the resized images.
-RESIZED_IMG_ROOT = Path("outputs/ZOD_moe/images")
+RESIZED_IMG_ROOT = Path("/home/edgelab/zod_moe/resized_images")
 
 ORIG_W, ORIG_H = 3848, 2168
 NEW_W, NEW_H = 1248, 704
@@ -181,10 +181,10 @@ def main() -> None:
     # this is how we iterate over all frames in the dataset.
     # since each single_frame directory contains a metadata.json file, this is how we iterate over all frames in the dataset.
     metadata_files = list(
-    tqdm(
-        ZOD_ROOT.rglob("metadata.json"),
-        desc="Discovering frames",
-    )
+        tqdm(
+            ZOD_ROOT.rglob("metadata.json"),
+            desc="Discovering frames",
+        )
     )
 
 
@@ -228,6 +228,8 @@ def main() -> None:
         annotations = read_json(obj_path) if obj_path.exists() else []
         if annotations is None:
             annotations = []
+        if isinstance(annotations, dict):
+            annotations = annotations.get("annotations", [])
 
         # counts + lists for pedestrians
         ped_clear = 0
@@ -279,12 +281,9 @@ def main() -> None:
             geom = obj.get("geometry", {}) or {}
             # the normalization is just a formatting safeguard to ensure the coordinates are always a list of lists.
             coords = normalize_multipoint_coords(geom.get("coordinates", None))
-            if len(coords) < 4:
-                # skip malformed
-                raise ValueError(f"Pedestrian annotation {props.get('annotation_uuid', '')} has less than 4 points: {coords}")
             if len(coords) != 4:
-                # enforce exactly 4 points as requested
-                raise ValueError(f"Pedestrian annotation {props.get('annotation_uuid', '')} has {len(coords)} points, expected 4: {coords}")
+                # skip malformed
+                continue
 
             coords_resized = resize_points_xy(coords)
             if len(coords_resized) != 4:
