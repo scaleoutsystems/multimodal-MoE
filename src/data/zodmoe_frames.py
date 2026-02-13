@@ -1,5 +1,10 @@
-# src/data/zodmoe_frames.py
-
+# src/data/zodmoe_frames.py -- builds frames dataset for ZODMoE.
+"""
+Defines config (ZODMoEDataConfig) and dataset (ZODMoEVisionDataset) for ZODMoE single frames.
+Reads split CSV (train.csv, val.csv, test.csv) and parquet index (ZODmoe_frames.parquet) to create a dataset.
+Loads image files with PIL, applies transforms to convert to tensors, and returns (image_tensor, label_tensor)
+in __getitem__().
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -20,7 +25,7 @@ class ZODMoEDataConfig:
     """
     Minimal config for a vision-only ZODMoE Dataset.
 
-    You MUST set:
+    MUST set:
       - frames_parquet: path to the parquet index (one row per frame)
       - split_csv: path to train.csv / val.csv / test.csv with a frame_id column
       - frame_id_col: name of frame id column (must exist in both parquet and csv)

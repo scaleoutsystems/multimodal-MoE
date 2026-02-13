@@ -30,6 +30,9 @@ from torchvision import transforms
 
 @dataclass
 class TrainConfig:
+    """
+    Config for training the vision baseline.
+    """
     # data
     frames_parquet: str = "/home/edgelab/multimodal-MoE/outputs/index/ZODmoe_frames.parquet"
     train_ids_csv: str = "/home/edgelab/zod_moe/splits/train_ids.csv"
@@ -84,7 +87,7 @@ def main():
     ds = ZODMoEVisionDataset(
         data_cfg,
         transform=transform,
-        dtype_label=torch.long,  # CrossEntropyLoss expects class indices (0/1)
+        dtype_label=torch.int64,  # CrossEntropyLoss expects class indices (0/1)
     )
     print("full train dataset size:", len(ds))
 
@@ -97,7 +100,7 @@ def main():
     else:
         ds_train = ds
         print("using full dataset")
-
+    # DATALOADER
     loader = DataLoader(
         ds_train,
         batch_size=cfg.batch_size,
