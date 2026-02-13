@@ -11,12 +11,12 @@ Writes:
 import pandas as pd
 from tqdm import tqdm
 
-from src.data.boxes import points_to_xyxy, clamp_xyxy, is_valid_box
+from src.data.bboxes import points_to_xyxy, clamp_xyxy, is_valid_box
 from src.paths import OUTPUTS_DIR  # adjust if needed
 
-#run from project root: python scripts/add_bboxes.py
+#run from project root: python -m scripts.add_bboxes
 INPUT_PARQUET = "outputs/index/ZODmoe_frames.parquet"
-OUTPUT_PARQUET = "outputs/index/ZODmoe_frames_with_boxes.parquet"
+OUTPUT_PARQUET = "outputs/index/ZODmoe_frames_with_xyxy_bboxes.parquet"
 
 
 def main():
@@ -24,9 +24,10 @@ def main():
 
     new_boxes_column = []
 
+    # iterate over the rows of the dataframe (keyframes)
     for _, row in tqdm(df.iterrows(), total=len(df)):
-        img_w = row["new_w"]
-        img_h = row["new_h"]
+        img_w = row["new_w"] # width of resized image = 1248
+        img_h = row["new_h"] # height of resized image = 704
 
         frame_boxes = []
 
@@ -35,7 +36,8 @@ def main():
             box = points_to_xyxy(ped_points)
             if box is None:
                 continue
-
+            
+            # we clamp the box to the image boundaries
             box = clamp_xyxy(box, img_w, img_h)
 
             if is_valid_box(box):
@@ -43,7 +45,7 @@ def main():
 
         new_boxes_column.append(frame_boxes)
 
-    df["ped_bboxes_xyxy_resized"] = new_boxes_column
+    df["xyxy_bboxes"] = new_boxes_column
 
     df.to_parquet(OUTPUT_PARQUET)
     print(f"Saved updated parquet to: {OUTPUT_PARQUET}")

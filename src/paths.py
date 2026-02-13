@@ -17,5 +17,5 @@ ZOD_DINO_DATA = _get_path("ZOD_DINO_DATA", "~/zod_dino_data")
 
 
 # Project paths
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-OUTPUTS_DIR = _get_path("OUTPUTS_DIR", str(PROJECT_ROOT / "outputs"))
+PROJECT_ROOT = Path(__file__).resolve().parents[1] #multimodal-MoE
+OUTPUTS_DIR = _get_path("OUTPUTS_DIR", str(PROJECT_ROOT / "outputs")) #outputs/
