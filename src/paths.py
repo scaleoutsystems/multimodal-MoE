@@ -12,10 +12,10 @@ def _get_path(env_var: str, default: str) -> Path:
 
 
 # Dataset roots
-ZOD_ROOT = _get_path("ZOD_ROOT", "~/zod")
-ZOD_DINO_DATA = _get_path("ZOD_DINO_DATA", "~/zod_dino_data")
+#ZOD_ROOT = _get_path("ZOD_ROOT", "~/zod")
+#ZOD_DINO_DATA = _get_path("ZOD_DINO_DATA", "~/zod_dino_data")
 # Source-of-truth data root for this project.
-ZOD_MOE_DATA = _get_path("ZOD_MOE_DATA", "~/zod_moe")
+ZOD_MOE_DATA = _get_path("ZOD_MOE_DATA", "~/zod_moe") # /home/edgelabzod_moe is the root of the zod_moe dataset.
 RESIZED_IMAGES_DIR = _get_path("RESIZED_IMAGES_DIR", ZOD_MOE_DATA / "resized_images")
 SPLITS_DIR = _get_path("SPLITS_DIR", ZOD_MOE_DATA / "splits")
 TRAIN_SPLIT_CSV = _get_path("TRAIN_SPLIT_CSV", SPLITS_DIR / "train_ids.csv")
@@ -30,10 +30,6 @@ EXPORTS_DIR = _get_path("EXPORTS_DIR", OUTPUTS_DIR / "exports")
 RUNS_DIR = _get_path("RUNS_DIR", OUTPUTS_DIR / "runs")
 EVAL_DIR = _get_path("EVAL_DIR", OUTPUTS_DIR / "eval")
 
-ZODMOE_FRAMES_PARQUET = _get_path(
-    "ZODMOE_FRAMES_PARQUET",
-    INDEX_DIR / "ZODmoe_frames.parquet",
-)
 ZODMOE_FRAMES_WITH_BOXES_PARQUET = _get_path(
     "ZODMOE_FRAMES_WITH_BOXES_PARQUET",
     INDEX_DIR / "ZODmoe_frames_with_xyxy_bboxes.parquet",

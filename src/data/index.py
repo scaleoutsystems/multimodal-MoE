@@ -16,6 +16,16 @@ import pandas as pd
 def normalize_frame_id_series(values: Iterable) -> pd.Series:
     """
     Normalize frame IDs to a consistent 6-digit string format.
+
+    Input:
+        values: Any iterable of frame IDs (ints/strings/mixed).
+
+    Output:
+        pd.Series of zero-padded string IDs like "000123".
+
+    Why:
+        We need one canonical ID format so split CSVs and parquet rows match
+        reliably across every training/export pipeline.
     """
     return (
         pd.Series(values)
@@ -28,7 +38,18 @@ def normalize_frame_id_series(values: Iterable) -> pd.Series:
 
 def load_split_frame_ids(split_csv: str | Path, frame_id_col: str = "frame_id") -> list[str]:
     """
-    Load split frame IDs from CSV and normalize formatting.
+    Load frame IDs from a split CSV and normalize formatting.
+
+    Input:
+        split_csv: Path to train/val/test CSV.
+        frame_id_col: Column name that stores frame IDs.
+
+    Output:
+        List of normalized 6-digit frame ID strings.
+
+    Why:
+        Every downstream stage (export/train/eval) depends on split IDs being
+        clean and consistently formatted.
     """
     split_csv = Path(split_csv)
     if not split_csv.exists():
@@ -51,11 +72,20 @@ def load_split_frames(
     required_columns: list[str] | None = None,
 ) -> pd.DataFrame:
     """
-    Load parquet rows for one split.
+    Load parquet rows for one split and return a deterministic DataFrame.
 
-    Notes:
-    - Keeps deterministic order according to split CSV order.
-    - Validates required columns up-front.
+    Input:
+        frames_parquet: Path to the frame-level parquet index.
+        split_csv: Path to split CSV (train/val/test).
+        frame_id_col: Shared frame ID column name.
+        required_columns: Optional list of columns to read/validate.
+
+    Output:
+        pd.DataFrame filtered to the requested split, ordered by split CSV order.
+
+    Why:
+        This gives all model adapters the same split filtering behavior and
+        avoids hard-to-debug split mismatch bugs.
     """
     frames_parquet = Path(frames_parquet)
     if not frames_parquet.exists():

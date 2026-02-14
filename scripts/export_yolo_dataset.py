@@ -2,6 +2,30 @@
 Export parquet + split CSVs into YOLO dataset format.
 
 This script is intentionally thin: parse args, call reusable src modules.
+
+EXPECTED YOLO DATASET STRUCTURE:
+<out_dir>/
+  dataset.yaml
+  images/
+    train/
+      000000.jpg
+      000001.jpg
+      ...
+    val/
+      ...
+    test/
+      ...
+  labels/
+    train/
+      000000.txt
+      000001.txt
+      ...
+    val/
+      ...
+    test/
+      ...
+
+000000.txt contains one line per box: <class_id> <x_center> <y_center> <width> <height>
 """
 
 from __future__ import annotations
@@ -29,6 +53,18 @@ from src.paths import (
 
 
 def parse_args() -> argparse.Namespace:
+    """
+    Parse CLI arguments for YOLO dataset export.
+
+    Input:
+        CLI flags from the command line.
+
+    Output:
+        argparse.Namespace with export configuration values.
+
+    Why:
+        Keeps script entrypoint thin and explicit while delegating logic to src/.
+    """
     parser = argparse.ArgumentParser(description="Export YOLO dataset from parquet index.")
     parser.add_argument(
         "--frames-parquet",
@@ -61,6 +97,18 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """
+    Build YOLO train/val/test files from parquet + split CSVs.
+
+    Input:
+        None directly (reads parsed CLI args).
+
+    Output:
+        None (writes dataset files and prints per-split summaries).
+
+    Why:
+        Provides a reproducible one-command export step before training.
+    """
     args = parse_args()
 
     frames_parquet = Path(args.frames_parquet)

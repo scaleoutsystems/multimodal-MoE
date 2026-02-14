@@ -14,6 +14,7 @@ import shutil
 
 import numpy as np
 import pandas as pd
+from src.data.bboxes import xyxy_to_yolo
 
 
 UnclearPolicy = Literal["keep_all", "exclude_unclear"]
@@ -21,6 +22,9 @@ UnclearPolicy = Literal["keep_all", "exclude_unclear"]
 
 @dataclass
 class YoloExportSummary:
+    """
+    Compact summary of what was written for one split export.
+    """
     split: str
     n_frames: int
     n_images_written: int
@@ -31,25 +35,37 @@ class YoloExportSummary:
 
 
 def _ensure_dir(path: Path) -> None:
+    """
+    Create directory (including parents) if it does not exist.
+
+    Input:
+        path: Target directory path.
+
+    Output:
+        None.
+
+    Why:
+        Export code should not fail just because output folders are missing.
+    """
     path.mkdir(parents=True, exist_ok=True)
 
 
-def _xyxy_to_yolo_xywh(box: np.ndarray, img_w: float, img_h: float) -> tuple[float, float, float, float]:
-    x1, y1, x2, y2 = map(float, box)
-    w = max(0.0, x2 - x1)
-    h = max(0.0, y2 - y1)
-    xc = x1 + (w / 2.0)
-    yc = y1 + (h / 2.0)
-
-    # Normalize to [0,1]
-    xc_n = xc / float(img_w)
-    yc_n = yc / float(img_h)
-    w_n = w / float(img_w)
-    h_n = h / float(img_h)
-    return xc_n, yc_n, w_n, h_n
-
-
 def _link_or_copy_image(src: Path, dst: Path, mode: Literal["symlink", "copy"] = "symlink") -> None:
+    """
+    Materialize one image in the YOLO export image tree.
+
+    Input:
+        src: Source image path from parquet.
+        dst: Target path under images/<split>/.
+        mode: "symlink" (fast/small) or "copy" (portable/self-contained).
+
+    Output:
+        None.
+
+    Why:
+        We want one export function that supports both lightweight and fully
+        self-contained dataset exports.
+    """
     if dst.exists():
         return
     if mode == "copy":
@@ -60,6 +76,19 @@ def _link_or_copy_image(src: Path, dst: Path, mode: Literal["symlink", "copy"] =
 
 
 def _safe_iter_boxes(xyxy_bboxes) -> list[np.ndarray]:
+    """
+    Normalize different box container shapes into a list of [x1,y1,x2,y2] arrays.
+
+    Input:
+        xyxy_bboxes: Box value from parquet row (can be ndarray/list/object-array).
+
+    Output:
+        list[np.ndarray], each array shape (4,).
+
+    Why:
+        Parquet roundtrips can return nested/object arrays; this helper keeps
+        export code robust to those representation differences.
+    """
     if xyxy_bboxes is None:
         return []
     arr = np.asarray(xyxy_bboxes)
@@ -96,6 +125,22 @@ def export_yolo_split(
 ) -> YoloExportSummary:
     """
     Export one split to YOLO image/label directories.
+
+    Input:
+        split_name: "train" | "val" | "test" label for output subdirs.
+        frames_df: Split-filtered frame DataFrame.
+        out_dataset_dir: YOLO dataset root path.
+        image_path_col/frame_id_col/boxes_col/...: Source column names.
+        unclear_policy: Whether unclear boxes are kept or dropped.
+        class_id: YOLO class ID (0 for pedestrian-only).
+        image_write_mode: "symlink" or "copy".
+
+    Output:
+        YoloExportSummary with counts for images/labels/boxes/dropped boxes.
+
+    Why:
+        This is the single adapter step that converts canonical parquet data
+        into detector-specific YOLO files.
     """
     out_dataset_dir = Path(out_dataset_dir)
     images_dir = out_dataset_dir / "images" / split_name
@@ -138,7 +183,12 @@ def export_yolo_split(
                 n_boxes_dropped_unclear += 1
                 continue
 
-            xc, yc, w, h = _xyxy_to_yolo_xywh(box=box, img_w=img_w, img_h=img_h)
+            # Reuse canonical conversion utility so YOLO conversion logic stays in one place.
+            xc, yc, w, h = xyxy_to_yolo(
+                box=box.tolist(),
+                img_w=int(img_w),
+                img_h=int(img_h),
+            )
 
             # final guardrails: skip degenerate/out-of-range boxes
             if w <= 0.0 or h <= 0.0:
@@ -173,6 +223,17 @@ def write_yolo_dataset_yaml(
 ) -> Path:
     """
     Write dataset.yaml in standard Ultralytics format.
+
+    Input:
+        out_dataset_dir: YOLO dataset root containing images/labels.
+        class_names: Class mapping as dict or ordered list.
+        yaml_path: Optional explicit output yaml path.
+
+    Output:
+        Path to the written dataset.yaml file.
+
+    Why:
+        Ultralytics training/eval expects a dataset YAML descriptor.
     """
     out_dataset_dir = Path(out_dataset_dir)
     _ensure_dir(out_dataset_dir)

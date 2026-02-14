@@ -27,6 +27,19 @@ class YoloTrainConfig:
 
 
 def _import_ultralytics_yolo():
+    """
+    Import Ultralytics YOLO lazily.
+
+    Input:
+        None.
+
+    Output:
+        YOLO class from ultralytics package.
+
+    Why:
+        Keeps import errors localized to YOLO workflows and avoids forcing
+        unrelated scripts to require the ultralytics dependency.
+    """
     try:
         from ultralytics import YOLO  # type: ignore
     except Exception as e:
@@ -37,6 +50,18 @@ def _import_ultralytics_yolo():
 
 
 def train_yolo_detector(cfg: YoloTrainConfig):
+    """
+    Train a YOLO detector with Ultralytics.
+
+    Input:
+        cfg: YoloTrainConfig containing data/model/training/runtime settings.
+
+    Output:
+        Ultralytics training results object.
+
+    Why:
+        Provides a single YOLO-specific adapter entrypoint for training.
+    """
     YOLO = _import_ultralytics_yolo()
     model = YOLO(cfg.model)
     results = model.train(
@@ -61,6 +86,21 @@ def eval_yolo_detector(
     batch: int = 16,
     device: str = "0",
 ):
+    """
+    Run YOLO evaluation (val/test/train split) using trained weights.
+
+    Input:
+        data_yaml: Dataset YAML path.
+        weights_path: Path to trained YOLO weights (.pt).
+        split: Dataset split to evaluate.
+        imgsz, batch, device: Runtime evaluation settings.
+
+    Output:
+        Ultralytics metrics object.
+
+    Why:
+        Keeps evaluation backend-specific logic inside the YOLO adapter.
+    """
     YOLO = _import_ultralytics_yolo()
     model = YOLO(weights_path)
     metrics = model.val(
@@ -76,6 +116,17 @@ def eval_yolo_detector(
 def save_yolo_metrics_json(metrics, out_path: str | Path) -> Path:
     """
     Persist key YOLO metrics to JSON for experiment tracking.
+
+    Input:
+        metrics: Ultralytics metrics object returned by model.val().
+        out_path: Target JSON path.
+
+    Output:
+        Path to written JSON file.
+
+    Why:
+        We need stable, lightweight metrics artifacts for comparisons across
+        experiments and later reporting.
     """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)

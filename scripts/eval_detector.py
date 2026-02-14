@@ -26,6 +26,18 @@ from src.paths import EVAL_DIR, EXPORTS_DIR
 
 
 def parse_args() -> argparse.Namespace:
+    """
+    Parse CLI arguments for detector evaluation.
+
+    Input:
+        CLI flags from the command line.
+
+    Output:
+        argparse.Namespace with backend/eval/runtime options.
+
+    Why:
+        Keeps eval invocation reproducible while allowing backend expansion.
+    """
     parser = argparse.ArgumentParser(description="Evaluate detector run.")
     parser.add_argument("--backend", choices=["yolo"], default="yolo")
     parser.add_argument(
@@ -48,6 +60,18 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """
+    Run evaluation for the selected backend and persist metrics.
+
+    Input:
+        None directly (reads parsed CLI args).
+
+    Output:
+        None (writes evaluation metrics files and prints output location).
+
+    Why:
+        Central entrypoint for benchmark/eval runs across detector backends.
+    """
     args = parse_args()
     out_dir = Path(EVAL_DIR) / args.backend / args.run_name
     out_dir.mkdir(parents=True, exist_ok=True)

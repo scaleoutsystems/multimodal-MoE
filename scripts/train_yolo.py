@@ -20,6 +20,18 @@ from src.paths import EXPORTS_DIR, RUNS_DIR
 
 
 def parse_args() -> argparse.Namespace:
+    """
+    Parse CLI arguments for YOLO baseline training.
+
+    Input:
+        CLI flags from the command line.
+
+    Output:
+        argparse.Namespace with training/runtime settings.
+
+    Why:
+        Keeps training configuration explicit and easy to reproduce.
+    """
     parser = argparse.ArgumentParser(description="Train YOLO baseline detector.")
     parser.add_argument(
         "--data-yaml",
@@ -38,6 +50,18 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """
+    Construct YOLO train config and launch training.
+
+    Input:
+        None directly (reads parsed CLI args).
+
+    Output:
+        None (starts Ultralytics training run and writes run artifacts).
+
+    Why:
+        Thin script wrapper around the YOLO adapter to keep script logic minimal.
+    """
     args = parse_args()
     cfg = YoloTrainConfig(
         data_yaml=args.data_yaml,
