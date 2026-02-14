@@ -7,7 +7,7 @@ Output:
   outputs/index/zod_moe_frames.parquet
 
 Optionally writes resized images to:
-  /home/edgelab/zod_moe/resized_images/<frame_id>_dnat.jpg
+  /home/edgelab/zod_moe/resized_images/<frame_id>.jpg
 """
 
 from pathlib import Path
@@ -211,7 +211,7 @@ def main() -> None:
         resized_image_path = None
         if WRITE_RESIZED_IMAGES:
             # if we're writing resized images, we need to store the path to the resized image.
-            resized_image_path = RESIZED_IMG_ROOT / f"{frame_id}_dnat.jpg"
+            resized_image_path = RESIZED_IMG_ROOT / f"{frame_id}.jpg"
             if not resized_image_path.exists():
                 try:
                     img = Image.open(image_path).convert("RGB")
