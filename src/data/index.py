@@ -1,8 +1,35 @@
 """
 Helpers for loading frame-level data from parquet + split CSVs.
+"glue layer" that takes split CSV IDs + canonical parquet table and produces
+the concrete split DataFrame rows that downstream model/export pipelines need. 
 
-I keep this module framework-agnostic on purpose so YOLO/DINO/fusion can all
-reuse the same exact indexing logic.
+Why this module exists
+----------------------
+Our parquet index is the source-of-truth table for frame_id -> image path + labels/metadata.
+Model training code should not re-implement split filtering and frame_id normalization in
+multiple places, because that leads to subtle split mismatch bugs.
+
+What this module does
+---------------------
+- Loads split frame IDs from train/val/test CSV files (train_ids.csv, val_ids.csv, test_ids.csv).
+- These splits are stratified by ped_bin_4 and time_of_day.
+- Normalizes frame IDs to one canonical format (6-digit zero-padded strings).
+    - Example: "123" -> "000123"
+- Filters parquet rows to exactly one split (train, test, or val).
+- Returns rows in deterministic split order for reproducibility/debugging (the returned
+DataFrame is sorted by split CSV order). Same input split --> same output DataFrame every run. 
+
+Where it is used
+----------------
+- Used by `scripts/export_yolo_dataset.py` to build YOLO train/val/test exports.
+- Intended to be reused by future DINO/fusion exporters and evaluators so every backend
+  reads the exact same split membership.
+
+Why framework-agnostic matters
+------------------------------
+The split/index logic is data plumbing, not model logic. Keeping it independent of YOLO
+lets us swap model backends (YOLO, DINO, multimodal fusion) without changing how data
+selection works.
 """
 
 from __future__ import annotations
@@ -23,16 +50,15 @@ def normalize_frame_id_series(values: Iterable) -> pd.Series:
     Output:
         pd.Series of zero-padded string IDs like "000123".
 
-    Why:
-        We need one canonical ID format so split CSVs and parquet rows match
+    --> get one canonical ID format so split CSVs and parquet rows match
         reliably across every training/export pipeline.
     """
     return (
         pd.Series(values)
-        .astype(str)
-        .str.strip()
-        .str.replace(r"\.0$", "", regex=True)
-        .str.zfill(6)
+        .astype(str) # convert to string
+        .str.strip() # remove whitespace
+        .str.replace(r"\.0$", "", regex=True) # remove trailing .0
+        .str.zfill(6) # zero-pad to 6 digits
     )
 
 
@@ -55,20 +81,20 @@ def load_split_frame_ids(split_csv: str | Path, frame_id_col: str = "frame_id") 
     if not split_csv.exists():
         raise FileNotFoundError(f"split_csv not found: {split_csv}")
 
-    split_df = pd.read_csv(split_csv)
-    if frame_id_col not in split_df.columns:
+    split_df = pd.read_csv(split_csv) # read the split CSV into a DataFrame
+    if frame_id_col not in split_df.columns: # check if the frame_id_col is in the DataFrame
         raise ValueError(
             f"split_csv missing '{frame_id_col}'. Columns: {split_df.columns.tolist()}"
-        )
+        ) # raise an error if the frame_id_col is not in the DataFrame
 
     frame_ids = normalize_frame_id_series(split_df[frame_id_col]).tolist()
     return frame_ids
 
 
 def load_split_frames(
-    frames_parquet: str | Path,
-    split_csv: str | Path,
-    frame_id_col: str = "frame_id",
+    frames_parquet: str | Path, 
+    split_csv: str | Path, 
+    frame_id_col: str = "frame_id", 
     required_columns: list[str] | None = None,
 ) -> pd.DataFrame:
     """
@@ -79,6 +105,9 @@ def load_split_frames(
         split_csv: Path to split CSV (train/val/test).
         frame_id_col: Shared frame ID column name.
         required_columns: Optional list of columns to read/validate.
+
+    If required_columns is provided, we load only those columns (plus frame_id_col if missing from that list).
+    Otherwise we load all parquet columns.
 
     Output:
         pd.DataFrame filtered to the requested split, ordered by split CSV order.
@@ -106,6 +135,7 @@ def load_split_frames(
 
     frames_df[frame_id_col] = normalize_frame_id_series(frames_df[frame_id_col])
     split_set = set(split_ids)
+    # filter the DataFrame to only include rows where the frame ID is in the split set
     frames_df = frames_df[frames_df[frame_id_col].isin(split_set)].copy()
 
     # Deterministic sort by split order so debugging is easier.
