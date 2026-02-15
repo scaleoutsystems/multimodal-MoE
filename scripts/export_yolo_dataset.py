@@ -1,7 +1,30 @@
 """
 Export parquet + split CSVs into YOLO dataset format.
 
-This script is intentionally thin: parse args, call reusable src modules.
+Role in the pipeline
+--------------------
+This is the "prepare data for YOLO" entrypoint.
+It does not contain core conversion logic itself; it is intentionally thin:
+parse CLI args -> call reusable functions in `src/data/index.py` and `src/data/exports.py`.
+
+Inputs
+------
+- Frame-level parquet with canonical fields (frame_id, resized image path, xyxy boxes, etc.)
+- Split CSV files (train_ids.csv / val_ids.csv / test_ids.csv)
+- Export policy flags (currently unclear-policy)
+
+What it does
+------------
+- Loads each split using canonical frame_id matching/normalization.
+- Converts canonical xyxy boxes to YOLO normalized xywh labels.
+- Writes YOLO images/labels folders and dataset.yaml.
+- Prints per-split summary counts (written images/labels/boxes, dropped unclear, empty labels).
+
+Why this script exists
+----------------------
+- Keeps YOLO export reproducible as a single command.
+- Keeps script-level orchestration separate from reusable library logic.
+- Makes it easy to add future exporters (COCO/DINO/etc.) with the same architecture.
 
 EXPECTED YOLO DATASET STRUCTURE:
 <out_dir>/
@@ -87,12 +110,8 @@ def parse_args() -> argparse.Namespace:
         default="exclude_unclear",
         help="How to treat boxes marked unclear.",
     )
-    parser.add_argument(
-        "--image-write-mode",
-        choices=["symlink", "copy"],
-        default="symlink",
-        help="Use symlink for speed/storage, or copy for portability.",
-    )
+    # Kept intentionally simple for now: symlink-only export mode.
+    # If we later need fully self-contained datasets, we can re-add copy mode.
     return parser.parse_args()
 
 
@@ -151,7 +170,6 @@ def main() -> None:
             img_h_col="new_h",
             unclear_policy=args.unclear_policy,
             class_id=0,  # single-class pedestrian detection
-            image_write_mode=args.image_write_mode,
         )
         summaries.append(summary)
 

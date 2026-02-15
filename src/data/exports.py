@@ -1,8 +1,36 @@
 """
-Dataset export helpers.
+Dataset export helpers for detector-ready datasets.
+Adapts canonical parquet data into YOLO/DINO/fusion dataset files.
 
-Right now this module provides YOLO export while keeping the rest of the
-pipeline framework-agnostic.
+What this module takes as input
+-------------------------------
+- Split-filtered frame DataFrames (produced by
+  `src.data.index.load_split_frames(...)`)
+- Canonical box column(s) from parquet (xyxy format)
+- Per-box flags (for example unclear annotations)
+
+What this module does
+---------------------
+- Converts canonical boxes into detector-specific export format (currently YOLO)
+- Writes image/label files for each split
+- Writes dataset metadata files required by training frameworks (dataset.yaml)
+- Returns export summaries (counts of written/dropped/empty labels)
+
+Current behavior (YOLO)
+--------------------------------
+Given a DataFrame from `src.data.index.load_split_frames(...)`, this module:
+- reads each frame's `xyxy_bboxes` (+ optional `ped_unclear_list` filtering),
+- converts each box to YOLO label format:
+  `<class_id> <x_center> <y_center> <width> <height>` (normalized to [0,1]),
+- writes one label file per image under `labels/<split>/<frame_id>.txt`,
+- writes matching images under `images/<split>/`,
+- writes `dataset.yaml` with train/val/test paths and class names.
+
+Why this module exists
+----------------------
+Model adapters (YOLO now, DINO later) should not own low-level file export logic.
+Keeping export logic here makes data preparation reusable and consistent across
+backends, while still allowing backend-specific export functions by name.
 """
 
 from __future__ import annotations
@@ -10,7 +38,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
-import shutil
 
 import numpy as np
 import pandas as pd
@@ -50,28 +77,26 @@ def _ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
-def _link_or_copy_image(src: Path, dst: Path, mode: Literal["symlink", "copy"] = "symlink") -> None:
+def _symlink_image(src: Path, dst: Path) -> None:
     """
-    Materialize one image in the YOLO export image tree.
+    Place one image into the YOLO export folder as a symlink.
 
     Input:
-        src: Source image path from parquet.
-        dst: Target path under images/<split>/.
-        mode: "symlink" (fast/small) or "copy" (portable/self-contained).
+        src: Source image file path from parquet.
+             Example: /home/edgelab/zod_moe/resized_images/000123.jpg
+        dst: Destination image path inside exported YOLO dataset.
+             Example: outputs/exports/yolo/.../images/train/000123.jpg
 
     Output:
         None.
 
     Why:
-        We want one export function that supports both lightweight and fully
-        self-contained dataset exports.
+        For our current workflow, symlinks are the simplest and most storage-
+        efficient way to build YOLO exports without duplicating the full image corpus.
     """
     if dst.exists():
         return
-    if mode == "copy":
-        shutil.copy2(src, dst)
-        return
-    # symlink mode
+    # create a symlink at dst pointing to src
     dst.symlink_to(src)
 
 
@@ -83,11 +108,14 @@ def _safe_iter_boxes(xyxy_bboxes) -> list[np.ndarray]:
         xyxy_bboxes: Box value from parquet row (can be ndarray/list/object-array).
 
     Output:
-        list[np.ndarray], each array shape (4,).
+    - normalizes input into a predictable list of (4,) boxes before conversion. 
+    --> output is a list[np.ndarray], each array shape (4,).
 
     Why:
-        Parquet roundtrips can return nested/object arrays; this helper keeps
-        export code robust to those representation differences.
+        In our current parquet, boxes are typically consistent ndarray values.
+        This helper still acts as a guardrail so export does not break if a
+        future parquet version (or preprocessing step) returns a different
+        but equivalent container shape.
     """
     if xyxy_bboxes is None:
         return []
@@ -116,69 +144,76 @@ def export_yolo_split(
     image_path_col: str = "resized_image_path",
     frame_id_col: str = "frame_id",
     boxes_col: str = "xyxy_bboxes",
-    unclear_col: str = "ped_unclear_list",
-    img_w_col: str = "new_w",
-    img_h_col: str = "new_h",
-    unclear_policy: UnclearPolicy = "exclude_unclear",
-    class_id: int = 0,
-    image_write_mode: Literal["symlink", "copy"] = "symlink",
+    unclear_col: str = "ped_unclear_list", # FORMAT: [True, False, True, False, ...]
+    img_w_col: str = "new_w", # width of the resized image (in pixels)
+    img_h_col: str = "new_h", # height of the resized image (in pixels)
+    unclear_policy: UnclearPolicy = "exclude_unclear", # after assessing the unclear boxes, we decided to exclude them from the training set.
+    class_id: int = 0, # class_id=0 just means “this box is pedestrian,” and there are no other classes.
 ) -> YoloExportSummary:
     """
-    Export one split to YOLO image/label directories.
+    Export one split to YOLO image/label directories that contain the frames 
+    for that split (contents: .txt label files and .jpg images).
 
     Input:
         split_name: "train" | "val" | "test" label for output subdirs.
-        frames_df: Split-filtered frame DataFrame.
-        out_dataset_dir: YOLO dataset root path.
-        image_path_col/frame_id_col/boxes_col/...: Source column names.
+        frames_df: Split-filtered frame DataFrame (from src.data.index.load_split_frames(...)).
+        out_dataset_dir: YOLO dataset root path (e.g. /home/edgelab/zod_moe/exports/yolo/train).
+        image_path_col/frame_id_col/boxes_col/...: parquet column names.
         unclear_policy: Whether unclear boxes are kept or dropped.
         class_id: YOLO class ID (0 for pedestrian-only).
-        image_write_mode: "symlink" or "copy".
 
     Output:
         YoloExportSummary with counts for images/labels/boxes/dropped boxes.
 
-    Why:
+    note:
         This is the single adapter step that converts canonical parquet data
         into detector-specific YOLO files.
     """
+    # create the output directories for the images and labels
     out_dataset_dir = Path(out_dataset_dir)
     images_dir = out_dataset_dir / "images" / split_name
     labels_dir = out_dataset_dir / "labels" / split_name
+    # ensure the directories exist
     _ensure_dir(images_dir)
     _ensure_dir(labels_dir)
-
+    # check if the required columns are in the DataFrame
     needed = [frame_id_col, image_path_col, boxes_col, unclear_col, img_w_col, img_h_col]
     for col in needed:
-        if col not in frames_df.columns:
+        if col not in frames_df.columns: # raise an error if the column is not in the DataFrame
             raise ValueError(f"frames_df missing required column '{col}'")
-
+    # initialize the counters
     n_images_written = 0
     n_label_files_written = 0
     n_boxes_written = 0
     n_boxes_dropped_unclear = 0
     n_empty_label_files = 0
 
+    # iterate over the frames in the DataFrame
     for _, row in frames_df.iterrows():
         frame_id = str(row[frame_id_col]).zfill(6)
         src_image_path = Path(row[image_path_col])
-        if not src_image_path.exists():
+        if not src_image_path.exists(): 
             # keep going, but skip this sample.
             continue
-
+        # create the destination image path
         dst_image_path = images_dir / f"{frame_id}.jpg"
-        _link_or_copy_image(src=src_image_path, dst=dst_image_path, mode=image_write_mode)
+        # create a symlink at dst_image_path pointing to src_image_path
+        _symlink_image(src=src_image_path, dst=dst_image_path)
+        # increment the counter
         n_images_written += 1
-
+        # get the boxes and unclear flags from the DataFrame
         boxes = _safe_iter_boxes(row[boxes_col])
         unclear_flags = np.asarray(row[unclear_col]) if row[unclear_col] is not None else np.asarray([])
-
+        # get the width and height of the resized image (in pixels)
         img_w = float(row[img_w_col])
         img_h = float(row[img_h_col])
+        # initialize the list of label lines
         label_lines: list[str] = []
-
+        
+        # iterate over the boxes (iterable within each keyframe row in the DataFrame)
         for i, box in enumerate(boxes):
             is_unclear = bool(unclear_flags[i]) if i < len(unclear_flags) else False
+            # if the box is unclear and we are excluding them, skip it
             if unclear_policy == "exclude_unclear" and is_unclear:
                 n_boxes_dropped_unclear += 1
                 continue
@@ -195,11 +230,13 @@ def export_yolo_split(
                 continue
             if not (0.0 <= xc <= 1.0 and 0.0 <= yc <= 1.0 and 0.0 < w <= 1.0 and 0.0 < h <= 1.0):
                 continue
-
+            # add the label line to the list for this keyframe
             label_lines.append(f"{class_id} {xc:.6f} {yc:.6f} {w:.6f} {h:.6f}")
             n_boxes_written += 1
 
+        # write the label file for this keyframe
         label_path = labels_dir / f"{frame_id}.txt"
+        # one box per line in the label file
         label_path.write_text("\n".join(label_lines) + ("\n" if label_lines else ""))
         n_label_files_written += 1
         if not label_lines:
