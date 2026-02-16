@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Union
 import csv
 import json
-import subprocess
 
 
 @dataclass
@@ -261,22 +260,6 @@ def save_metrics_table_csv(metrics_dict: dict, out_path: str | Path) -> Path:
         for k in sorted(metrics_dict.keys()):
             writer.writerow([k, metrics_dict[k]])
     return out_path
-
-
-def get_git_commit_hash() -> str | None:
-    """
-    Return current git commit hash (short) if available.
-    """
-    try:
-        out = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"],
-            stderr=subprocess.DEVNULL,
-            text=True,
-        ).strip()
-        return out or None
-    except Exception:
-        return None
-
 
 def infer_model_variant_from_weights(weights_name: str) -> str:
     """

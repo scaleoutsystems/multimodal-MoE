@@ -23,7 +23,6 @@ from src.models.vision.yolo import (
     save_yolo_training_summary,
     save_run_metadata_artifacts,
     infer_model_variant_from_weights,
-    get_git_commit_hash,
 )
 from src.paths import EVAL_DIR, EXPORTS_DIR, RUNS_DIR
 
@@ -145,7 +144,6 @@ def main() -> None:
         "unclear_policy": args.unclear_policy,
         "dataset_export_name": dataset_export_name,
         "data_yaml": str(data_yaml_path),
-        "git_commit": get_git_commit_hash(),
     }
     meta_json, meta_csv = save_run_metadata_artifacts(
         metadata=metadata,
