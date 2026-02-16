@@ -217,6 +217,34 @@ def save_yolo_metrics_json(metrics, out_path: str | Path) -> Path:
     stats = _extract_yolo_model_size_stats(getattr(metrics, "model", None))
     serializable.update(stats)
 
+    # Best-effort curve extraction for PR-style analysis.
+    # Ultralytics APIs vary by version, so we keep this defensive.
+    try:
+        box = getattr(metrics, "box", None)
+        if box is not None and hasattr(box, "curves_results"):
+            curves_results = getattr(box, "curves_results")
+            curve_names = []
+            if hasattr(box, "curves"):
+                raw_curve_names = getattr(box, "curves")
+                if isinstance(raw_curve_names, (list, tuple)):
+                    curve_names = [str(name) for name in raw_curve_names]
+            if isinstance(curves_results, (list, tuple)):
+                serializable["curves_results"] = []
+                for i, item in enumerate(curves_results):
+                    try:
+                        if isinstance(item, (list, tuple)) and len(item) >= 2:
+                            x, y = item[0], item[1]
+                            x_list = [float(v) for v in list(x)]
+                            y_list = [float(v) for v in list(y)]
+                            curve_entry = {"x": x_list, "y": y_list}
+                            if i < len(curve_names):
+                                curve_entry["name"] = curve_names[i]
+                            serializable["curves_results"].append(curve_entry)
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+
     out_path.write_text(json.dumps(serializable, indent=2))
     return out_path
 
