@@ -67,11 +67,11 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.data.index import load_split_frames
 from src.data.exports import export_yolo_split, write_yolo_dataset_yaml
 from src.paths import (
-    EXPORTS_DIR,
-    TEST_SPLIT_CSV,
-    TRAIN_SPLIT_CSV,
-    VAL_SPLIT_CSV,
-    ZODMOE_FRAMES_WITH_BOXES_PARQUET,
+    EXPORTS_DIR, # /home/edgelab/multimodal-moe/outputs/exports
+    TEST_SPLIT_CSV, # /home/edgelab/zod_moe/splits/test_ids.csv
+    TRAIN_SPLIT_CSV, # /home/edgelab/zod_moe/splits/train_ids.csv
+    VAL_SPLIT_CSV, # /home/edgelab/zod_moe/splits/val_ids.csv
+    ZODMOE_FRAMES_WITH_BOXES_PARQUET, # /home/edgelab/multimodal-moe/outputs/index/ZODmoe_frames_with_xyxy_bboxes.parquet
 )
 
 
@@ -110,8 +110,6 @@ def parse_args() -> argparse.Namespace:
         default="exclude_unclear",
         help="How to treat boxes marked unclear.",
     )
-    # Kept intentionally simple for now: symlink-only export mode.
-    # If we later need fully self-contained datasets, we can re-add copy mode.
     return parser.parse_args()
 
 

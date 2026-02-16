@@ -26,6 +26,36 @@ Given a DataFrame from `src.data.index.load_split_frames(...)`, this module:
 - writes matching images under `images/<split>/`,
 - writes `dataset.yaml` with train/val/test paths and class names.
 
+YOLO expects this layout and label syntax
+-----------------------------------------
+<out_dataset_dir>/
+  dataset.yaml
+  images/
+    train/*.jpg
+    val/*.jpg
+    test/*.jpg
+  labels/
+    train/*.txt
+    val/*.txt
+    test/*.txt
+
+Per-image labels:
+- For image `images/train/000123.jpg`, label file is `labels/train/000123.txt`.
+- Each line in `000123.txt` is one object:
+  `class_id x_center y_center width height`
+- Values are normalized by image width/height (range [0,1]).
+- For this project (single pedestrian class), `class_id` is always `0`.
+- If an image has no kept boxes after filtering, its label file is empty.
+
+-yaml file is a config file for the YOLO dataset and includes:
+path: /home/edgelab/multimodal-MoE/outputs/exports/yolo/pedestrian_v1_exclude_unclear
+train: images/train (path to the train images)
+val: images/val (path to the val images)
+test: images/test (path to the test images)
+nc: 1 (number of classes)
+names:
+  0: pedestrian (class name)
+
 Why this module exists
 ----------------------
 Model adapters (YOLO now, DINO later) should not own low-level file export logic.
@@ -51,6 +81,8 @@ UnclearPolicy = Literal["keep_all", "exclude_unclear"]
 class YoloExportSummary:
     """
     Compact summary of what was written for one split export.
+    We return this summary to the user so they can see how many images, labels, boxes, etc. were written
+    in creating the yolo dataset. 
     """
     split: str
     n_frames: int
@@ -139,8 +171,8 @@ def _safe_iter_boxes(xyxy_bboxes) -> list[np.ndarray]:
 
 def export_yolo_split(
     split_name: str,
-    frames_df: pd.DataFrame,
-    out_dataset_dir: str | Path,
+    frames_df: pd.DataFrame, # we get this from the src.data.index.load_split_frames(...) function.
+    out_dataset_dir: str | Path, # the path to the output directory for the yolo dataset.
     image_path_col: str = "resized_image_path",
     frame_id_col: str = "frame_id",
     boxes_col: str = "xyxy_bboxes",
@@ -151,8 +183,7 @@ def export_yolo_split(
     class_id: int = 0, # class_id=0 just means “this box is pedestrian,” and there are no other classes.
 ) -> YoloExportSummary:
     """
-    Export one split to YOLO image/label directories that contain the frames 
-    for that split (contents: .txt label files and .jpg images).
+    Export one split to YOLO image/label directories (contents: .txt label files and .jpg images).
 
     Input:
         split_name: "train" | "val" | "test" label for output subdirs.
@@ -178,6 +209,7 @@ def export_yolo_split(
     _ensure_dir(labels_dir)
     # check if the required columns are in the DataFrame
     needed = [frame_id_col, image_path_col, boxes_col, unclear_col, img_w_col, img_h_col]
+    # We check to ensure that the required columns are in the DataFrame obtained from the src.data.index.load_split_frames(...) function.
     for col in needed:
         if col not in frames_df.columns: # raise an error if the column is not in the DataFrame
             raise ValueError(f"frames_df missing required column '{col}'")
@@ -204,10 +236,11 @@ def export_yolo_split(
         # get the boxes and unclear flags from the DataFrame
         boxes = _safe_iter_boxes(row[boxes_col])
         unclear_flags = np.asarray(row[unclear_col]) if row[unclear_col] is not None else np.asarray([])
-        # get the width and height of the resized image (in pixels)
+        
         img_w = float(row[img_w_col])
         img_h = float(row[img_h_col])
-        # initialize the list of label lines
+        
+        # initialize list of label lines for this keyframe (for .txt label file)
         label_lines: list[str] = []
         
         # iterate over the boxes (iterable within each keyframe row in the DataFrame)
