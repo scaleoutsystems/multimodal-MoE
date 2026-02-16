@@ -28,6 +28,11 @@ class YoloTrainConfig:
     name: str = "baseline"
     seed: int = 0
     workers: int = 8
+    # Strict natural-geometry defaults (no random zoom/shift).
+    scale: float = 0.0
+    translate: float = 0.0
+    mosaic: float = 0.0
+    close_mosaic: int = 0
 
 
 def _import_ultralytics_yolo():
@@ -80,6 +85,10 @@ def train_yolo_detector(cfg: YoloTrainConfig):
         name=cfg.name,
         seed=cfg.seed,
         workers=cfg.workers,
+        scale=cfg.scale,
+        translate=cfg.translate,
+        mosaic=cfg.mosaic,
+        close_mosaic=cfg.close_mosaic,
     )
     return results
 

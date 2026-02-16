@@ -65,6 +65,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="0")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument(
+        "--scale",
+        type=float,
+        default=0.0,
+        help="Random scale augmentation strength (0 keeps natural geometry).",
+    )
+    parser.add_argument(
+        "--translate",
+        type=float,
+        default=0.0,
+        help="Random translation augmentation strength (0 disables shifts).",
+    )
+    parser.add_argument(
+        "--mosaic",
+        type=float,
+        default=0.0,
+        help="Mosaic augmentation probability/intensity (0 disables).",
+    )
+    parser.add_argument(
+        "--close-mosaic",
+        type=int,
+        default=0,
+        help="Disable mosaic this many epochs before training end (0 = already disabled).",
+    )
     parser.add_argument("--run-name", type=str, default="yolo26s_pedestrian_v1")
     parser.add_argument(
         "--unclear-policy",
@@ -100,6 +124,10 @@ def main() -> None:
         device=args.device,
         seed=args.seed,
         workers=args.workers,
+        scale=args.scale,
+        translate=args.translate,
+        mosaic=args.mosaic,
+        close_mosaic=args.close_mosaic,
         project=str(RUNS_DIR / "yolo"),
         name=args.run_name,
     )
