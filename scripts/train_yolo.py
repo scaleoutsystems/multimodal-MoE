@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=str(EXPORTS_DIR / "yolo" / "pedestrian_v1_exclude_unclear" / "dataset.yaml"),
     )
-    parser.add_argument("--model", type=str, default="yolo26n.pt")
+    parser.add_argument("--model", type=str, default="yolo26s.pt")
     parser.add_argument("--img-h", type=int, default=704)
     parser.add_argument("--img-w", type=int, default=1248)
     parser.add_argument(
@@ -61,7 +61,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="0")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--workers", type=int, default=8)
-    parser.add_argument("--run-name", type=str, default="yolo26n_pedestrian_v1")
+    parser.add_argument("--run-name", type=str, default="yolo26s_pedestrian_v1")
     parser.add_argument(
         "--unclear-policy",
         type=str,

@@ -18,12 +18,12 @@ import subprocess
 @dataclass
 class YoloTrainConfig:
     data_yaml: str
-    model: str = "yolo26n.pt"
+    model: str = "yolo26s.pt" # default baseline is YOLO26s; other variants can still be passed via CLI.
     imgsz: Union[int, tuple[int, int]] = (704, 1248)
-    rect: bool = True
+    rect: bool = True # enable training on rectangular images (instead of square images)
     epochs: int = 50
     batch: int = 16
-    device: str = "0"
+    device: str = "0" # GPU 0 is used by default.
     project: str = "outputs/runs/yolo"
     name: str = "baseline"
     seed: int = 0
@@ -121,7 +121,7 @@ def eval_yolo_detector(
     rect: bool = True,
     batch: int = 16,
     device: str = "0",
-):
+    ):
     """
     Run YOLO evaluation (val/test/train split) using trained weights.
 
@@ -162,7 +162,7 @@ def _format_ultralytics_imgsz(imgsz: Union[int, tuple[int, int]]):
 
 def save_yolo_metrics_json(metrics, out_path: str | Path) -> Path:
     """
-    Persist key YOLO metrics to JSON for experiment tracking.
+    Persist key YOLO validation metrics to JSON for experiment tracking.
 
     Input:
         metrics: Ultralytics metrics object returned by model.val().
@@ -180,8 +180,8 @@ def save_yolo_metrics_json(metrics, out_path: str | Path) -> Path:
 
     serializable = {}
     candidates = {
-        "map50": "metrics/mAP50(B)",
-        "map50_95": "metrics/mAP50-95(B)",
+        "map50": "metrics/mAP50(B)", #IOU threshold of 0.5
+        "map50_95": "metrics/mAP50-95(B)", #IOU threshold of 0.5-0.95
         "precision": "metrics/precision(B)",
         "recall": "metrics/recall(B)",
     }
