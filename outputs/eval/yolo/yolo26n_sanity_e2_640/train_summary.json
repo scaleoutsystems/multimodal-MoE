@@ -1,0 +1,9 @@
+{
+  "model_name": "yolo26n.pt",
+  "data_yaml": "/home/edgelab/multimodal-MoE/outputs/exports/yolo/pedestrian_v1_exclude_unclear/dataset.yaml",
+  "run_name": "yolo26n_sanity_e2_640",
+  "train_wall_time_s": 1417.0294065710623,
+  "params_total": null,
+  "params_trainable": null,
+  "flops_g": null
+}

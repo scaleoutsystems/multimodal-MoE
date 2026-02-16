@@ -1,0 +1,8 @@
+metric,value
+data_yaml,/home/edgelab/multimodal-MoE/outputs/exports/yolo/pedestrian_v1_exclude_unclear/dataset.yaml
+flops_g,
+model_name,yolo26n.pt
+params_total,
+params_trainable,
+run_name,yolo26n_sanity_e2_640
+train_wall_time_s,1417.0294065710623

@@ -1,0 +1,14 @@
+{
+  "model_family": "yolo",
+  "model_variant": "yolo26n",
+  "model_weights": "yolo26n.pt",
+  "run_name": "yolo26n_sanity_e2_640",
+  "seed": 0,
+  "split": "train+val",
+  "img_h": 640,
+  "img_w": 640,
+  "rect": false,
+  "unclear_policy": "exclude_unclear",
+  "dataset_export_name": "pedestrian_v1_exclude_unclear",
+  "data_yaml": "/home/edgelab/multimodal-MoE/outputs/exports/yolo/pedestrian_v1_exclude_unclear/dataset.yaml"
+}

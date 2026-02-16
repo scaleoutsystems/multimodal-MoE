@@ -37,8 +37,7 @@ def parse_args() -> argparse.Namespace:
     Output:
         argparse.Namespace with training/runtime settings.
 
-    Why:
-        Keeps training configuration explicit and easy to reproduce.
+    --> Keeps training configuration explicit and easy to reproduce.
     """
     parser = argparse.ArgumentParser(description="Train YOLO baseline detector.")
     parser.add_argument(
@@ -56,6 +55,12 @@ def parse_args() -> argparse.Namespace:
         help="Use rectangular batching to preserve aspect ratio better.",
     )
     parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=100,
+        help="Early stopping patience (epochs with no val improvement).",
+    )
     parser.add_argument("--batch", type=int, default=16)
     parser.add_argument("--device", type=str, default="0")
     parser.add_argument("--seed", type=int, default=0)
@@ -90,6 +95,7 @@ def main() -> None:
         imgsz=(args.img_h, args.img_w),
         rect=bool(args.rect),
         epochs=args.epochs,
+        patience=args.patience,
         batch=args.batch,
         device=args.device,
         seed=args.seed,
@@ -102,11 +108,14 @@ def main() -> None:
     print(cfg)
     t0 = time.perf_counter()
     results = train_yolo_detector(cfg)
+    # wall time = time taken to train the model
     train_wall_time_s = time.perf_counter() - t0
 
     # Save concise training report artifacts for cross-variant comparisons.
     train_report_dir = Path(EVAL_DIR) / "yolo" / args.run_name
     train_report_dir.mkdir(parents=True, exist_ok=True)
+    # both json and csv files contain the same core summary info
+    # So right now, JSON = machine pipeline, CSV = human-friendly table convenience.
     summary_json, summary_csv = save_yolo_training_summary(
         train_wall_time_s=train_wall_time_s,
         model_name=args.model,

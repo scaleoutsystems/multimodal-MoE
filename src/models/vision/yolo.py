@@ -21,6 +21,7 @@ class YoloTrainConfig:
     imgsz: Union[int, tuple[int, int]] = (704, 1248)
     rect: bool = True # enable training on rectangular images (instead of square images)
     epochs: int = 50
+    patience: int = 100
     batch: int = 16
     device: str = "0" # GPU 0 is used by default.
     project: str = "outputs/runs/yolo"
@@ -72,6 +73,7 @@ def train_yolo_detector(cfg: YoloTrainConfig):
         imgsz=_format_ultralytics_imgsz(cfg.imgsz),
         rect=cfg.rect,
         epochs=cfg.epochs,
+        patience=cfg.patience,
         batch=cfg.batch,
         device=cfg.device,
         project=cfg.project,
