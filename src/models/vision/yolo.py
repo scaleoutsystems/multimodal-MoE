@@ -9,14 +9,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Union
+import csv
 import json
+import subprocess
 
 
 @dataclass
 class YoloTrainConfig:
     data_yaml: str
-    model: str = "yolov8n.pt"
-    imgsz: int = 640
+    model: str = "yolo26n.pt"
+    imgsz: Union[int, tuple[int, int]] = (704, 1248)
+    rect: bool = True
     epochs: int = 50
     batch: int = 16
     device: str = "0"
@@ -66,7 +70,8 @@ def train_yolo_detector(cfg: YoloTrainConfig):
     model = YOLO(cfg.model)
     results = model.train(
         data=cfg.data_yaml,
-        imgsz=cfg.imgsz,
+        imgsz=_format_ultralytics_imgsz(cfg.imgsz),
+        rect=cfg.rect,
         epochs=cfg.epochs,
         batch=cfg.batch,
         device=cfg.device,
@@ -78,11 +83,42 @@ def train_yolo_detector(cfg: YoloTrainConfig):
     return results
 
 
+def _extract_yolo_model_size_stats(model_obj) -> dict:
+    """
+    Best-effort extraction of model size stats from a YOLO model wrapper.
+    """
+    stats = {
+        "params_total": None,
+        "params_trainable": None,
+        "flops_g": None,
+    }
+    if model_obj is None or not hasattr(model_obj, "model"):
+        return stats
+
+    pt_model = model_obj.model
+    try:
+        stats["params_total"] = int(sum(p.numel() for p in pt_model.parameters()))
+        stats["params_trainable"] = int(sum(p.numel() for p in pt_model.parameters() if p.requires_grad))
+    except Exception:
+        pass
+
+    # FLOPs may or may not be exposed depending on Ultralytics version/model state.
+    for attr in ("flops", "flops_g", "GFLOPs"):
+        if hasattr(pt_model, attr):
+            try:
+                stats["flops_g"] = float(getattr(pt_model, attr))
+                break
+            except Exception:
+                pass
+    return stats
+
+
 def eval_yolo_detector(
     data_yaml: str,
     weights_path: str,
     split: str = "val",
-    imgsz: int = 640,
+    imgsz: Union[int, tuple[int, int]] = (704, 1248),
+    rect: bool = True,
     batch: int = 16,
     device: str = "0",
 ):
@@ -93,7 +129,7 @@ def eval_yolo_detector(
         data_yaml: Dataset YAML path.
         weights_path: Path to trained YOLO weights (.pt).
         split: Dataset split to evaluate.
-        imgsz, batch, device: Runtime evaluation settings.
+        imgsz, rect, batch, device: Runtime evaluation settings.
 
     Output:
         Ultralytics metrics object.
@@ -106,11 +142,22 @@ def eval_yolo_detector(
     metrics = model.val(
         data=data_yaml,
         split=split,
-        imgsz=imgsz,
+        imgsz=_format_ultralytics_imgsz(imgsz),
+        rect=rect,
         batch=batch,
         device=device,
     )
     return metrics
+
+
+def _format_ultralytics_imgsz(imgsz: Union[int, tuple[int, int]]):
+    """
+    Convert project-friendly image size config to Ultralytics argument format.
+    """
+    if isinstance(imgsz, tuple):
+        h, w = int(imgsz[0]), int(imgsz[1])
+        return [h, w]
+    return int(imgsz)
 
 
 def save_yolo_metrics_json(metrics, out_path: str | Path) -> Path:
@@ -158,5 +205,102 @@ def save_yolo_metrics_json(metrics, out_path: str | Path) -> Path:
             if hasattr(box, attr):
                 serializable[out_key] = float(getattr(box, attr))
 
+    # Inference speed (ms/image) if available.
+    if hasattr(metrics, "speed") and isinstance(metrics.speed, dict):
+        for k, v in metrics.speed.items():
+            try:
+                serializable[f"speed_{k}_ms_per_img"] = float(v)
+            except Exception:
+                continue
+
+    # Params/FLOPs (best-effort) from trained model wrapper.
+    stats = _extract_yolo_model_size_stats(getattr(metrics, "model", None))
+    serializable.update(stats)
+
     out_path.write_text(json.dumps(serializable, indent=2))
     return out_path
+
+
+def save_metrics_table_csv(metrics_dict: dict, out_path: str | Path) -> Path:
+    """
+    Save a flat metrics dictionary as a 2-column CSV table: metric,value.
+    """
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["metric", "value"])
+        for k in sorted(metrics_dict.keys()):
+            writer.writerow([k, metrics_dict[k]])
+    return out_path
+
+
+def get_git_commit_hash() -> str | None:
+    """
+    Return current git commit hash (short) if available.
+    """
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        return out or None
+    except Exception:
+        return None
+
+
+def infer_model_variant_from_weights(weights_name: str) -> str:
+    """
+    Infer a compact model variant label from a weights filename.
+    Example: 'yolo26n.pt' -> 'yolo26n'
+    """
+    return Path(weights_name).stem
+
+
+def save_run_metadata_artifacts(
+    metadata: dict,
+    out_json_path: str | Path,
+    out_csv_path: str | Path,
+) -> tuple[Path, Path]:
+    """
+    Save run metadata as JSON + 2-column CSV table.
+    """
+    out_json_path = Path(out_json_path)
+    out_json_path.parent.mkdir(parents=True, exist_ok=True)
+    out_json_path.write_text(json.dumps(metadata, indent=2))
+
+    out_csv_path = save_metrics_table_csv(metadata, out_csv_path)
+    return out_json_path, out_csv_path
+
+
+def save_yolo_training_summary(
+    *,
+    train_wall_time_s: float,
+    model_name: str,
+    data_yaml: str,
+    run_name: str,
+    out_json_path: str | Path,
+    out_csv_path: str | Path,
+    results=None,
+) -> tuple[Path, Path]:
+    """
+    Save training summary artifacts (JSON + CSV table).
+
+    Includes wall-clock training time and model size stats (best-effort).
+    """
+    summary = {
+        "model_name": model_name,
+        "data_yaml": data_yaml,
+        "run_name": run_name,
+        "train_wall_time_s": float(train_wall_time_s),
+    }
+    stats = _extract_yolo_model_size_stats(getattr(results, "model", None))
+    summary.update(stats)
+
+    out_json_path = Path(out_json_path)
+    out_json_path.parent.mkdir(parents=True, exist_ok=True)
+    out_json_path.write_text(json.dumps(summary, indent=2))
+
+    out_csv_path = save_metrics_table_csv(summary, out_csv_path)
+    return out_json_path, out_csv_path
