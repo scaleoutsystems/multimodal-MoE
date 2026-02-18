@@ -16,7 +16,7 @@ What this module does
 - Writes dataset metadata files required by training frameworks (dataset.yaml)
 - Returns export summaries (counts of written/dropped/empty labels)
 
-Current behavior (YOLO)
+Current behavior (YOLO-style Ultralytics format)
 --------------------------------
 Given a DataFrame from `src.data.index.load_split_frames(...)`, this module:
 - reads each frame's `xyxy_bboxes` (+ optional `ped_unclear_list` filtering),
@@ -25,6 +25,12 @@ Given a DataFrame from `src.data.index.load_split_frames(...)`, this module:
 - writes one label file per image under `labels/<split>/<frame_id>.txt`,
 - writes matching images under `images/<split>/`,
 - writes `dataset.yaml` with train/val/test paths and class names.
+
+RT-DETR note (Ultralytics)
+--------------------------
+This same exported format can be consumed by Ultralytics RT-DETR as well.
+In other words, when RT-DETR is run through the Ultralytics API, no separate
+COCO-conversion step is required for dataset export in this project.
 
 YOLO expects this layout and label syntax
 -----------------------------------------

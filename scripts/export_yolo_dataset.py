@@ -1,9 +1,9 @@
 """
-Export parquet + split CSVs into YOLO dataset format.
+Export parquet + split CSVs into Ultralytics dataset format.
 
 Role in the pipeline
 --------------------
-This is the "prepare data for YOLO" entrypoint.
+This is the "prepare data for Ultralytics detectors" entrypoint.
 It does not contain core conversion logic itself; it is intentionally thin:
 parse CLI args -> call reusable functions in `src/data/index.py` and `src/data/exports.py`.
 
@@ -20,13 +20,19 @@ What it does
 - Writes YOLO images/labels folders and dataset.yaml.
 - Prints per-split summary counts (written images/labels/boxes, dropped unclear, empty labels).
 
+Ultralytics compatibility note
+------------------------------
+This export format is usable by both Ultralytics YOLO and Ultralytics RT-DETR
+models. So this script can be reused for RT-DETR experiments in this project
+without changing dataset annotation format.
+
 Why this script exists
 ----------------------
 - Keeps YOLO export reproducible as a single command.
 - Keeps script-level orchestration separate from reusable library logic.
 - Makes it easy to add future exporters (COCO/DINO/etc.) with the same architecture.
 
-EXPECTED YOLO DATASET STRUCTURE:
+EXPECTED ULTRALYTICS DATASET STRUCTURE:
 <out_dir>/
   dataset.yaml
   images/

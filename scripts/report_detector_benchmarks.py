@@ -1,14 +1,14 @@
 """
 Aggregate detector run artifacts into comparison tables and plots.
 
-What this script reads
+This script reads:
 ----------------------
 - Per-run artifact folders under `outputs/eval/<model_family>/<run_name>/`
 - `metrics.json` (evaluation metrics, optional curve payloads)
 - `run_metadata.json` (model/split/policy metadata)
 - `train_summary.json` (training-time summary)
 
-What this script writes
+And it writes:
 -----------------------
 - `baseline_runs_aggregated.csv`: one row per run with merged metrics + metadata
 - `speed_vs_accuracy_table.csv`: compact table for latency/accuracy tradeoff
@@ -17,7 +17,7 @@ What this script writes
 - `precision_recall_operating_points.png`: scatter plot (x=recall, y=precision) at one operating point per run
 - `pr_curve_overlay.png` (optional): only if curve arrays exist in run metrics
 
-Why this exists
+Reasoning for this script:
 ---------------
 The training/eval adapters already save per-run artifacts. This script adds the
 final reporting layer that compares many runs side-by-side.

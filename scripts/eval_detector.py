@@ -3,6 +3,7 @@ Evaluate detector runs.
 
 Current backend support:
 - yolo (Ultralytics)
+- rtdetr (Ultralytics)
 
 The CLI name stays generic so we can add DINO/fusion backends later without
 changing downstream workflow.
@@ -27,7 +28,11 @@ from src.models.vision.yolo import (
     save_yolo_metrics_json,  # Returns written metrics.json Path.
     save_metrics_table_csv,  # Returns written 2-column metrics CSV Path.
     save_run_metadata_artifacts,  # Returns (metadata_json_path, metadata_csv_path).
-    infer_model_variant_from_weights,  # Returns model variant string (weights stem).
+    infer_model_variant_from_weights,  # Returns model variant string (weights stem)
+)
+from src.models.vision.rtdetr import (
+    eval_rtdetr_detector,  # Returns Ultralytics metrics object from model.val().
+    save_rtdetr_metrics_json,  # Returns written metrics.json Path.
 )
 from src.paths import EVAL_DIR, EXPORTS_DIR, RUNS_DIR
 
@@ -46,7 +51,7 @@ def parse_args() -> argparse.Namespace:
         Keeps eval invocation reproducible while allowing backend expansion.
     """
     parser = argparse.ArgumentParser(description="Evaluate detector run.")
-    parser.add_argument("--backend", choices=["yolo"], default="yolo")
+    parser.add_argument("--backend", choices=["yolo", "rtdetr"], default="yolo")
     parser.add_argument(
         "--data-yaml",
         type=str,
@@ -124,6 +129,47 @@ def main() -> None:
             "img_h": int(args.img_h),
             "img_w": int(args.img_w),
             "rect": bool(args.rect),
+            "unclear_policy": args.unclear_policy,
+            "dataset_export_name": dataset_export_name,
+            "data_yaml": str(data_yaml_path),
+        }
+        meta_json, meta_csv = save_run_metadata_artifacts(
+            metadata=metadata,
+            out_json_path=out_dir / "run_metadata.json",
+            out_csv_path=out_dir / "run_metadata.csv",
+        )
+        print(f"Saved metrics -> {out_json}")
+        print(f"Saved table   -> {out_csv}")
+        print(f"Saved run metadata -> {meta_json}")
+        print(f"Saved metadata table -> {meta_csv}")
+        return
+
+    if args.backend == "rtdetr":
+        # We reuse the same Ultralytics dataset.yaml + label format here.
+        metrics = eval_rtdetr_detector(
+            data_yaml=args.data_yaml,
+            weights_path=args.weights,
+            split=args.split,
+            imgsz=(args.img_h, args.img_w),
+            batch=args.batch,
+            device=args.device,
+            project=str(RUNS_DIR / "rtdetr"),
+            name=f"{args.run_name}_val",
+        )
+        out_json = save_rtdetr_metrics_json(metrics=metrics, out_path=out_dir / "metrics.json")
+        metrics_dict = json.loads(out_json.read_text())
+        out_csv = save_metrics_table_csv(metrics_dict, out_dir / "metrics_table.csv")
+        data_yaml_path = Path(args.data_yaml)
+        dataset_export_name = data_yaml_path.parent.name if data_yaml_path.name == "dataset.yaml" else data_yaml_path.stem
+        metadata = {
+            "model_family": "rtdetr",
+            "model_variant": infer_model_variant_from_weights(args.weights),
+            "model_weights": args.weights,
+            "run_name": args.run_name,
+            "seed": int(args.seed),
+            "split": args.split,
+            "img_h": int(args.img_h),
+            "img_w": int(args.img_w),
             "unclear_policy": args.unclear_policy,
             "dataset_export_name": dataset_export_name,
             "data_yaml": str(data_yaml_path),
