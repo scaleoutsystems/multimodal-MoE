@@ -1,8 +1,9 @@
 """
 YOLO adapter wrapper (Ultralytics-specific).
 
-Keeping this in a dedicated adapter file avoids coupling the rest of the
-project to one framework.
+This contains functions to train/evaluate YOLO and to save
+run artifacts (metrics, summaries, and metadata) in a stable
+format for cross-model benchmark comparisons.
 """
 
 from __future__ import annotations

@@ -26,9 +26,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.models.vision.yolo import (
     eval_yolo_detector,  # Returns Ultralytics metrics object from model.val().
     save_yolo_metrics_json,  # Returns written metrics.json Path.
-    save_metrics_table_csv,  # Returns written 2-column metrics CSV Path.
-    save_run_metadata_artifacts,  # Returns (metadata_json_path, metadata_csv_path).
-    infer_model_variant_from_weights,  # Returns model variant string (weights stem)
+    save_metrics_table_csv,  # Returns written 2-column metrics CSV Path. Generic, used for all model families.
+    save_run_metadata_artifacts,  # Returns (metadata_json_path, metadata_csv_path). Generic, used for all model families.
+    infer_model_variant_from_weights,  # Returns model variant string (weights stem). Generic, used for all model families.
 )
 from src.models.vision.rtdetr import (
     eval_rtdetr_detector,  # Returns Ultralytics metrics object from model.val().

@@ -1,8 +1,20 @@
 """
-RT-DETR adapter wrapper (Ultralytics-specific).
+RT-DETR integration layer for Ultralytics.
 
-I keep this in a dedicated adapter file so we can add RT-DETR without
-mixing backend-specific details inside scripts.
+This file is where we put RT-DETR-specific train/eval calls
+(for example: which Ultralytics class we instantiate and how we call .train/.val).
+
+Why this file exists:
+- keep backend-specific logic out of top-level scripts
+- make RT-DETR easy to maintain separately from YOLO
+- still reuse shared artifact helpers so all model families write comparable outputs
+
+Includes the following pieces:
+- `RtdetrTrainConfig`: stores RT-DETR train settings in one place.
+- `train_rtdetr_detector(...)`: launches Ultralytics RT-DETR training.
+- `eval_rtdetr_detector(...)`: runs validation/test evaluation for saved RT-DETR weights.
+- `save_rtdetr_metrics_json(...)`: writes evaluation metrics in the shared report format so we can compare RT-DETR and YOLO side by side.
+- `save_rtdetr_training_summary(...)`: writes training summary artifacts in the shared report format for the same cross-family comparison workflow.
 """
 
 from __future__ import annotations
