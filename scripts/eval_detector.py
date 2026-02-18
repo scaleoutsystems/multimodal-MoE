@@ -23,13 +23,13 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.models.vision.yolo import (
-    eval_yolo_detector,
-    save_yolo_metrics_json,
-    save_metrics_table_csv,
-    save_run_metadata_artifacts,
-    infer_model_variant_from_weights,
+    eval_yolo_detector,  # Returns Ultralytics metrics object from model.val().
+    save_yolo_metrics_json,  # Returns written metrics.json Path.
+    save_metrics_table_csv,  # Returns written 2-column metrics CSV Path.
+    save_run_metadata_artifacts,  # Returns (metadata_json_path, metadata_csv_path).
+    infer_model_variant_from_weights,  # Returns model variant string (weights stem).
 )
-from src.paths import EVAL_DIR, EXPORTS_DIR
+from src.paths import EVAL_DIR, EXPORTS_DIR, RUNS_DIR
 
 
 def parse_args() -> argparse.Namespace:
@@ -106,6 +106,8 @@ def main() -> None:
             rect=bool(args.rect),
             batch=args.batch,
             device=args.device,
+            project=str(RUNS_DIR / "yolo"),
+            name=f"{args.run_name}_val",
         )
         out_json = save_yolo_metrics_json(metrics=metrics, out_path=out_dir / "metrics.json")
         metrics_dict = json.loads(out_json.read_text())

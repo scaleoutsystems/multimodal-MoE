@@ -209,3 +209,8 @@ __marimo__/
 # Project-generated exports
 # We don't want to track exported datasets in the repository.
 outputs/exports/
+
+# Project-generated training/eval artifacts
+# Model checkpoints, train/val visuals, and benchmark outputs are large/derived.
+outputs/runs/
+outputs/eval/

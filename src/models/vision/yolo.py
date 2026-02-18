@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Union
 import csv
 import json
+import numpy as np
 
 
 @dataclass
@@ -131,6 +132,8 @@ def eval_yolo_detector(
     rect: bool = True,
     batch: int = 16,
     device: str = "0",
+    project: str | None = None,
+    name: str | None = None,
     ):
     """
     Run YOLO evaluation (val/test/train split) using trained weights.
@@ -140,6 +143,7 @@ def eval_yolo_detector(
         weights_path: Path to trained YOLO weights (.pt).
         split: Dataset split to evaluate.
         imgsz, rect, batch, device: Runtime evaluation settings.
+        project, name: Optional Ultralytics output location settings for val artifacts.
 
     Output:
         Ultralytics metrics object.
@@ -149,6 +153,12 @@ def eval_yolo_detector(
     """
     YOLO = _import_ultralytics_yolo()
     model = YOLO(weights_path)
+    val_kwargs = {}
+    if project:
+        val_kwargs["project"] = project
+    if name:
+        val_kwargs["name"] = name
+
     metrics = model.val(
         data=data_yaml,
         split=split,
@@ -156,6 +166,7 @@ def eval_yolo_detector(
         rect=rect,
         batch=batch,
         device=device,
+        **val_kwargs,
     )
     return metrics
 
@@ -227,6 +238,33 @@ def save_yolo_metrics_json(metrics, out_path: str | Path) -> Path:
     stats = _extract_yolo_model_size_stats(getattr(metrics, "model", None))
     serializable.update(stats)
 
+    def _to_1d_float_list(values) -> list[float]:
+        """
+        Convert curve payloads (list/ndarray/tensor-like) to a 1D float list.
+        """
+        try:
+            arr = np.asarray(values, dtype=float)
+            if arr.size == 0:
+                return []
+            if arr.ndim == 1:
+                return [float(v) for v in arr.tolist()]
+            # Common case in detection metrics: class-wise arrays (C, N).
+            # For single-class this becomes (1, N); for multi-class we use mean over classes.
+            if arr.ndim >= 2:
+                if arr.shape[0] == 1:
+                    arr = arr[0]
+                else:
+                    arr = arr.mean(axis=0)
+                arr = np.asarray(arr, dtype=float).reshape(-1)
+                return [float(v) for v in arr.tolist()]
+        except Exception:
+            pass
+        # Last-resort fallback for odd iterables.
+        try:
+            return [float(v) for v in list(values)]
+        except Exception:
+            return []
+
     # Best-effort curve extraction for PR-style analysis.
     # Ultralytics APIs vary by version, so we keep this defensive.
     try:
@@ -244,8 +282,17 @@ def save_yolo_metrics_json(metrics, out_path: str | Path) -> Path:
                     try:
                         if isinstance(item, (list, tuple)) and len(item) >= 2:
                             x, y = item[0], item[1]
-                            x_list = [float(v) for v in list(x)]
-                            y_list = [float(v) for v in list(y)]
+                            x_list = _to_1d_float_list(x)
+                            y_list = _to_1d_float_list(y)
+                            if len(x_list) == 0 or len(y_list) == 0:
+                                continue
+                            # Align lengths defensively if backend returns slight shape mismatch.
+                            if len(x_list) != len(y_list):
+                                n = min(len(x_list), len(y_list))
+                                x_list = x_list[:n]
+                                y_list = y_list[:n]
+                            if len(x_list) == 0:
+                                continue
                             curve_entry = {"x": x_list, "y": y_list}
                             if i < len(curve_names):
                                 curve_entry["name"] = curve_names[i]

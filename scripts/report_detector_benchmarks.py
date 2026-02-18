@@ -12,9 +12,9 @@ What this script writes
 -----------------------
 - `baseline_runs_aggregated.csv`: one row per run with merged metrics + metadata
 - `speed_vs_accuracy_table.csv`: compact table for latency/accuracy tradeoff
-- `precision_recall_tradeoff.csv`: compact table for precision/recall tradeoff
+- `precision_recall_operating_points.csv`: compact table for per-run precision/recall operating points
 - `speed_vs_accuracy.png`: scatter plot (x=inference ms/img, y=mAP50-95)
-- `precision_recall_tradeoff.png`: scatter plot (x=recall, y=precision)
+- `precision_recall_operating_points.png`: scatter plot (x=recall, y=precision) at one operating point per run
 - `pr_curve_overlay.png` (optional): only if curve arrays exist in run metrics
 
 Why this exists
@@ -150,10 +150,13 @@ def _collect_rows(eval_root: Path, families: set[str]) -> tuple[list[dict[str, A
             # Optional per-run PR-style curves (if metrics.json includes curves_results).
             curves = metrics.get("curves_results")
             if isinstance(curves, list):
-                for curve in curves:
+                for curve_idx, curve in enumerate(curves):
                     if not isinstance(curve, dict):
                         continue
-                    name = str(curve.get("name", ""))
+                    raw_name = curve.get("name", "")
+                    name = str(raw_name) if raw_name is not None else ""
+                    if not name:
+                        name = f"curve_{curve_idx}"
                     x_vals = curve.get("x")
                     y_vals = curve.get("y")
                     if not isinstance(x_vals, list) or not isinstance(y_vals, list):
@@ -163,7 +166,8 @@ def _collect_rows(eval_root: Path, families: set[str]) -> tuple[list[dict[str, A
                     # Keep all curve data, but tag probable PR curves for plotting.
                     curve_type = "other"
                     lowered = name.lower()
-                    if "precision-recall" in lowered or lowered.startswith("pr"):
+                    # Ultralytics may emit missing/opaque names; curve_0 is typically PR.
+                    if "precision-recall" in lowered or lowered.startswith("pr") or curve_idx == 0:
                         curve_type = "pr"
                     for x, y in zip(x_vals, y_vals):
                         x_f = _to_float_or_none(x)
@@ -175,6 +179,7 @@ def _collect_rows(eval_root: Path, families: set[str]) -> tuple[list[dict[str, A
                                 "model_family": row.get("model_family"),
                                 "run_name": row.get("run_name"),
                                 "model_variant": row.get("model_variant"),
+                                "curve_idx": curve_idx,
                                 "curve_name": name,
                                 "curve_type": curve_type,
                                 "x": x_f,
@@ -219,7 +224,7 @@ def _save_precision_recall_plot(df: pd.DataFrame, out_path: Path) -> None:
         )
     plt.xlabel("Recall (default confidence)")
     plt.ylabel("Precision (default confidence)")
-    plt.title("Precision-Recall Tradeoff (Point Comparison)")
+    plt.title("Precision-Recall Operating Points (One Point per Run)")
     plt.grid(alpha=0.25)
     plt.tight_layout()
     plt.savefig(out_path, dpi=200)
@@ -236,9 +241,9 @@ def _save_pr_curve_overlay(pr_curves_df: pd.DataFrame, out_path: Path) -> bool:
         return False
 
     plt.figure(figsize=(8, 6))
-    grouped = plot_df.groupby(["run_name", "model_variant", "curve_name"], dropna=False)
+    grouped = plot_df.groupby(["run_name", "model_variant", "curve_idx", "curve_name"], dropna=False)
     plotted = 0
-    for (run_name, model_variant, curve_name), grp in grouped:
+    for (run_name, model_variant, _curve_idx, curve_name), grp in grouped:
         grp_sorted = grp.sort_values("x")
         if grp_sorted.empty:
             continue
@@ -252,7 +257,7 @@ def _save_pr_curve_overlay(pr_curves_df: pd.DataFrame, out_path: Path) -> bool:
 
     plt.xlabel("Recall (or curve x-axis)")
     plt.ylabel("Precision (or curve y-axis)")
-    plt.title("PR Curve Comparison (When Available)")
+    plt.title("PR Curve Comparison")
     plt.grid(alpha=0.25)
     if plotted <= 12:
         plt.legend(fontsize=8, loc="best")
@@ -312,10 +317,10 @@ def main() -> None:
         "seed",
     ]
     pr_table = df[[c for c in pr_table_cols if c in df.columns]].copy()
-    pr_table.to_csv(out_dir / "precision_recall_tradeoff.csv", index=False)
+    pr_table.to_csv(out_dir / "precision_recall_operating_points.csv", index=False)
 
     _save_speed_vs_accuracy_plot(df, out_dir / "speed_vs_accuracy.png")
-    _save_precision_recall_plot(df, out_dir / "precision_recall_tradeoff.png")
+    _save_precision_recall_plot(df, out_dir / "precision_recall_operating_points.png")
 
     pr_curves_df = pd.DataFrame(pr_curve_rows) if pr_curve_rows else pd.DataFrame()
     if not pr_curves_df.empty:
@@ -324,9 +329,9 @@ def main() -> None:
 
     print(f"Saved aggregated runs table -> {agg_csv}")
     print(f"Saved speed/accuracy table  -> {out_dir / 'speed_vs_accuracy_table.csv'}")
-    print(f"Saved precision/recall table-> {out_dir / 'precision_recall_tradeoff.csv'}")
+    print(f"Saved precision/recall table-> {out_dir / 'precision_recall_operating_points.csv'}")
     print(f"Saved speed/accuracy plot   -> {out_dir / 'speed_vs_accuracy.png'}")
-    print(f"Saved PR tradeoff plot      -> {out_dir / 'precision_recall_tradeoff.png'}")
+    print(f"Saved PR points plot        -> {out_dir / 'precision_recall_operating_points.png'}")
     if has_overlay:
         print(f"Saved PR overlay plot       -> {out_dir / 'pr_curve_overlay.png'}")
     elif not pr_curves_df.empty:
