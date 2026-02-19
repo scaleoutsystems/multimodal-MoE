@@ -35,3 +35,8 @@ ZODMOE_FRAMES_WITH_BOXES_PARQUET = _get_path( # /home/edgelab/multimodal-moe/out
     INDEX_DIR / "ZODmoe_frames_with_xyxy_bboxes.parquet",
 )
 
+ZODMOE_FRAMES_WITH_BOXES_AND_SOLAR_BINS_PARQUET = _get_path(
+    "ZODMOE_FRAMES_WITH_BOXES_AND_SOLAR_BINS_PARQUET",
+    INDEX_DIR / "ZODmoe_frames_with_xyxy_bboxes_and_solar_bins.parquet",
+)
+
