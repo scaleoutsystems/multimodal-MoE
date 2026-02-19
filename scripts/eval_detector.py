@@ -15,6 +15,8 @@ import argparse
 from pathlib import Path
 import sys
 import json
+import platform
+import socket
 
 # Allow running as either:
 # - python -m scripts.eval_detector
@@ -29,10 +31,12 @@ from src.models.vision.yolo import (
     save_metrics_table_csv,  # Returns written 2-column metrics CSV Path. Generic, used for all model families.
     save_run_metadata_artifacts,  # Returns (metadata_json_path, metadata_csv_path). Generic, used for all model families.
     infer_model_variant_from_weights,  # Returns model variant string (weights stem). Generic, used for all model families.
+    get_yolo_model_size_stats_from_weights,  # Returns best-effort params/FLOPs from YOLO weights.
 )
 from src.models.vision.rtdetr import (
     eval_rtdetr_detector,  # Returns Ultralytics metrics object from model.val().
     save_rtdetr_metrics_json,  # Returns written metrics.json Path.
+    get_rtdetr_model_size_stats_from_weights,  # Returns best-effort params/FLOPs from RT-DETR weights.
 )
 from src.paths import EVAL_DIR, EXPORTS_DIR, RUNS_DIR
 
@@ -85,6 +89,58 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _safe_float(v):
+    try:
+        return float(v)
+    except Exception:
+        return None
+
+
+def _add_derived_speed_metrics(metrics_dict: dict) -> dict:
+    """
+    Add thesis-friendly derived throughput metrics.
+    """
+    preprocess_ms = _safe_float(metrics_dict.get("speed_preprocess_ms_per_img"))
+    inference_ms = _safe_float(metrics_dict.get("speed_inference_ms_per_img"))
+    postprocess_ms = _safe_float(metrics_dict.get("speed_postprocess_ms_per_img"))
+
+    if inference_ms is not None and inference_ms > 0:
+        metrics_dict["fps_inference_only"] = 1000.0 / inference_ms
+
+    if preprocess_ms is not None and inference_ms is not None and postprocess_ms is not None:
+        total_ms = preprocess_ms + inference_ms + postprocess_ms
+        metrics_dict["speed_total_ms_per_img"] = total_ms
+        if total_ms > 0:
+            metrics_dict["fps_end_to_end"] = 1000.0 / total_ms
+
+    return metrics_dict
+
+
+def _collect_runtime_info() -> dict:
+    """
+    Collect lightweight environment info for reproducibility.
+    """
+    info = {
+        "hostname": socket.gethostname(),
+        "platform": platform.platform(),
+        "python_version": platform.python_version(),
+    }
+    try:
+        import torch  # type: ignore
+
+        info["torch_version"] = str(torch.__version__)
+        info["cuda_available"] = bool(torch.cuda.is_available())
+        info["cuda_version"] = str(torch.version.cuda)
+        info["cudnn_version"] = int(torch.backends.cudnn.version()) if torch.backends.cudnn.is_available() else None
+        if torch.cuda.is_available():
+            info["gpu_name"] = str(torch.cuda.get_device_name(0))
+            props = torch.cuda.get_device_properties(0)
+            info["gpu_total_mem_gb"] = round(float(props.total_memory) / (1024**3), 3)
+    except Exception:
+        pass
+    return info
+
+
 def main() -> None:
     """
     Run evaluation for the selected backend and persist metrics.
@@ -116,9 +172,18 @@ def main() -> None:
         )
         out_json = save_yolo_metrics_json(metrics=metrics, out_path=out_dir / "metrics.json")
         metrics_dict = json.loads(out_json.read_text())
+        metrics_dict = _add_derived_speed_metrics(metrics_dict)
+        # Fallback: some Ultralytics versions do not expose model size stats in eval object.
+        if metrics_dict.get("params_total") is None and metrics_dict.get("flops_g") is None:
+            try:
+                metrics_dict.update(get_yolo_model_size_stats_from_weights(args.weights))
+            except Exception:
+                pass
+        out_json.write_text(json.dumps(metrics_dict, indent=2))
         out_csv = save_metrics_table_csv(metrics_dict, out_dir / "metrics_table.csv")
         data_yaml_path = Path(args.data_yaml)
         dataset_export_name = data_yaml_path.parent.name if data_yaml_path.name == "dataset.yaml" else data_yaml_path.stem
+        weights_path = Path(args.weights)
         metadata = {
             "model_family": "yolo",
             "model_variant": infer_model_variant_from_weights(args.weights),
@@ -132,7 +197,9 @@ def main() -> None:
             "unclear_policy": args.unclear_policy,
             "dataset_export_name": dataset_export_name,
             "data_yaml": str(data_yaml_path),
+            "weights_file_size_mb": round(weights_path.stat().st_size / (1024**2), 3) if weights_path.exists() else None,
         }
+        metadata.update(_collect_runtime_info())
         meta_json, meta_csv = save_run_metadata_artifacts(
             metadata=metadata,
             out_json_path=out_dir / "run_metadata.json",
@@ -158,9 +225,17 @@ def main() -> None:
         )
         out_json = save_rtdetr_metrics_json(metrics=metrics, out_path=out_dir / "metrics.json")
         metrics_dict = json.loads(out_json.read_text())
+        metrics_dict = _add_derived_speed_metrics(metrics_dict)
+        if metrics_dict.get("params_total") is None and metrics_dict.get("flops_g") is None:
+            try:
+                metrics_dict.update(get_rtdetr_model_size_stats_from_weights(args.weights))
+            except Exception:
+                pass
+        out_json.write_text(json.dumps(metrics_dict, indent=2))
         out_csv = save_metrics_table_csv(metrics_dict, out_dir / "metrics_table.csv")
         data_yaml_path = Path(args.data_yaml)
         dataset_export_name = data_yaml_path.parent.name if data_yaml_path.name == "dataset.yaml" else data_yaml_path.stem
+        weights_path = Path(args.weights)
         metadata = {
             "model_family": "rtdetr",
             "model_variant": infer_model_variant_from_weights(args.weights),
@@ -173,7 +248,9 @@ def main() -> None:
             "unclear_policy": args.unclear_policy,
             "dataset_export_name": dataset_export_name,
             "data_yaml": str(data_yaml_path),
+            "weights_file_size_mb": round(weights_path.stat().st_size / (1024**2), 3) if weights_path.exists() else None,
         }
+        metadata.update(_collect_runtime_info())
         meta_json, meta_csv = save_run_metadata_artifacts(
             metadata=metadata,
             out_json_path=out_dir / "run_metadata.json",

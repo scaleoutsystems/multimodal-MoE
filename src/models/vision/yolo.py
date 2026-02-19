@@ -374,3 +374,15 @@ def save_yolo_training_summary(
 
     out_csv_path = save_metrics_table_csv(summary, out_csv_path)
     return out_json_path, out_csv_path
+
+
+def get_yolo_model_size_stats_from_weights(weights_path: str) -> dict:
+    """
+    Load YOLO weights and return best-effort model size stats.
+
+    I use this as a fallback during eval when metrics objects don't expose
+    params/FLOPs directly.
+    """
+    YOLO = _import_ultralytics_yolo()
+    model = YOLO(weights_path)
+    return _extract_yolo_model_size_stats(model)

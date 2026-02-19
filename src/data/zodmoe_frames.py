@@ -1,9 +1,18 @@
 # src/data/zodmoe_frames.py -- builds frames dataset for ZODMoE.
 """
-Defines config (ZODMoEDataConfig) and dataset (ZODMoEVisionDataset) for ZODMoE single frames.
-Reads split CSV (train.csv, val.csv, test.csv) and parquet index (ZODmoe_frames.parquet) to create a dataset.
-Loads image files with PIL, applies transforms to convert to tensors, and returns (image_tensor, label_tensor)
-in __getitem__().
+Defines config (`ZODMoEDataConfig`) and a PyTorch Dataset class
+(`ZODMoEVisionDataset`) for single-frame vision experiments.
+
+This module builds a `torch.utils.data.Dataset` object from:
+- split CSVs (train/val/test frame IDs)
+- a frame-level parquet index
+
+For each sample, `__getitem__()`:
+- resolves and opens the image with PIL
+- applies optional torchvision-style transforms
+- returns `(image_tensor, label_tensor)`
+
+This Dataset can be passed directly to a PyTorch `DataLoader`.
 """
 from __future__ import annotations
 
@@ -158,21 +167,3 @@ class ZODMoEVisionDataset(Dataset):
         y_t = torch.tensor(y, dtype=self.dtype_label)
 
         return img_t, y_t
-
-
-def make_basic_transform(image_size: int = 224):
-    """
-    Convenience helper (only if torchvision is installed).
-    Keeps this module usable even without torchvision.
-    """
-    try:
-        from torchvision import transforms
-    except Exception as e:
-        raise ImportError("torchvision is required for make_basic_transform()") from e
-
-    return transforms.Compose([
-        transforms.Resize((image_size, image_size)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=(0.485, 0.456, 0.406),
-                             std=(0.229, 0.224, 0.225)),
-    ])

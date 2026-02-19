@@ -160,3 +160,33 @@ def save_rtdetr_training_summary(
         out_csv_path=out_csv_path,
         results=results,
     )
+
+
+def get_rtdetr_model_size_stats_from_weights(weights_path: str) -> dict:
+    """
+    Load RT-DETR weights and return best-effort model size stats.
+    """
+    RTDETR = _import_ultralytics_rtdetr()
+    model = RTDETR(weights_path)
+    stats = {
+        "params_total": None,
+        "params_trainable": None,
+        "flops_g": None,
+    }
+    if model is None or not hasattr(model, "model"):
+        return stats
+
+    pt_model = model.model
+    try:
+        stats["params_total"] = int(sum(p.numel() for p in pt_model.parameters()))
+        stats["params_trainable"] = int(sum(p.numel() for p in pt_model.parameters() if p.requires_grad))
+    except Exception:
+        pass
+    for attr in ("flops", "flops_g", "GFLOPs"):
+        if hasattr(pt_model, attr):
+            try:
+                stats["flops_g"] = float(getattr(pt_model, attr))
+                break
+            except Exception:
+                pass
+    return stats
