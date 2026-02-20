@@ -1,0 +1,288 @@
+Uppsala University
+MASTER THESIS SPECIFICATION
+Exploring Mixture-of-Experts Models for Enhancing
+Multi-Modal Perception in Autonomous Vehicles
+Student:
+Adam Rokah
+adamrokah96@gmail.com
+Supervisors:
+Salman Toor, Scaleout Systems
+salman@scaleoutsystems.com
+Viktor Valadi, Scaleout Systems
+viktor@scaleoutsystems.com
+Subject Reviewer:
+Department of Information Technology, Uppsala University
+Department of Information Technology
+January 5, 2026
+1 19961109-7156
+
+Uppsala University
+Contents
+1 Title 3
+2 Abstract 3
+3 Background 3
+4 Research Questions 4
+5 Description of Tasks 4
+6 Methods 5
+7 Relevant Courses 6
+8 Delimitations 7
+9 Time Plan 8
+2 19961109-7156
+
+Uppsala University
+1 Title
+Exploring Mixture-of-Experts Models for Enhancing Multi-Modal Perception
+in Autonomous Vehicles
+2 Abstract
+This thesis investigates how Mixture-of-Experts (MoE) architectures can
+improve multi-modal perception in autonomous driving using the Zenseact
+Open Dataset (ZOD). Unlike curated academic datasets, ZOD represents
+a large-scale and heterogeneous real-world environment, making it an ideal
+testbed for evaluating robust and efficient perception systems. The project
+focuses on a single Mixture-of-Experts (MoE) fusion layer within a percep-
+tion network, responsible for interpreting LiDAR–Camera information and
+comparing alternative strategies for incorporating multi-modality within this
+layer. The primary perception task will be pedestrian prediction (binary
+classification of pedestrian presence), with extensions to trajectory or ob-
+ject detection explored if time permits. The work aims to identify effective
+approaches to fusing heterogeneous modalities and leveraging context-aware
+gating to balance perception accuracy, computational efficiency, and scala-
+bility in real-world autonomous driving scenarios.
+3 Background
+The development of autonomous vehicles increasingly depends on large-scale
+perception systems that integrate heterogeneous sensor data such as LiDAR
+and Camera. Traditional centralized fusion models face major challenges:
+raw data from vehicles are privacy-sensitive and costly to transmit, while
+model retraining across varying sensor configurations and environments is
+inefficient. Within the broader Fleet Intelligence initiative by Scaleout Sys-
+tems, AI Sweden, and Zenseact, Mixture-of-Experts (MoE) architectures are
+being explored as a modular complement to federated learning—supporting
+distributed, privacy-preserving model updates while enabling specialization
+across driving contexts and sensor types. Unlike monolithic networks, MoE
+architectures allow experts to specialize for specific modalities or conditions
+while remaining part of a shared global system. This thesis investigates
+3 19961109-7156
+
+Uppsala University
+how multi-modal fusion can be effectively achieved within an MoE frame-
+work by comparing alternative designs for the LiDAR–Camera fusion layer
+and examining how context-aware gating influences efficiency, robustness,
+and adaptability under real-world driving conditions. The proposed design
+is explicitly structured to remain extensible, enabling future integration of
+additional modalities without full retraining.
+4 Research Questions
+• How do different multi-modal fusion strategies within an MoE layer
+(e.g. joint-modality, modality-specific, fusion-then-MoE) affect percep-
+tion accuracy and computational efficiency?
+• To what extent can a context-aware gating mechanism within the MoE
+architecture be leveraged to improve multi-modal perception robust-
+ness, adaptability, and overall accuracy under diverse driving condi-
+tions?
+5 Description of Tasks
+• Explore the Zenseact Open Dataset (ZOD) to understand its struc-
+ture, modality organization (LiDAR and Camera), and challenges for
+training multi-modal perception models. Prepare data splits and stan-
+dardized pipelines for the pedestrian prediction task.
+• Implement baseline fusion architecture(s) (e.g., early and late fusion)
+using LiDAR and Camera data for pedestrian prediction, establishing
+baseline metrics for perception accuracy and computational efficiency.
+• Design and implement alternative Mixture-of-Experts (MoE) fusion-
+layer strategies to study how multi-modality can be incorporated within
+an MoE framework:
+(a) Experts take fused LiDAR–Camera features as input (joint-modality
+experts).
+(b) Experts specialize per modality, with fusion occurring at the ex-
+pert outputs.
+4 19961109-7156
+
+Uppsala University
+(c) A fusion layer first combines modality-specific representations, fol-
+lowed by an MoE layer operating on the fused features.
+• Integrate and evaluate context-aware gating mechanisms within each
+fusion-layer design to analyze how contextual signals influence expert
+selection, robustness, and computational efficiency.
+• Investigate loss and regularization strategies (e.g., load-balancing, entropy-
+based, or KL-based terms) to promote stable and balanced expert uti-
+lization during training.
+• Compare all models with baselines in terms of perception accuracy,
+computational efficiency (e.g., FLOPs, inference time), and adaptabil-
+ity under varying environmental conditions in ZOD.
+• Document experimental design, results, and if time permits, implemen-
+tation details in a reproducible framework.
+6 Methods
+The study will follow a structured experimental approach combining baseline
+implementation, Mixture-of-Experts (MoE) design, and controlled compari-
+son across fusion strategies.
+• Dataset: The Zenseact Open Dataset (ZOD) will serve as the pri-
+mary benchmark. It provides multi-modal sensor data from real-world
+driving scenes, including synchronized LiDAR and Camera recordings
+across diverse weather, lighting, and environmental contexts. A sub-
+set of this dataset will be prepared for the pedestrian prediction task
+(binary classification of pedestrian presence).
+• Baseline architectures: Standard multi-modal fusion baselines—such
+as early and late fusion networks—will be implemented in PyTorch to
+establish reference performance and efficiency metrics.
+• Mixture-of-Experts fusion designs: The work will focus on a sin-
+gle MoE fusion layer that integrates LiDAR–Camera representations.
+Three alternative fusion configurations will be compared:
+5 19961109-7156
+
+Uppsala University
+1. Joint-modality experts: Experts receive fused LiDAR + Cam-
+era features.
+2. Modality-specific experts: Each expert processes one modal-
+ity; fusion occurs at the output stage.
+3. Fusion-then-MoE: Modality-specific encoders are fused first,
+followed by an MoE layer operating on the combined represen-
+tation.
+These setups allow systematic evaluation of how fusion design/placement
+affects performance, specialization, and extensibility.
+• Context-aware gating: Each MoE design will include a gating mech-
+anism that dynamically weights expert contributions based on contex-
+tual cues such as lighting, occlusion, or scene complexity. The study
+will analyze how this context awareness influences robustness, adapt-
+ability, and computational efficiency.
+• Training and regularization: Standard optimization practices (e.g.,
+Adam optimizer, early stopping) will be used. Regularization strategies
+such as load-balancing, entropy-based, or KL-divergence terms will be
+explored to encourage stable and diverse expert utilization.
+• Evaluation metrics: Model performance will be assessed in terms
+of perception accuracy, robustness under varying environmental con-
+ditions, computational efficiency (e.g., FLOPs, inference time), and
+gating behavior (e.g., expert activation diversity).
+• Analysis: Experiments will quantify trade-offs between fusion strat-
+egy, context-aware gating, and computational cost. Qualitative analy-
+sis (e.g., visualization of gating weights and expert activations) will be
+performed to interpret learned specialization patterns.
+7 Relevant Courses
+• Project in Data Science — focused on the exploration of Mixture-of-
+Experts architectures
+• Advanced Probabilistic Machine Learning
+6 19961109-7156
+
+Uppsala University
+• Deep Learning
+• Advanced Applied Deep Learning in Physics and Engineering
+• Data Engineering I
+• Foundations of Data Science
+• Statistical Machine Learning
+8 Delimitations
+• The primary perception task is pedestrian prediction (binary presence).
+Additional tasks (e.g., trajectory prediction or object detection) will be
+explored only if time permits.
+• The study uses LiDAR and Camera data from the Zenseact Open
+Dataset (ZOD); Radar or other modalities are out of scope for im-
+plementation, though architectural extensibility will be discussed con-
+ceptually, and extensibility may be tested if time permits.
+• The work focuses on evaluating Mixture-of-Experts (MoE)fusion archi-
+tectures across heterogeneous sensing conditions (e.g., LiDAR–Camera
+configurations, weather, lighting), rather than scaling the number of
+experts.
+• The MoE architecture will use flat (single-layer) expert routing; hier-
+archical variants are considered out of scope unless time permits.
+• Evaluation emphasizes computational efficiency, perception accuracy,
+robustness, and interpretability of gating/expert utilization.
+• While the MoE design remains conceptually compatible with federated
+learning, integrating FL systems and communication protocols is out-
+side the thesis scope.
+7 19961109-7156
+
+Uppsala University
+9 Time Plan
+The master’s thesis spans approximately 20 weeks. The schedule below out-
+lines the main milestones and deliverables, aligned with the scope and tasks,
+corresponding to the official study period 2026-01-19 – 2026-06-07 Doc-
+umentation and thesis writing are conducted continuously throughout the
+project, with dedicated consolidation phases toward the end.
+• Weeks 1–2 (2026-01-19 – 2026-02-01): Preparation and Dataset
+Exploration
+– Conduct literature review on multi-modal perception and Mixture-
+of-Experts (MoE) architectures.
+– Explore the Zenseact Open Dataset (ZOD), focusing on LiDAR
+and Camera organization, environmental diversity, and annota-
+tion formats.
+– Define preprocessing pipeline and prepare standardized data splits
+for the pedestrian prediction task.
+• Weeks 3–4 (2026-02-02 – 2026-02-15): Baseline Implementa-
+tion and Evaluation
+– Implement one baseline multi-modal fusion model (e.g., early or
+late fusion) for the pedestrian prediction task.
+– Run initial experiments to establish baseline metrics for percep-
+tion accuracy, computational efficiency, and robustness under vary-
+ing ZOD conditions.
+– Document experimental design and baseline results.
+• Weeks 5–6 (2026-02-16 – 2026-03-01): MoE Framework Setup
+– Build the shared MoE infrastructure: expert modules, gating
+module, routing utilities (e.g., Top-k routing), and load-balancing
+terms.
+– Integrate MoE components with the baseline architecture.
+– Verify stability on a small subset of data using a simple initial
+fusion wiring (e.g., a minimal fusion-then-MoE setup).
+8 19961109-7156
+
+Uppsala University
+– This establishes a reliable foundation that all subsequent fusion-
+layer variants can reuse.
+• Weeks 7–10 (2026-03-02 – 2026-03-29): MoE Fusion Design
+Experiments
+– Implement and compare alternative MoE fusion configurations:
+∗ Joint-modality experts (experts receive fused LiDAR + Cam-
+era features)
+∗ Modality-specific experts (each expert processes one modal-
+ity; fusion occurs at expert outputs)
+∗ Fusion-then-MoE (modality encoders fuse features first; MoE
+operates on fused representation)
+– For each design:
+∗ Train and evaluate across diverse ZOD conditions (weather,
+lighting, occlusion).
+∗ Analyze performance trade-offs in perception accuracy, com-
+putational cost, and expert specialization patterns.
+∗ Log gating behavior to study routing stability.
+– Document experimental design and intermediate results.
+• Weeks 11–13 (2026-03-30 – 2026-04-19): Context-Aware Gat-
+ing and Regularization
+– Integrate context-aware gating using both explicit scene metadata
+(e.g., lighting, weather, occlusion) and implicit cues from encoder
+representations.
+– Test regularization strategies such as load-balancing, entropy penal-
+ties, and KL-based diversity terms.
+– Conduct ablation studies on gating inputs and regularization strength.
+– Compare how context-awareness affects robustness, adaptability,
+and computational efficiency.
+– Document experimental design and intermediate results.
+• Weeks 14–16 (2026-04-20 – 2026-05-10): Comprehensive Eval-
+uation and Comparison
+9 19961109-7156
+
+Uppsala University
+– Compare MoE variants with baseline models using key metrics:
+∗ Perception accuracy
+∗ Computational efficiency (inference time, FLOPs)
+∗ Routing stability
+∗ Robustness under heterogeneous driving conditions
+– Analyze trade-offs between modularity (b), cross-modal coordina-
+tion (a/c), and real-world stability.
+– Prepare consolidated experimental tables, diagrams, and gating
+visualizations.
+– Document experimental design and consolidated results.
+• Weeks 17–18 (2026-05-11 – 2026-05-24): Documentation and
+Thesis Writing (Part I)
+– Document the experimental setup, MoE designs, and key evalua-
+tion procedures.
+– Draft the methodology and results chapters.
+– If time permits, evolve the project into a clean, reproducible MoE
+codebase with modular training scripts, configuration files, and
+documentation.
+– Begin synthesizing insights on fusion-layer design choices and context-
+aware gating behavior.
+• Weeks 19–20 (2026-05-25 – 2026-06-07): Thesis Writing (Part
+II) and Finalization
+– Finalize analysis, discussion, and conclusions.
+– Prepare presentation slides and summary visualizations.
+– Complete proofreading, formatting, and final thesis submission.
+References
+[1] Scaleout Systems, “Fleet Intelligence with Mixture of Experts and
+Federated Learning,” Scaleout Systems Blog , 2023. [Online]. Available:
+https://www.scaleoutsystems.com/post/fleet-intelligence-with-mixture-
+of-experts-federated-learning. [Accessed: 6-Nov-2025].
+10 19961109-7156
