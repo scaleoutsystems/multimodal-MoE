@@ -14,6 +14,8 @@ import platform
 import re
 import socket
 import subprocess
+import sys
+import threading
 import time
 from typing import Any
 
@@ -36,7 +38,11 @@ class RtdetrThirdPartyTrainConfig:
     seed: int = 0
     workers: int = 8
     num_classes: int = 1
+    grad_accum_steps: int = 1
+    print_freq: int = 100
+    use_tqdm: bool = True
     use_amp: bool = True
+    disable_extra_geom_augs: bool = True
 
 
 def _repo_root() -> Path:
@@ -66,16 +72,34 @@ def _write_runtime_config(
     batch: int,
     workers: int,
     num_classes: int,
+    grad_accum_steps: int,
+    print_freq: int,
+    use_tqdm: bool,
+    disable_extra_geom_augs: bool,
 ) -> Path:
     """
     Write a tiny override config that includes a model config and replaces dataset/runtime knobs.
     """
+    # Keep fixed-size training/eval resolution while optionally disabling
+    # RT-DETR-specific random geometric transforms for fair YOLO comparisons.
+    train_policy: dict[str, Any] = {"name": "default"}
+    if disable_extra_geom_augs:
+        train_policy = {
+            "name": "stop_epoch",
+            "epoch": 0,
+            "ops": ["RandomZoomOut", "RandomIoUCrop"],
+        }
+
     config_obj: dict[str, Any] = {
         "__include__": [str(Path(base_config).resolve())],
         "output_dir": str(Path(output_dir).resolve()),
         "epoches": int(epochs),  # NOTE: upstream key is intentionally "epoches".
         "num_classes": int(num_classes),
-        "remap_mscoco_category": False,
+        "grad_accum_steps": max(1, int(grad_accum_steps)),
+        "print_freq": max(1, int(print_freq)),
+        "use_tqdm": bool(use_tqdm),
+        # COCO export uses category_id=1 for pedestrian; remap to 0-based labels.
+        "remap_mscoco_category": True,
         "eval_spatial_size": [int(img_h), int(img_w)],
         "train_dataloader": {
             "dataset": {
@@ -91,10 +115,11 @@ def _write_runtime_config(
                         {"type": "ConvertPILImage", "dtype": "float32", "scale": True},
                         {"type": "ConvertBoxes", "fmt": "cxcywh", "normalize": True},
                     ],
+                    "policy": train_policy,
                 },
             },
-            # Disable square multiscale collate behavior from upstream include.
-            "collate_fn": {"type": "BatchImageCollateFunction"},
+            # Explicitly disable inherited multiscale collate settings.
+            "collate_fn": {"type": "BatchImageCollateFunction", "scales": None, "stop_epoch": 0},
             "total_batch_size": int(batch),
             "num_workers": int(workers),
         },
@@ -120,12 +145,43 @@ def _write_runtime_config(
 
 
 def _run_subprocess(command: list[str], cwd: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(
+    proc = subprocess.Popen(
         command,
         cwd=str(cwd),
         text=True,
-        capture_output=True,
-        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        bufsize=1,
+    )
+
+    stdout_chunks: list[str] = []
+    stderr_chunks: list[str] = []
+
+    def _forward(stream, chunks: list[str], *, is_stderr: bool) -> None:
+        if stream is None:
+            return
+        for line in iter(stream.readline, ""):
+            chunks.append(line)
+            if is_stderr:
+                print(line, end="", file=sys.stderr, flush=True)
+            else:
+                print(line, end="", flush=True)
+        stream.close()
+
+    t_out = threading.Thread(target=_forward, args=(proc.stdout, stdout_chunks), kwargs={"is_stderr": False}, daemon=True)
+    t_err = threading.Thread(target=_forward, args=(proc.stderr, stderr_chunks), kwargs={"is_stderr": True}, daemon=True)
+    t_out.start()
+    t_err.start()
+
+    returncode = proc.wait()
+    t_out.join()
+    t_err.join()
+
+    return subprocess.CompletedProcess(
+        args=command,
+        returncode=returncode,
+        stdout="".join(stdout_chunks),
+        stderr="".join(stderr_chunks),
     )
 
 
@@ -153,6 +209,72 @@ def _parse_coco_summary_from_stdout(stdout: str) -> dict[str, float | None]:
             except Exception:
                 metrics[key] = None
     return metrics
+
+
+def _load_json(path: str | Path) -> dict[str, Any]:
+    p = Path(path)
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return {}
+
+
+def _derive_pr_payload_from_eval_pth(eval_pth_path: Path) -> tuple[list[dict[str, Any]] | None, float | None, float | None]:
+    """
+    Build Ultralytics-like PR payload and one operating point from COCO eval tensors.
+    """
+    if not eval_pth_path.exists():
+        return None, None, None
+
+    try:
+        import numpy as np  # type: ignore
+        import torch  # type: ignore
+    except Exception:
+        return None, None, None
+
+    try:
+        raw = torch.load(str(eval_pth_path), map_location="cpu")
+        precision = np.asarray(raw.get("precision"))  # [T, R, K, A, M]
+        params = raw.get("params")
+        rec_thrs = np.asarray(getattr(params, "recThrs", []), dtype=float)  # [R]
+        iou_thrs = np.asarray(getattr(params, "iouThrs", []), dtype=float)  # [T]
+    except Exception:
+        return None, None, None
+
+    if precision.ndim != 5 or rec_thrs.ndim != 1 or rec_thrs.size == 0:
+        return None, None, None
+    if iou_thrs.ndim != 1 or iou_thrs.size == 0:
+        return None, None, None
+
+    iou_idx = int(np.argmin(np.abs(iou_thrs - 0.5)))
+    # area idx 0 = all, maxDet idx -1 = 100 in standard COCO layout.
+    p_curve = precision[iou_idx, :, 0, 0, -1].astype(float)
+    valid = p_curve >= 0
+    if not bool(np.any(valid)):
+        return None, None, None
+
+    x = rec_thrs[valid].astype(float)
+    y = p_curve[valid].astype(float)
+    if x.size == 0 or y.size == 0:
+        return None, None, None
+
+    f1 = (2.0 * x * y) / (x + y + 1e-12)
+    best_idx = int(np.argmax(f1))
+    precision_at_best_f1 = float(y[best_idx])
+    recall_at_best_f1 = float(x[best_idx])
+
+    curves_results = [
+        {
+            "name": "precision-recall",
+            "x": x.tolist(),
+            "y": y.tolist(),
+            "x_title": "Recall",
+            "y_title": "Precision",
+        }
+    ]
+    return curves_results, precision_at_best_f1, recall_at_best_f1
 
 
 def _collect_runtime_info() -> dict:
@@ -197,6 +319,10 @@ def train_rtdetr_thirdparty(cfg: RtdetrThirdPartyTrainConfig) -> dict[str, Any]:
         batch=int(cfg.batch),
         workers=int(cfg.workers),
         num_classes=int(cfg.num_classes),
+        grad_accum_steps=int(cfg.grad_accum_steps),
+        print_freq=int(cfg.print_freq),
+        use_tqdm=bool(cfg.use_tqdm),
+        disable_extra_geom_augs=bool(cfg.disable_extra_geom_augs),
     )
 
     command = [
@@ -281,6 +407,10 @@ def eval_rtdetr_thirdparty(
         batch=int(batch),
         workers=int(workers),
         num_classes=int(num_classes),
+        grad_accum_steps=1,
+        print_freq=10,
+        use_tqdm=True,
+        disable_extra_geom_augs=True,
     )
 
     command = [
@@ -311,16 +441,30 @@ def eval_rtdetr_thirdparty(
             f"See logs: {eval_dir / 'stdout_eval.log'} and {eval_dir / 'stderr_eval.log'}"
         )
 
+    ann_json = _load_json(val_ann_json)
+    num_eval_images = len(ann_json.get("images", [])) if isinstance(ann_json, dict) else 0
+    speed_ms_per_img = (float(elapsed_s) * 1000.0 / float(num_eval_images)) if num_eval_images > 0 else None
+
+    curves_results, precision_from_curve, recall_from_curve = _derive_pr_payload_from_eval_pth(eval_dir / "eval.pth")
     metrics = _parse_coco_summary_from_stdout(proc.stdout or "")
+    if metrics.get("precision") is None:
+        metrics["precision"] = precision_from_curve
+    if metrics.get("recall") is None:
+        metrics["recall"] = recall_from_curve
     metrics.update(
         {
             "split": split,
             "speed_total_s_eval_run": float(elapsed_s),
-            "speed_total_ms_per_img": None,
-            "fps_end_to_end": None,
+            "speed_total_ms_per_img": speed_ms_per_img,
+            "speed_preprocess_ms_per_img": None,
+            "speed_inference_ms_per_img": speed_ms_per_img,
+            "speed_postprocess_ms_per_img": None,
+            "fps_end_to_end": (1000.0 / speed_ms_per_img) if speed_ms_per_img and speed_ms_per_img > 0 else None,
+            "fps_inference_only": (1000.0 / speed_ms_per_img) if speed_ms_per_img and speed_ms_per_img > 0 else None,
             "params_total": None,
             "params_trainable": None,
             "flops_g": None,
+            "curves_results": curves_results if curves_results is not None else [],
         }
     )
     return metrics

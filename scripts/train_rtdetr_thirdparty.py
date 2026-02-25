@@ -1,5 +1,30 @@
 """
 Train RT-DETRv2 via official third-party PyTorch implementation.
+
+cd /home/edgelab/multimodal-MoE
+conda activate multimodal-moe
+
+MKL_THREADING_LAYER=GNU OMP_NUM_THREADS=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+example run: 
+FIRST: 
+MKL_THREADING_LAYER=GNU OMP_NUM_THREADS=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+THEN: 
+python -m scripts.train_rtdetr_thirdparty \
+  --model-tier l \
+  --train-img-dir "/home/edgelab/multimodal-MoE/outputs/exports/coco/pedestrian_v1_exclude_unclear/images/train" \
+  --train-ann-json "/home/edgelab/multimodal-MoE/outputs/exports/coco/pedestrian_v1_exclude_unclear/annotations/instances_train.json" \
+  --val-img-dir "/home/edgelab/multimodal-MoE/outputs/exports/coco/pedestrian_v1_exclude_unclear/images/val" \
+  --val-ann-json "/home/edgelab/multimodal-MoE/outputs/exports/coco/pedestrian_v1_exclude_unclear/annotations/instances_val.json" \
+  --img-h 704 --img-w 1248 \
+  --epochs 1 \
+  --batch 2 \
+  --grad-accum-steps 8 \
+  --device cuda:0 \
+  --seed 0 \
+  --workers 4 \
+  --num-classes 1 \
+  --use-amp \
+  --run-name "rtdetrv2_l_e1_smoke_1248x704_p10_noaug_seed0_fix3_b2xacc8"
 """
 
 from __future__ import annotations
@@ -37,7 +62,7 @@ DEFAULT_BASE_CONFIG_M = (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train RT-DETRv2 (third-party) baseline detector.")
-    parser.add_argument("--model-tier", choices=["l", "m"], default="l")
+    parser.add_argument("--model-tier", choices=["l", "m"], default="m")
     parser.add_argument("--base-config", type=str, default=None, help="Optional explicit RT-DETRv2 config path.")
     parser.add_argument("--train-img-dir", type=str, required=True)
     parser.add_argument("--train-ann-json", type=str, required=True)
@@ -51,6 +76,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--num-classes", type=int, default=1)
+    parser.add_argument(
+        "--grad-accum-steps",
+        type=int,
+        default=1,
+        help="Number of micro-batches to accumulate before optimizer step.",
+    )
+    parser.add_argument(
+        "--print-freq",
+        type=int,
+        default=100,
+        help="Training log print frequency in iterations.",
+    )
+    parser.add_argument(
+        "--tqdm",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable/disable tqdm progress bar for training iterations.",
+    )
     parser.add_argument("--run-name", type=str, default="rtdetrv2_l_thirdparty")
     parser.add_argument("--unclear-policy", type=str, default="exclude_unclear")
     parser.add_argument(
@@ -58,6 +101,15 @@ def parse_args() -> argparse.Namespace:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Enable/disable automatic mixed precision.",
+    )
+    parser.add_argument(
+        "--disable-extra-geom-augs",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Disable RT-DETR geometric augs that YOLO no-geom runs do not use "
+            "(e.g., RandomZoomOut/RandomIoUCrop), while keeping fixed resize."
+        ),
     )
     return parser.parse_args()
 
@@ -92,7 +144,11 @@ def main() -> None:
         seed=args.seed,
         workers=args.workers,
         num_classes=args.num_classes,
+        grad_accum_steps=max(1, int(args.grad_accum_steps)),
+        print_freq=max(1, int(args.print_freq)),
+        use_tqdm=bool(args.tqdm),
         use_amp=bool(args.use_amp),
+        disable_extra_geom_augs=bool(args.disable_extra_geom_augs),
     )
 
     print("Starting third-party RT-DETRv2 training with config:")
@@ -129,6 +185,7 @@ def main() -> None:
         "resolved_config_path": str(result["resolved_config_path"]),
         "best_weights_path": str(result["best_weights_path"]),
         "last_weights_path": str(result["last_weights_path"]),
+        "disable_extra_geom_augs": bool(args.disable_extra_geom_augs),
     }
     metadata.update(collect_runtime_info())
     meta_json, meta_csv = save_rtdetr_thirdparty_run_metadata(metadata=metadata, out_dir=eval_dir)

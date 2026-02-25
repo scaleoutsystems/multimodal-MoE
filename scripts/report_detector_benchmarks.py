@@ -96,6 +96,25 @@ def _pick_first_numeric(row: dict[str, Any], keys: list[str]) -> float | None:
     return None
 
 
+def _plot_label_from_row(row: dict[str, Any]) -> str:
+    """
+    Build a stable display label for plots.
+
+    Prefer run_name so labels match experiment folders and avoid opaque values
+    like "best"/"last" from checkpoint filenames.
+    """
+    run_name = row.get("run_name")
+    if isinstance(run_name, str) and run_name.strip():
+        return run_name.strip()
+    model_variant = row.get("model_variant")
+    if isinstance(model_variant, str) and model_variant.strip():
+        return model_variant.strip()
+    model_family = row.get("model_family")
+    if isinstance(model_family, str) and model_family.strip():
+        return model_family.strip()
+    return "unknown_run"
+
+
 def _collect_rows(eval_root: Path, families: set[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     rows: list[dict[str, Any]] = []
     pr_curve_rows: list[dict[str, Any]] = []
@@ -115,8 +134,8 @@ def _collect_rows(eval_root: Path, families: set[str]) -> tuple[list[dict[str, A
             metadata = _read_json(run_dir / "run_metadata.json")
             train_summary = _read_json(run_dir / "train_summary.json")
 
-            # Skip directories with no relevant artifacts.
-            if not metrics and not metadata and not train_summary:
+            # For benchmark plots/tables we require eval metrics to be present.
+            if not metrics:
                 continue
 
             row: dict[str, Any] = {}
@@ -197,7 +216,7 @@ def _save_speed_vs_accuracy_plot(df: pd.DataFrame, out_path: Path) -> None:
     plt.figure(figsize=(8, 6))
     plt.scatter(usable["inference_ms_per_img"], usable["mAP50_95"], alpha=0.85)
     for _, r in usable.iterrows():
-        label = str(r.get("model_variant") or r.get("run_name"))
+        label = _plot_label_from_row(r.to_dict())
         plt.annotate(label, (r["inference_ms_per_img"], r["mAP50_95"]), fontsize=8, alpha=0.9)
     plt.xlabel("Inference time (ms / image)")
     plt.ylabel("mAP50-95")
@@ -215,7 +234,7 @@ def _save_precision_recall_plot(df: pd.DataFrame, out_path: Path) -> None:
     plt.figure(figsize=(8, 6))
     plt.scatter(usable["recall_at_default_conf"], usable["precision_at_default_conf"], alpha=0.85)
     for _, r in usable.iterrows():
-        label = str(r.get("model_variant") or r.get("run_name"))
+        label = _plot_label_from_row(r.to_dict())
         plt.annotate(
             label,
             (r["recall_at_default_conf"], r["precision_at_default_conf"]),
@@ -247,8 +266,8 @@ def _save_pr_curve_overlay(pr_curves_df: pd.DataFrame, out_path: Path) -> bool:
         grp_sorted = grp.sort_values("x")
         if grp_sorted.empty:
             continue
-        label_variant = model_variant if isinstance(model_variant, str) and model_variant else run_name
-        label = f"{label_variant} | {curve_name}" if isinstance(curve_name, str) and curve_name else str(label_variant)
+        label_variant = run_name if isinstance(run_name, str) and run_name else model_variant
+        label = str(label_variant)
         plt.plot(grp_sorted["x"], grp_sorted["y"], linewidth=1.6, alpha=0.9, label=label)
         plotted += 1
     if plotted == 0:
