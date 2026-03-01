@@ -21,6 +21,11 @@ Reasoning for this script:
 ---------------
 The training/eval adapters already save per-run artifacts. This script adds the
 final reporting layer that compares many runs side-by-side.
+
+python -m scripts.report_detector_benchmarks \
+  --eval-root "/home/edgelab/multimodal-MoE/outputs/eval" \
+  --out-dir "/home/edgelab/multimodal-MoE/outputs/eval/reports" \
+  --families yolo rtdetr_thirdparty
 """
 
 from __future__ import annotations

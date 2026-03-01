@@ -1,5 +1,19 @@
 """
 Evaluate RT-DETRv2 via official third-party PyTorch implementation.
+
+python -m scripts.eval_rtdetr_thirdparty \
+  --model-tier l \
+  --weights "/home/edgelab/multimodal-MoE/outputs/runs/rtdetr_thirdparty/rtdetrv2_l_e36_1248x704_p10_noaug_seed0_b8xacc2/best.pth" \
+  --val-img-dir "/home/edgelab/multimodal-MoE/outputs/exports/coco/pedestrian_v1_exclude_unclear/images/val" \
+  --val-ann-json "/home/edgelab/multimodal-MoE/outputs/exports/coco/pedestrian_v1_exclude_unclear/annotations/instances_val.json" \
+  --img-h 704 --img-w 1248 \
+  --batch 16 \
+  --device cuda:0 \
+  --workers 4 \
+  --num-classes 1 \
+  --run-name "rtdetrv2_l_e36_1248x704_p10_noaug_seed0_b8xacc2_eval" \
+  --seed 0 \
+  --unclear-policy exclude_unclear
 """
 
 from __future__ import annotations

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import platform
 import re
@@ -145,6 +146,9 @@ def _write_runtime_config(
 
 
 def _run_subprocess(command: list[str], cwd: Path) -> subprocess.CompletedProcess:
+    # Avoid MKL/libgomp threading-layer crashes when launching third-party tools.
+    env = os.environ.copy()
+    env.setdefault("MKL_THREADING_LAYER", "GNU")
     proc = subprocess.Popen(
         command,
         cwd=str(cwd),
@@ -152,6 +156,7 @@ def _run_subprocess(command: list[str], cwd: Path) -> subprocess.CompletedProces
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         bufsize=1,
+        env=env,
     )
 
     stdout_chunks: list[str] = []
