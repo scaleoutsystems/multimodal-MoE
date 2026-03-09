@@ -50,91 +50,47 @@ def nearest_lidar_filename(frame_dir: Path) -> str | None:
 
     return best_name
 
-
-
-#######FOR VISUALIZING LIDAR DATA #########################################################
-def _xyz_intensity_from_pts(pts: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Extract xyz (N,3) and intensity (N,) from structured or plain arrays."""
-    if not isinstance(pts, np.ndarray):
-        raise TypeError("pts must be a numpy ndarray")
-
-    # Structured array path (expected for ZOD LiDAR .npy)
-    if pts.dtype.names is not None:
-        names = set(pts.dtype.names)
-        required = {"x", "y", "z", "intensity"}
-        if not required.issubset(names):
-            raise ValueError(f"Structured pts is missing required fields: {required - names}")
-
-        xyz = np.stack(
-            [
-                pts["x"].astype(np.float32),
-                pts["y"].astype(np.float32),
-                pts["z"].astype(np.float32),
-            ],
-            axis=1,
-        )
-        intensity = pts["intensity"].astype(np.float32)
-        return xyz, intensity
-
-    # Plain array fallback: [timestamp, x, y, z, intensity, ...]
-    arr = np.asarray(pts)
-    if arr.ndim != 2 or arr.shape[1] < 5:
-        raise ValueError("Plain pts array must have shape (N, >=5): [timestamp, x, y, z, intensity, ...]")
-
-    xyz = arr[:, 1:4].astype(np.float32)
-    intensity = arr[:, 4].astype(np.float32)
-    return xyz, intensity
-
-
-def plot_lidar_bev(
-    pts: np.ndarray,
-    max_points: int = 200_000,
-    seed: int = 0,
-    point_size: float = 0.3,
-    alpha: float = 0.75,
-    cmap: str = "viridis",
-    xlim: tuple[float, float] | None = None,
-    ylim: tuple[float, float] | None = None,
-) -> None:
+### For working with zod sdk
+def make_zodframe_from_raw(frame_dir: Path) -> ZodFrame:
     """
-    input: .npy LidarVelodyne file
-    BEV (x-y) scatter colored by intensity (0..255).
-    input: structured or plain numpy array
-    output: matplotlib figure
+    Build ZodFrame from raw single-frame directory layout.
+    This fixes relative paths in info.json to be frame-local.
     """
-    xyz, intensity = _xyz_intensity_from_pts(pts)
+    info_dict = json.loads((frame_dir / "info.json").read_text())
+    fid = info_dict.get("id", frame_dir.name)
+    prefix = f"single_frames/{fid}/"
 
-    # No downsampling: use all points.
-    xyz_s = xyz
-    inten_s = np.clip(intensity, 0.0, 255.0) / 255.0
+    def fix_path(p):
+        if p is None:
+            return None
+        if p.startswith(prefix):
+            return p[len(prefix):]
+        if p.startswith("single_frames/"):
+            return p.split("/", 2)[-1]
+        return p
 
-    plt.figure(figsize=(9, 9))
-    sc = plt.scatter(
-        xyz_s[:, 0], xyz_s[:, 1],
-        c=inten_s,
-        s=point_size,
-        alpha=alpha,
-        cmap=cmap,
-        linewidths=0,
-    )
+    # top-level paths
+    for k in ["calibration_path", "ego_motion_path", "metadata_path", "oxts_path", "vehicle_data_path"]:
+        if info_dict.get(k) is not None:
+            info_dict[k] = fix_path(info_dict[k])
 
-    plt.axhline(0.0, linewidth=0.8, color="black", alpha=0.6)
-    plt.axvline(0.0, linewidth=0.8, color="black", alpha=0.6)
-    plt.gca().set_aspect("equal", adjustable="box")
+    # annotation paths
+    for ann in info_dict.get("annotations", {}).values():
+        if ann.get("filepath") is not None:
+            ann["filepath"] = fix_path(ann["filepath"])
 
-    if xlim is not None:
-        plt.xlim(xlim)
-    if ylim is not None:
-        plt.ylim(ylim)
+    # camera frame paths
+    for arr in info_dict.get("camera_frames", {}).values():
+        for x in arr:
+            if x.get("filepath") is not None:
+                x["filepath"] = fix_path(x["filepath"])
 
-    plt.title(f"LiDAR BEV (n={len(xyz_s):,})")
-    plt.xlabel("x [m]")
-    plt.ylabel("y [m]")
-    cbar = plt.colorbar(sc)
-    cbar.set_label("intensity (normalized 0..1)")
-    plt.show()
+    # lidar frame paths
+    for arr in info_dict.get("lidar_frames", {}).values():
+        for x in arr:
+            if x.get("filepath") is not None:
+                x["filepath"] = fix_path(x["filepath"])
 
-
-# Example calls:
-plot_lidar_bev(pts, xlim=(-60, 60), ylim=(-60, 60))
-##END OF VISUALIZING LIDAR DATA #########################################################
+    info = Information.from_dict(info_dict)
+    info.convert_paths_to_absolute(str(frame_dir))
+    return ZodFrame(info)
