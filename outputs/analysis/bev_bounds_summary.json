@@ -1,0 +1,90 @@
+{
+  "config": {
+    "dataset_root": "/home/edgelab/zod_dino_data/train2017",
+    "max_frames": 100000,
+    "balance": 0.3,
+    "final_width": 1248,
+    "final_height": 704,
+    "margin_meters": 2.0,
+    "x_max_fixed": 250.0,
+    "grid_resolution": 0.5,
+    "output_dir": "/home/edgelab/multimodal-MoE/outputs/analysis"
+  },
+  "counters": {
+    "total_frames_discovered": 100000,
+    "frames_processed": 100000,
+    "failed_frames": 0,
+    "total_objects": 6895692,
+    "pedestrian_objects": 359177,
+    "pedestrian_objects_with_3d": 264292,
+    "ped_3d_centers_inside_final_fov": 247537,
+    "ped_3d_centers_outside_final_fov": 16746,
+    "ped_3d_centers_behind_camera": 9
+  },
+  "timings_sec": {
+    "total": 4145.027499067131,
+    "frame_loop": 3949.0531519004144,
+    "read_calibration": 2001.01945763221,
+    "compute_intrinsics_and_transforms": 11.17054471373558,
+    "load_annotations": 1928.9363713865168,
+    "object_loop": 7.603056577965617
+  },
+  "artifacts": {
+    "centers_path": "/home/edgelab/multimodal-MoE/outputs/analysis/pedestrian_centers_filtered.parquet",
+    "parquet_saved": true,
+    "summary_path": "/home/edgelab/multimodal-MoE/outputs/analysis/bev_bounds_summary.json",
+    "xy_plot_path": "/home/edgelab/multimodal-MoE/outputs/analysis/pedestrian_centers_xy.png",
+    "bev_plot_path": "/home/edgelab/multimodal-MoE/outputs/analysis/pedestrian_centers_bev.png"
+  },
+  "result": {
+    "stats": {
+      "x_min": 2.987614777545338,
+      "x_max": 299.7797988257432,
+      "x_p99": 151.50441767105482,
+      "x_p999": 197.85267291719828,
+      "y_min": -133.56148551238752,
+      "y_max": 140.03386791047703,
+      "abs_y_max": 140.03386791047703,
+      "abs_y_p99": 58.4377322103211,
+      "abs_y_p999": 86.99082874671114,
+      "abs_y_p9995": 95.74534839242838
+    },
+    "recommended_bounds": {
+      "x_fixed_min": 0.0,
+      "x_fixed_max": 250.0,
+      "y_bound_strict": 142.03386791047703,
+      "y_bound_robust_999": 88.99082874671114,
+      "y_bound_robust_9995": 97.74534839242838,
+      "y_range_strict": [
+        -142.03386791047703,
+        142.03386791047703
+      ],
+      "y_range_robust_999": [
+        -88.99082874671114,
+        88.99082874671114
+      ],
+      "y_range_robust_9995": [
+        -97.74534839242838,
+        97.74534839242838
+      ]
+    },
+    "grid_size_estimates": {
+      "grid_resolution_m": 0.5,
+      "strict": {
+        "nx": 500,
+        "ny": 569,
+        "num_cells": 284500
+      },
+      "robust_999": {
+        "nx": 500,
+        "ny": 356,
+        "num_cells": 178000
+      },
+      "robust_9995": {
+        "nx": 500,
+        "ny": 391,
+        "num_cells": 195500
+      }
+    }
+  }
+}
