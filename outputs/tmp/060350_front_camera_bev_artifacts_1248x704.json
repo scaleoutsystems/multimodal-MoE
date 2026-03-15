@@ -1,0 +1,16 @@
+{
+  "frame_id": "060350",
+  "camera_name": "FC",
+  "saved_image_path": "/home/edgelab/multimodal-MoE/outputs/tmp/060350_front_undistorted_resized_1248x704.png",
+  "npz_path": "/home/edgelab/multimodal-MoE/outputs/tmp/060350_front_camera_bev_artifacts_1248x704.npz",
+  "image_size_wh": [
+    1248,
+    704
+  ],
+  "notes": [
+    "Image is already undistorted and resized.",
+    "K_final matches the saved final image exactly.",
+    "img_aug_matrix is identity by construction.",
+    "Points used with DepthLSSTransform must be in LiDAR frame."
+  ]
+}
