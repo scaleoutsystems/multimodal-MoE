@@ -66,7 +66,7 @@ from zod.constants import AnnotationProject, Anonymization, Camera, Lidar
 from zod.data_classes.frame import ZodFrame
 from zod.data_classes.info import Information
 from zod.data_classes.sensor import LidarData
-from zod.utils.compensation import motion_compensate_pointwise
+from zod.utils.compensation import motion_compensate_scanwise 
 from zod.utils.geometry import transform_points
 from zod.visualization.lidar_on_image import get_3d_transform_camera_lidar
 
@@ -667,7 +667,7 @@ def _build_success_row(
     t0 = perf_counter()
     ego_motion = zod_frame.ego_motion
     lidar_calib = calib.lidars[Lidar.VELODYNE]
-    aligned_lidar = motion_compensate_pointwise(
+    aligned_lidar = motion_compensate_scanwise(
         raw_lidar,
         ego_motion,
         lidar_calib,
