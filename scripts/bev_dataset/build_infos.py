@@ -268,6 +268,9 @@ def make_sample_entry(
     # because our saved LiDAR & boxes are already in ego frame
     lidar2cam = np.linalg.inv(camera2ego).astype(np.float32)
 
+    assert K_final.shape == (3, 3), f"Expected cam2img shape (3,3), got {K_final.shape}"
+    assert lidar2cam.shape == (4, 4), f"Expected lidar2cam shape (4,4), got {lidar2cam.shape}"
+
     # --- labels ---
     raw_instances = load_label(row["label_file_path"])
     instances = [make_instance_entry(inst) for inst in raw_instances]

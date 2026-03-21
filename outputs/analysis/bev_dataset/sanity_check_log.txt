@@ -1,0 +1,53 @@
+Dataset root: /mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/zod_nuscenes
+
+--- Directory structure check ---
+  samples                         OK
+  samples/CAM_FRONT               OK
+  samples/LIDAR_TOP               OK
+  infos                           OK
+  splits                          OK
+  index                           OK
+
+--- Info pickle ---
+  path       : /mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_train.pkl
+  top keys   : ['metainfo', 'data_list']
+  metainfo   : {'classes': ('Pedestrian',), 'version': 'zod_pedestrian_singlecam_singlelidar'}
+  data_list  : 79999 samples
+
+--- Sample entry ---
+  sample_idx : 000000
+  token      : 000000
+  lidar_path : samples/LIDAR_TOP/000000.bin
+  num_pts_feats : 4
+  img_path   : samples/CAM_FRONT/000000.png
+  cam2img    : shape (3, 3)  dtype float32
+  lidar2cam  : shape (4, 4)  dtype float32
+  instances  : 38
+    first bbox_label_3d : 0
+    first bbox_3d       : [100.85086255994976, 16.91167968113973, -0.4299564296968692, 0.591543435193717, 0.7233595586832583, 1.6171658742481, -0.1623363222804579]
+  context    : {'solar_context_bin': 'high_sun(>45)', 'weather_group': 'cloud_like', 'road_type': 'city'}
+
+  image file exists: /mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/zod_nuscenes/samples/CAM_FRONT/000000.png
+  lidar file exists: /mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/zod_nuscenes/samples/LIDAR_TOP/000000.bin
+
+--- LiDAR point cloud ---
+  path  : /mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/zod_nuscenes/samples/LIDAR_TOP/000000.bin
+  shape : (71102, 4)
+  dtype : float32
+  x range : [3.99, 240.59]
+  y range : [-69.08, 118.25]
+  z range : [-2.97, 36.77]
+
+Saved BEV plot → /home/edgelab/multimodal-MoE/outputs/analysis/bev_dataset/bev_sanity_plot.png
+
+==================================================
+SANITY CHECK PASSED
+==================================================
+  Dataset root   : /mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/zod_nuscenes
+  Info pickle    : /mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_train.pkl
+  Sample inspected : 000000
+  LiDAR points   : 71102
+  Instances      : 38
+  BEV plot       : /home/edgelab/multimodal-MoE/outputs/analysis/bev_dataset/bev_sanity_plot.png
+  Log file       : /home/edgelab/multimodal-MoE/outputs/analysis/bev_dataset/sanity_check_log.txt
+==================================================
