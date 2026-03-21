@@ -1,3 +1,4 @@
+# ===== INHERITS FROM LIDAR BASE CONFIG =====
 _base_ = [
     './bevfusion_lidar_voxel0075_second_secfpn_8xb4-cyclic-20e_nus-3d.py'
 ]
@@ -5,6 +6,7 @@ point_cloud_range = [-54.0, -54.0, -5.0, 54.0, 54.0, 3.0]
 input_modality = dict(use_lidar=True, use_camera=True)
 backend_args = None
 
+# ===== MODEL (architecture: lidar + camera + fusion + head) =====
 model = dict(
     type='BEVFusion',
     data_preprocessor=dict(
@@ -12,6 +14,7 @@ model = dict(
         mean=[123.675, 116.28, 103.53],
         std=[58.395, 57.12, 57.375],
         bgr_to_rgb=False),
+    # camera encoder
     img_backbone=dict(
         type='mmdet.SwinTransformer',
         embed_dims=96,
@@ -33,6 +36,7 @@ model = dict(
             checkpoint=  # noqa: E251
             'https://github.com/SwinTransformer/storage/releases/download/v1.0.0/swin_tiny_patch4_window7_224.pth'  # noqa: E501
         )),
+    # camera features
     img_neck=dict(
         type='GeneralizedLSSFPN',
         in_channels=[192, 384, 768],
@@ -42,6 +46,7 @@ model = dict(
         norm_cfg=dict(type='BN2d', requires_grad=True),
         act_cfg=dict(type='ReLU', inplace=True),
         upsample_cfg=dict(mode='bilinear', align_corners=False)),
+    # camera --> BEV view transform
     view_transform=dict(
         type='DepthLSSTransform',
         in_channels=256,
@@ -53,9 +58,12 @@ model = dict(
         zbound=[-10.0, 10.0, 20.0],
         dbound=[1.0, 60.0, 0.5],
         downsample=2),
+    # fusion layer (lidar + camera)
     fusion_layer=dict(
         type='ConvFuser', in_channels=[80, 256], out_channels=256))
 
+# ===== DATA PIPELINE =====
+# ===== TRAIN PIPELINE (how raw data → tensors) =====
 train_pipeline = [
     dict(
         type='BEVLoadMultiViewImageFromFiles',
@@ -171,7 +179,7 @@ test_pipeline = [
             'lidar_path', 'img_path', 'num_pts_feats'
         ])
 ]
-
+# ===== DATASET + DATALOADER ===== this informs what zod datset must look like. 
 train_dataloader = dict(
     dataset=dict(
         dataset=dict(pipeline=train_pipeline, modality=input_modality)))

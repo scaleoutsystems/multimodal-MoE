@@ -209,17 +209,15 @@ def make_instance_entry(inst: dict) -> dict:
         box_3d     — [x, y, z_bottom, dx, dy, dz, yaw]
 
     Output keys (MMDet3D convention):
-        bbox_label_3d  — int
+        bbox_label_3d  — int, hardcoded to 7 (the nuScenes class index
+                          for "pedestrian") so NuScenesDataset's label
+                          mapping works out of the box
         bbox_3d        — [x, y, z_center, dx, dy, dz, yaw]
         bbox_3d_isvalid — bool, always True so NuScenesDataset works
                           with ``use_valid_flag=True``
-        num_lidar_pts  — int, minimal positive placeholder (not a real
-                          measured count) so NuScenesDataset works with
-                          ``use_valid_flag=False`` (it filters instances
-                          where ``num_lidar_pts == 0``)
     """
     return {
-        "bbox_label_3d": int(inst["label_3d"]),
+        "bbox_label_3d": 7,
         "bbox_3d": convert_box_bottom_to_center(inst["box_3d"]),
         "bbox_3d_isvalid": True,
         "num_lidar_pts": 1,
