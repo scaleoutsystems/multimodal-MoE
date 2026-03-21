@@ -209,12 +209,20 @@ def make_instance_entry(inst: dict) -> dict:
         box_3d     — [x, y, z_bottom, dx, dy, dz, yaw]
 
     Output keys (MMDet3D convention):
-        bbox_label_3d — int
-        bbox_3d       — [x, y, z_center, dx, dy, dz, yaw]
+        bbox_label_3d  — int
+        bbox_3d        — [x, y, z_center, dx, dy, dz, yaw]
+        bbox_3d_isvalid — bool, always True so NuScenesDataset works
+                          with ``use_valid_flag=True``
+        num_lidar_pts  — int, minimal positive placeholder (not a real
+                          measured count) so NuScenesDataset works with
+                          ``use_valid_flag=False`` (it filters instances
+                          where ``num_lidar_pts == 0``)
     """
     return {
         "bbox_label_3d": int(inst["label_3d"]),
         "bbox_3d": convert_box_bottom_to_center(inst["box_3d"]),
+        "bbox_3d_isvalid": True,
+        "num_lidar_pts": 1,
     }
 
 
@@ -514,6 +522,23 @@ def main() -> None:
     print(f"Total failures:     {total_fail}")
     if args.limit:
         print(f"(--limit {args.limit} was active)")
+
+    # Quick sanity: confirm new per-instance fields are present
+    for name in ("train", "val", "test"):
+        pkl = out_paths[name]
+        if pkl.exists():
+            with open(pkl, "rb") as f:
+                check = pickle.load(f)
+            dl = check.get("data_list", [])
+            for sample in dl:
+                insts = sample.get("instances", [])
+                if insts:
+                    ex = insts[0]
+                    print(f"\n  Instance field check ({name}, sample {sample['sample_idx']}):")
+                    print(f"    bbox_3d_isvalid : {ex.get('bbox_3d_isvalid', 'MISSING')}")
+                    print(f"    num_lidar_pts   : {ex.get('num_lidar_pts', 'MISSING')}")
+                    break
+
     print("=" * 60)
 
 
