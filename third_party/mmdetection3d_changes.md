@@ -17,8 +17,8 @@ mmcv 2.2.0 and 2.3.0 affect mmdet3d.
 
 ### 2. `projects/BEVFusion/bevfusion/bevfusion.py`
 
-**What:** Added one line in `extract_pts_feat()` to reorder voxel coordinates
-before passing them to the sparse encoder:
+**What (a):** Added one line in `extract_pts_feat()` to reorder voxel
+coordinates before passing them to the sparse encoder:
 
 ```python
 coords = coords[:, [0, 2, 3, 1]]   # (batch, Z, Y, X) → (batch, Y, X, Z)
@@ -31,6 +31,20 @@ is square (1440 × 1440). On ZOD's rectangular grid (896 × 1248) it caused a
 tensor shape mismatch in the detection head heatmap (112 × 156 vs 156 × 112).
 This single-line fix resolves the issue for any non-square grid while
 remaining backward-compatible with NuScenes.
+
+**What (b):** Added a 0-point guard in `voxelize()`:
+
+```python
+if res.shape[0] == 0:
+    res = res.new_zeros(1, res.shape[1])
+```
+
+**Why:** After `PointsRangeFilter`, some samples can end up with 0 LiDAR
+points (e.g. very sparse scans far from the sensor). The mmcv
+`hard_voxelize_forward` CUDA kernel crashes with `invalid configuration
+argument` when given 0 points because it launches a kernel with grid_size=0.
+Substituting a single dummy zero-point prevents the crash; the model simply
+produces no meaningful output for that sample.
 
 ### 3. `projects/BEVFusion/bevfusion/__init__.py`
 
