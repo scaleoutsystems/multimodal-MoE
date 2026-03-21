@@ -13,6 +13,8 @@ Outputs
   /home/edgelab/multimodal-MoE/outputs/analysis/bev_dataset/sanity_check_log.txt
 * A BEV plot saved to:
   /home/edgelab/multimodal-MoE/outputs/analysis/bev_dataset/bev_sanity_plot.png
+* An image-space plot with projected 3D box wireframes saved to:
+  /home/edgelab/multimodal-MoE/outputs/analysis/bev_dataset/image_box_sanity_plot.png
 
 Example
 -------
@@ -27,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
 import pickle
 import sys
 from pathlib import Path
@@ -68,6 +71,9 @@ class _Tee(io.TextIOBase):
 DEFAULT_DATASET_ROOT = Path(
     "/mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/zod_nuscenes"
 )
+DEFAULT_SOURCE_ROOT = Path(
+    "/mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe"
+)
 DEFAULT_INFO_PKL = "infos/zod_nuscenes_infos_train.pkl"
 DEFAULT_OUT_DIR = Path(
     "/home/edgelab/multimodal-MoE/outputs/analysis/bev_dataset"
@@ -80,6 +86,12 @@ DEFAULT_OUT_DIR = Path(
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Sanity-check the ZOD-NuScenes dataset.")
     p.add_argument("--dataset-root", type=Path, default=DEFAULT_DATASET_ROOT)
+    p.add_argument(
+        "--source-root",
+        type=Path,
+        default=DEFAULT_SOURCE_ROOT,
+        help="Root of intermediate artifacts (bev_images/, labels/).",
+    )
     p.add_argument(
         "--info-pkl",
         type=str,
@@ -238,6 +250,96 @@ def plot_bev_points_and_box_centers(
     print(f"Saved BEV plot → {out_path}")
 
 
+# ------------------------------------------------------------------
+# Image-space projected box visualization
+# ------------------------------------------------------------------
+
+# 12 edges of a cuboid defined by 8 corner indices.
+# Bottom face: 0-1-2-3, top face: 4-5-6-7, verticals: 0-4, 1-5, 2-6, 3-7.
+_CUBOID_EDGES = [
+    (0, 1), (1, 2), (2, 3), (3, 0),
+    (4, 5), (5, 6), (6, 7), (7, 4),
+    (0, 4), (1, 5), (2, 6), (3, 7),
+]
+
+
+def load_label_json(label_path: Path) -> dict:
+    """Load a label JSON produced by build_zod_moe_dataset.py."""
+    with open(label_path) as f:
+        return json.load(f)
+
+
+def draw_projected_boxes_on_image(
+    image_path: Path,
+    label_data: dict,
+    out_path: Path,
+) -> None:
+    """Draw pre-computed projected 3D box wireframes on the final image.
+
+    Each instance in *label_data* is expected to carry:
+      - ``projected_center_uv``  — [u, v]
+      - ``projected_corners_uv`` — list of 8 × [u, v]
+
+    These were already computed by the build script, so no re-projection
+    is needed here.
+    """
+    img = plt.imread(str(image_path))
+
+    fig, ax = plt.subplots(figsize=(16, 9))
+    ax.imshow(img)
+
+    instances = label_data.get("instances", [])
+    n_drawn = 0
+
+    for inst in instances:
+        center = inst.get("projected_center_uv")
+        corners = inst.get("projected_corners_uv")
+
+        if center is None or corners is None:
+            continue
+        if len(corners) != 8:
+            continue
+
+        cu, cv = float(center[0]), float(center[1])
+        if not (np.isfinite(cu) and np.isfinite(cv)):
+            continue
+
+        pts = np.array(corners, dtype=np.float64)
+        if not np.all(np.isfinite(pts)):
+            continue
+
+        # Draw cuboid edges
+        for i, j in _CUBOID_EDGES:
+            ax.plot(
+                [pts[i, 0], pts[j, 0]],
+                [pts[i, 1], pts[j, 1]],
+                color="cyan",
+                linewidth=0.8,
+                alpha=0.9,
+            )
+
+        # Draw corner dots
+        ax.scatter(pts[:, 0], pts[:, 1], s=6, c="dodgerblue", zorder=3)
+
+        # Draw projected centre
+        ax.plot(cu, cv, "ro", markersize=3, zorder=4)
+
+        n_drawn += 1
+
+    frame_id = label_data.get("frame_id", "?")
+    ax.set_title(
+        f"Projected 3D boxes — frame {frame_id}  "
+        f"({n_drawn}/{len(instances)} instances drawn)",
+        fontsize=12,
+    )
+    ax.axis("off")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved image-box plot → {out_path}  ({n_drawn} boxes drawn)")
+
+
 # ==================================================================
 # Main
 # ==================================================================
@@ -281,7 +383,24 @@ def main() -> None:
     out_plot = args.out_dir / "bev_sanity_plot.png"
     plot_bev_points_and_box_centers(points, sample, out_plot)
 
-    # 6. Summary
+    # 6. Image-space projected-box plot
+    frame_id = str(sample["sample_idx"])
+    src_img_path = args.source_root / "bev_images" / f"{frame_id}.png"
+    src_label_path = args.source_root / "labels" / f"{frame_id}.json"
+
+    out_img_plot = args.out_dir / "image_box_sanity_plot.png"
+
+    if src_img_path.exists() and src_label_path.exists():
+        label_data = load_label_json(src_label_path)
+        draw_projected_boxes_on_image(src_img_path, label_data, out_img_plot)
+    else:
+        if not src_img_path.exists():
+            print(f"  WARNING: source image not found: {src_img_path}")
+        if not src_label_path.exists():
+            print(f"  WARNING: source label not found: {src_label_path}")
+        print("  Skipping image-box sanity plot.")
+
+    # 7. Summary
     print()
     print("=" * 50)
     print("SANITY CHECK PASSED")
@@ -292,6 +411,7 @@ def main() -> None:
     print(f"  LiDAR points   : {points.shape[0]}")
     print(f"  Instances      : {len(sample.get('instances', []))}")
     print(f"  BEV plot       : {out_plot}")
+    print(f"  Image-box plot : {out_img_plot}")
     print(f"  Log file       : {log_path}")
     print("=" * 50)
 

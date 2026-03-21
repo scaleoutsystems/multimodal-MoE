@@ -39,6 +39,7 @@ Dataset root: /mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/zod_nuscenes
   z range : [-2.97, 36.77]
 
 Saved BEV plot → /home/edgelab/multimodal-MoE/outputs/analysis/bev_dataset/bev_sanity_plot.png
+Saved image-box plot → /home/edgelab/multimodal-MoE/outputs/analysis/bev_dataset/image_box_sanity_plot.png  (38 boxes drawn)
 
 ==================================================
 SANITY CHECK PASSED
@@ -49,5 +50,6 @@ SANITY CHECK PASSED
   LiDAR points   : 71102
   Instances      : 38
   BEV plot       : /home/edgelab/multimodal-MoE/outputs/analysis/bev_dataset/bev_sanity_plot.png
+  Image-box plot : /home/edgelab/multimodal-MoE/outputs/analysis/bev_dataset/image_box_sanity_plot.png
   Log file       : /home/edgelab/multimodal-MoE/outputs/analysis/bev_dataset/sanity_check_log.txt
 ==================================================
