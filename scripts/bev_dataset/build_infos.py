@@ -239,6 +239,30 @@ def make_context_entry(row: pd.Series) -> dict:
 # ------------------------------------------------------------------
 # Per-sample info dict
 # ------------------------------------------------------------------
+def _parse_ped_uuid(row: pd.Series) -> set[str] | None:
+    """Extract the set of kept annotation UUIDs from a parquet row.
+
+    After BEV-range filtering, ``ped_uuid`` contains only the pedestrians
+    that survived the spatial filter.  If the column is absent or empty we
+    return *None*, which means "keep all instances from the label JSON"
+    (backwards-compatible with unfiltered parquets).
+    """
+    val = row.get("ped_uuid")
+    if val is None:
+        return None
+    if isinstance(val, np.ndarray):
+        val = val.tolist()
+    if isinstance(val, str):
+        import ast
+        try:
+            val = ast.literal_eval(val)
+        except Exception:
+            return None
+    if not val:
+        return set()
+    return set(str(u) for u in val)
+
+
 def make_sample_entry(
     frame_id: str,
     row: pd.Series,
@@ -277,8 +301,14 @@ def make_sample_entry(
     assert K_final.shape == (3, 3), f"Expected cam2img shape (3,3), got {K_final.shape}"
     assert lidar2cam.shape == (4, 4), f"Expected lidar2cam shape (4,4), got {lidar2cam.shape}"
 
-    # --- labels ---
+    # --- labels (filtered by parquet's ped_uuid if present) ---
     raw_instances = load_label(row["label_file_path"])
+    kept_uuids = _parse_ped_uuid(row)
+    if kept_uuids is not None:
+        raw_instances = [
+            inst for inst in raw_instances
+            if inst.get("annotation_uuid") in kept_uuids
+        ]
     instances = [make_instance_entry(inst) for inst in raw_instances]
 
     return {
