@@ -207,7 +207,7 @@ def filter_row(
     new_row["ped_uuid"] = kept_uuids
     new_row["ped_unclear_list"] = kept_unclear
     new_row["ped_occlusion_list"] = kept_occ
-    new_row["xyxy_bboxes"] = np.array(kept_xyxy, dtype=np.float64) if kept_xyxy else np.array([], dtype=np.float64)
+    new_row["xyxy_bboxes"] = kept_xyxy
     new_row["ped_count_clear"] = n_clear
     new_row["ped_count_unclear"] = n_unclear
     new_row["ped_occ_none"] = occ_counts["none"]
@@ -232,7 +232,7 @@ def _zero_ped_fields(row: dict[str, Any]) -> dict[str, Any]:
         new_row[col] = []
     new_row["ped_present"] = 0
     new_row["num_pedestrians_final"] = 0
-    new_row["xyxy_bboxes"] = np.array([], dtype=np.float64)
+    new_row["xyxy_bboxes"] = []
     return new_row
 
 
