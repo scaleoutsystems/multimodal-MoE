@@ -1,0 +1,236 @@
+diff --git a/configs/zod/zod_lidar_only_overfit_noaug.py b/configs/zod/zod_lidar_only_overfit_noaug.py
+index 9876d7ca..253d7b4a 100644
+--- a/configs/zod/zod_lidar_only_overfit_noaug.py
++++ b/configs/zod/zod_lidar_only_overfit_noaug.py
+@@ -1,12 +1,11 @@
+ _base_ = ['./zod_lidar_only.py']
+ 
+ # =========================================================================
+-# Overfit sanity test: 20 frames, NO augmentation
++# Overfit sanity test: 20 frames, NO augmentation, CONSTANT LR
+ #
+ # Purpose: verify that the box format, coordinate conventions, and target
+ # generation are correct by overfitting on a tiny subset.  If matched_ious
+-# climb above 0 within 10-20 epochs, the pipeline is sound and the training
+-# issues are caused by augmentation (asymmetric X-range + flip/rotation).
++# climb above ~0.1 within 50-100 epochs, the pipeline is sound.
+ # =========================================================================
+ 
+ # --- train pipeline: deterministic only, no geometric augmentation -------
+@@ -45,20 +44,25 @@ train_dataloader = dict(
+         ann_file='infos/zod_nuscenes_infos_train_overfit20.pkl',
+         pipeline=train_pipeline))
+ 
+-# --- validation: reuse full val set but keep lightweight -----------------
+-val_dataloader = dict(
+-    num_workers=0,
+-    persistent_workers=False)
+-test_dataloader = dict(
+-    num_workers=0,
+-    persistent_workers=False)
++# --- completely disable validation so it never runs ---------------------
++val_dataloader = None
++val_evaluator = None
++val_cfg = None
++test_dataloader = None
++test_evaluator = None
++test_cfg = None
++
++# --- constant LR for clean overfit signal --------------------------------
++param_scheduler = [
++    dict(type='ConstantLR', factor=1.0, begin=0, end=200, by_epoch=True)
++]
+ 
+ # --- training schedule: enough epochs to overfit, frequent logging -------
+-train_cfg = dict(by_epoch=True, max_epochs=30, val_interval=10)
++train_cfg = dict(by_epoch=True, max_epochs=200, val_interval=9999)
+ 
+ default_hooks = dict(
+     logger=dict(type='LoggerHook', interval=1),
+-    checkpoint=dict(type='CheckpointHook', interval=10))
++    checkpoint=dict(type='CheckpointHook', interval=50))
+ 
+ # --- keep viz hooks (score_thr very low for early weak predictions) ------
+ custom_hooks = [
+diff --git a/mmdet3d/engine/hooks/bev_visualization_hook.py b/mmdet3d/engine/hooks/bev_visualization_hook.py
+index ee896038..0313a0d0 100644
+--- a/mmdet3d/engine/hooks/bev_visualization_hook.py
++++ b/mmdet3d/engine/hooks/bev_visualization_hook.py
+@@ -30,20 +30,27 @@ def _unwrap_model(runner):
+ 
+ 
+ def _should_visualize(runner):
+-    """True at epochs 1, 11, 21, 31, and the final epoch."""
+-    epoch = runner.epoch + 1          # runner.epoch is 0-based
++    """True at epochs 1, 11, 21, 31, every 50th, and the final epoch."""
++    epoch = runner.epoch + 1
+     max_epochs = runner.max_epochs
+-    return epoch in {1, 11, 21, 31, max_epochs}
++    if epoch in {1, 11, 21, 31, max_epochs}:
++        return True
++    if epoch % 50 == 0:
++        return True
++    return False
+ 
+ 
+-def _first_val_batch(runner):
+-    """Build a single-sample batch from val dataset[0].
++def _first_sample_batch(runner):
++    """Build a single-sample batch from val dataset[0], or fall back to train.
+ 
+     Uses the dataset directly instead of iterating the DataLoader so we
+     never interfere with persistent workers that the val loop relies on.
+     """
+     from mmengine.dataset import pseudo_collate
+-    dataset = runner.val_dataloader.dataset
++    try:
++        dataset = runner.val_dataloader.dataset
++    except (AttributeError, TypeError):
++        dataset = runner.train_dataloader.dataset
+     if len(dataset) == 0:
+         return None
+     sample = dataset[0]
+@@ -54,6 +61,12 @@ def _ensure_dir(path):
+     os.makedirs(osp.dirname(path), exist_ok=True)
+ 
+ 
++def _preprocess_and_forward(model, batch, mode='predict'):
++    """Preprocess a collated batch and run the model forward pass."""
++    data = model.data_preprocessor(batch, training=False)
++    return model(**data, mode=mode), data
++
++
+ # ── Hook 1: feature-map heatmaps ───────────────────────────────────────
+ 
+ @HOOKS.register_module()
+@@ -67,7 +80,7 @@ class BEVFeatureVisualizationHook(Hook):
+             return
+         epoch = runner.epoch + 1
+         model = _unwrap_model(runner)
+-        batch = _first_val_batch(runner)
++        batch = _first_sample_batch(runner)
+         if batch is None:
+             return
+ 
+@@ -87,10 +100,10 @@ class BEVFeatureVisualizationHook(Hook):
+         model.eval()
+         with torch.no_grad():
+             try:
+-                model.data_preprocessor(batch, training=False)
+-                model(**batch, mode='predict')
+-            except Exception:
+-                pass
++                _preprocess_and_forward(model, batch, mode='predict')
++            except Exception as e:
++                runner.logger.warning(
++                    f'BEVFeatureVisualizationHook forward failed: {e}')
+         model.train(prev_training)
+         h1.remove()
+         h2.remove()
+@@ -100,6 +113,9 @@ class BEVFeatureVisualizationHook(Hook):
+         for key, tag in [('sparse', 'bev_sparse'), ('fpn', 'bev_fpn')]:
+             feat = captured.get(key)
+             if feat is None:
++                runner.logger.warning(
++                    f'BEVFeatureVisualizationHook: no captured tensor for '
++                    f'"{key}" – skipping {tag}')
+                 continue
+             if hasattr(feat, 'dense'):
+                 feat = feat.dense()
+@@ -158,7 +174,7 @@ class BEVPredictionVisualizationHook(Hook):
+             return
+         epoch = runner.epoch + 1
+         model = _unwrap_model(runner)
+-        batch = _first_val_batch(runner)
++        batch = _first_sample_batch(runner)
+         if batch is None:
+             return
+ 
+@@ -185,29 +201,39 @@ class BEVPredictionVisualizationHook(Hook):
+ 
+         points = batch['inputs']['points'][0].cpu().numpy()
+ 
+-        fig, ax = plt.subplots(1, 1, figsize=(8, 8))
++        fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+         ax.scatter(points[:, 0], points[:, 1], s=0.05, c='gray', alpha=0.3)
+ 
++        n_gt = 0
+         if gt_bboxes is not None:
+             if hasattr(gt_bboxes, 'tensor'):
+                 gt_np = gt_bboxes.tensor.cpu().numpy()
+             else:
+                 gt_np = gt_bboxes.cpu().numpy()
++            n_gt = len(gt_np)
+             for b in gt_np:
+                 _draw_box(ax, b[0], b[1], b[3], b[4], b[6],
+                           color='green', lw=1.2)
+ 
+-        mask = pred_scores.cpu().numpy() >= self.score_thr
++        all_scores = pred_scores.cpu().numpy()
++        mask = all_scores >= self.score_thr
+         if hasattr(pred_bboxes, 'tensor'):
+             pred_np = pred_bboxes.tensor.cpu().numpy()
+         else:
+             pred_np = pred_bboxes.cpu().numpy()
+-        for b in pred_np[mask]:
++        n_pred = int(mask.sum())
++        for i, b in enumerate(pred_np[mask]):
++            score = all_scores[mask][i]
+             _draw_box(ax, b[0], b[1], b[3], b[4], b[6],
+                       color='red', lw=1.0)
++            ax.text(b[0], b[1], f'{score:.2f}', fontsize=5, color='red',
++                    ha='center', va='bottom')
+ 
+         ax.set_aspect('equal')
+-        ax.set_title(f'BEV pred(red) vs GT(green)  epoch {epoch}')
++        ax.set_title(
++            f'BEV pred(red) vs GT(green)  epoch {epoch}\n'
++            f'GT: {n_gt}  |  pred (score≥{self.score_thr}): {n_pred}  |  '
++            f'max score: {all_scores.max():.3f}')
+         ax.set_xlabel('x (m)')
+         ax.set_ylabel('y (m)')
+ 
+@@ -215,6 +241,8 @@ class BEVPredictionVisualizationHook(Hook):
+                             f'bev_pred_vs_gt_epoch_{epoch}.png')
+         _ensure_dir(out_path)
+         fig.tight_layout()
+-        fig.savefig(out_path, dpi=120)
++        fig.savefig(out_path, dpi=150)
+         plt.close(fig)
+-        runner.logger.info(f'Saved {out_path}')
++        runner.logger.info(
++            f'Saved {out_path}  (GT={n_gt}, pred={n_pred}, '
++            f'max_score={all_scores.max():.3f})')
+diff --git a/projects/BEVFusion/bevfusion/transfusion_head.py b/projects/BEVFusion/bevfusion/transfusion_head.py
+index 8a3e1750..7b08f1ac 100644
+--- a/projects/BEVFusion/bevfusion/transfusion_head.py
++++ b/projects/BEVFusion/bevfusion/transfusion_head.py
+@@ -163,12 +163,12 @@ class TransFusionHead(nn.Module):
+ 
+     def create_2D_grid(self, x_size, y_size):
+         meshgrid = [[0, x_size - 1, x_size], [0, y_size - 1, y_size]]
+-        # NOTE: modified
+         batch_x, batch_y = torch.meshgrid(
+-            *[torch.linspace(it[0], it[1], it[2]) for it in meshgrid])
++            *[torch.linspace(it[0], it[1], it[2]) for it in meshgrid],
++            indexing='ij')
+         batch_x = batch_x + 0.5
+         batch_y = batch_y + 0.5
+-        coord_base = torch.cat([batch_x[None], batch_y[None]], dim=0)[None]
++        coord_base = torch.cat([batch_y[None], batch_x[None]], dim=0)[None]
+         coord_base = coord_base.view(1, 2, -1).permute(0, 2, 1)
+         return coord_base
+ 
+@@ -724,11 +724,8 @@ class TransFusionHead(nn.Module):
+                                       device=device)
+                 center_int = center.to(torch.int32)
+ 
+-                # original
+-                # draw_heatmap_gaussian(heatmap[gt_labels_3d[idx]], center_int, radius) # noqa: E501
+-                # NOTE: fix
+                 draw_heatmap_gaussian(heatmap[gt_labels_3d[idx]],
+-                                      center_int[[1, 0]], radius)
++                                      center_int, radius)
+ 
+         mean_iou = ious[pos_inds].sum() / max(len(pos_inds), 1)
+         return (

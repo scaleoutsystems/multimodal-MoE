@@ -23,7 +23,7 @@ Dataset root: /mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/zod_nuscenes
   cam2img    : shape (3, 3)  dtype float32
   lidar2cam  : shape (4, 4)  dtype float32
   instances  : 38
-    first bbox_label_3d : 0
+    first bbox_label_3d : 7
     first bbox_3d       : [100.85086255994976, 16.91167968113973, -0.4299564296968692, 0.591543435193717, 0.7233595586832583, 1.6171658742481, -0.1623363222804579]
   context    : {'solar_context_bin': 'high_sun(>45)', 'weather_group': 'cloud_like', 'road_type': 'city'}
 

@@ -90,7 +90,7 @@ _MNT = Path("/mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe")
 
 DEFAULT_SOURCE_ROOT = _MNT
 DEFAULT_FINAL_ROOT = _MNT / "zod_nuscenes"
-DEFAULT_INDEX_PARQUET = _MNT / "index" / "zod_moe_dataset_with_weather_group.parquet"
+DEFAULT_INDEX_PARQUET = _MNT / "index" / "zod_moe_dataset_bev108.parquet"
 DEFAULT_TRAIN_SPLIT = _MNT / "index" / "train.txt"
 DEFAULT_VAL_SPLIT = _MNT / "index" / "val.txt"
 DEFAULT_TEST_SPLIT = _MNT / "index" / "test.txt"

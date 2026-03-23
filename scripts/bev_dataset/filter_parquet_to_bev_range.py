@@ -13,9 +13,9 @@ Example
 -------
     python scripts/bev_dataset/filter_parquet_to_bev_range.py \
         --input  /home/edgelab/multimodal-MoE/outputs/index/zod_moe_dataset.parquet \
-        --output /home/edgelab/multimodal-MoE/outputs/index/zod_moe_dataset_bev180.parquet \
-        --x-min 0.0  --x-max 180.0 \
-        --y-min -90.0 --y-max 90.0
+        --output /home/edgelab/multimodal-MoE/outputs/index/zod_moe_dataset_bev108.parquet \
+        --x-min 0.0  --x-max 108.0 \
+        --y-min -54.0 --y-max 54.0
 
 If --input points to the weather-group version, use that path instead:
     --input /mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/index/zod_moe_dataset_with_weather_group.parquet
@@ -247,9 +247,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output", type=Path, required=True,
                    help="Output (filtered) parquet path.")
     p.add_argument("--x-min", type=float, default=0.0)
-    p.add_argument("--x-max", type=float, default=180.0)
-    p.add_argument("--y-min", type=float, default=-90.0)
-    p.add_argument("--y-max", type=float, default=90.0)
+    p.add_argument("--x-max", type=float, default=108.0)
+    p.add_argument("--y-min", type=float, default=-54.0)
+    p.add_argument("--y-max", type=float, default=54.0)
     p.add_argument("--strict", action="store_true",
                    help="Raise on malformed label schema instead of warning.")
     return p.parse_args()
