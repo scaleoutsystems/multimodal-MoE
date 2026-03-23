@@ -15,7 +15,7 @@ git apply /home/edgelab/multimodal-MoE/third_party/mmdetection3d_thesis.patch
 
 ---
 
-## Modified files (6 files, small edits)
+## Modified files (7 files, small edits)
 
 ### 1. `mmdet3d/__init__.py`
 
@@ -42,7 +42,7 @@ Added a check: if a sample's point cloud has 0 points (e.g., after `PointsRangeF
 **Change**: Added `try/except` fallback: if BEVFusion's custom voxel CUDA extension is unavailable, import `Voxelization` and `DynamicScatter` from `mmcv.ops` instead.
 **Why**: Same rationale — avoids needing to compile BEVFusion's custom CUDA extensions when mmcv already provides equivalent ops.
 
-### 5. `projects/BEVFusion/bevfusion/transfusion_head.py` (2 changes)
+### 5. `projects/BEVFusion/bevfusion/transfusion_head.py` (4 changes)
 
 **Change A – Fix heatmap target placement in `get_targets_single`**:
 Removed `center_int[[1, 0]]` swap (line ~730). The original BEVFusion code swaps the (x, y) indices when drawing the GT Gaussian on the heatmap. For the standard NuScenes config with a *symmetric* point cloud range (`[-54, -54, …, 54, 54]`), both axes use the same offset, so the swap is harmless. For our ZOD config with an *asymmetric* range (`[0, -54, …, 108, 54]`), the swap places each GT target at the **wrong** feature map position — errors of 10–60 m per box. The fix uses `center_int` directly (the original commented-out code).
@@ -51,6 +51,15 @@ Removed `center_int[[1, 0]]` swap (line ~730). The original BEVFusion code swaps
 **Change B – Fix BEV positional encoding in `create_2D_grid`**:
 Swapped the `torch.cat` order from `[batch_x, batch_y]` to `[batch_y, batch_x]` and added `indexing='ij'` to `torch.meshgrid`.
 **Why**: The feature map has shape `(B, C, H=Y, W=X)`. When flattened to `(B, C, H*W)`, position `m` corresponds to `(Y_idx=m//W, X_idx=m%W)`. The original code put `Y_idx` into channel 0 and `X_idx` into channel 1. But the bbox coder encodes `target[0] = ix` (X) and `target[1] = iy` (Y). Since `center = pred_offset + query_pos`, the positional encoding channels must match the encode convention: channel 0 = X, channel 1 = Y.
+
+**Change C – Disable heatmap NMS for pedestrian class (`custom_zod` dataset)**:
+Added a `custom_zod` branch alongside the existing `nuScenes` and `Waymo` branches in the heatmap NMS section of `forward_single`. For `custom_zod`, class 0 (pedestrian) bypasses the 3×3 max-pool NMS using `kernel_size=1` (identity).
+Also wrapped the entire NMS block in `if self.nms_kernel_size > 1:` to handle `nms_kernel_size=1` gracefully.
+**Why**: The original 3×3 NMS suppresses pedestrian heatmap peaks that are within 1.8 m of a stronger neighbor. For dense pedestrian scenes (30–50 per frame), this kills many valid peaks. With only 200 proposals, the surviving peaks cannot cover all GT locations. Hungarian matching then assigns far proposals to the missing GT, creating large, unlearnable center regression targets. NuScenes and Waymo already bypass NMS for their pedestrian classes; this change adds the same for `custom_zod`. Combined with increasing `num_proposals` to 500, this fix reduced center L1 error from 4.5 to 0.1 feature-map pixels and raised matched IoU from 0.26 to 0.62.
+
+**Change D – Add test-time circle NMS for `custom_zod` dataset**:
+Added a `custom_zod` branch in the `predict_by_feat` method that defines a single task for pedestrians with `radius=0.175` (matching the NuScenes pedestrian circle NMS radius). This is used when `test_cfg['nms_type'] = 'circle'`.
+**Why**: With 500 proposals and heatmap NMS bypassed for pedestrians, many overlapping predictions survive at inference time. Without post-processing NMS, evaluation metrics are polluted by duplicate detections. Circle NMS with 0.175 m radius removes near-duplicate predictions while preserving distinct pedestrian detections.
 
 ### 6. `mmdet3d/engine/hooks/__init__.py`
 
@@ -68,6 +77,10 @@ Key settings:
 - `voxel_size = [0.075, 0.075, 0.2]` (matches NuScenes pretrained checkpoint)
 - `point_cloud_range = [0.0, -54.0, -5.0, 108.0, 54.0, 3.0]` (108m × 108m, same area as NuScenes)
 - `grid_size = [1440, 1440, 40]`, `sparse_shape = [1440, 1440, 41]` (identical to NuScenes)
+- `num_proposals = 500` (increased from default 200 for dense pedestrian coverage)
+- `nms_kernel_size = 3` (default; bypassed for pedestrians via `custom_zod` branch)
+- Test-time circle NMS with `radius=0.175` for pedestrians
+- Augmentation: scaling (0.9–1.1) and translation (0.5 m) only; flips and rotations disabled due to asymmetric forward-only X-range
 - Single class: `pedestrian`
 - Pretrained from NuScenes LiDAR-only BEVFusion checkpoint
 - Uses `IndoorMetric` for evaluation (no nuscenes-devkit dependency)

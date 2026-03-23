@@ -1,33 +1,349 @@
+diff --git a/configs/zod/zod_lidar_only.py b/configs/zod/zod_lidar_only.py
+new file mode 100644
+index 00000000..9f047522
+--- /dev/null
++++ b/configs/zod/zod_lidar_only.py
+@@ -0,0 +1,288 @@
++_base_ = ['../_base_/default_runtime.py']
++custom_imports = dict(
++    imports=['projects.BEVFusion.bevfusion'], allow_failed_imports=False)
++
++# ---------------------------------------------------------------------------
++# Pretrained: NuScenes LiDAR-only BEVFusion checkpoint (10-class, voxel 0.075)
++# MMEngine loads with strict=False:
++#   - pts_middle_encoder.conv_input will NOT load (in_channels 5 vs 4)
++#   - bbox_head heatmap/class layers will NOT load (10 classes vs 1)
++#   - Everything else (encoder body, SECOND backbone, SECONDFPN, decoder)
++#     transfers cleanly.
++# ---------------------------------------------------------------------------
++load_from = 'https://download.openmmlab.com/mmdetection3d/v1.1.0_models/bevfusion/bevfusion_lidar_voxel0075_second_secfpn_8xb4-cyclic-20e_nus-3d-2628f933.pth'
++
++voxel_size = [0.075, 0.075, 0.2]
++point_cloud_range = [0.0, -54.0, -5.0, 108.0, 54.0, 3.0]
++grid_size = [1440, 1440, 40]
++sparse_shape = [1440, 1440, 41]
++out_size_factor = 8
++
++class_names = ['pedestrian']
++metainfo = dict(classes=class_names, box_type_3d='LiDAR')
++dataset_type = 'NuScenesDataset'
++data_root = '/mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/zod_nuscenes/'
++data_prefix = dict(pts='')
++input_modality = dict(use_lidar=True, use_camera=False)
++backend_args = None
++
++model = dict(
++    type='BEVFusion',
++    data_preprocessor=dict(
++        type='Det3DDataPreprocessor',
++        pad_size_divisor=32,
++        voxelize_cfg=dict(
++            max_num_points=10,
++            point_cloud_range=point_cloud_range,
++            voxel_size=voxel_size,
++            max_voxels=[200000, 240000],
++            voxelize_reduce=True)),
++    pts_voxel_encoder=dict(type='HardSimpleVFE', num_features=4),
++    pts_middle_encoder=dict(
++        type='BEVFusionSparseEncoder',
++        in_channels=4,
++        sparse_shape=sparse_shape,
++        order=('conv', 'norm', 'act'),
++        norm_cfg=dict(type='BN1d', eps=0.001, momentum=0.01),
++        encoder_channels=((16, 16, 32), (32, 32, 64), (64, 64, 128), (128,
++                                                                      128)),
++        encoder_paddings=((0, 0, 1), (0, 0, 1), (0, 0, (1, 1, 0)), (0, 0)),
++        block_type='basicblock'),
++    pts_backbone=dict(
++        type='SECOND',
++        in_channels=256,
++        out_channels=[128, 256],
++        layer_nums=[5, 5],
++        layer_strides=[1, 2],
++        norm_cfg=dict(type='BN', eps=0.001, momentum=0.01),
++        conv_cfg=dict(type='Conv2d', bias=False)),
++    pts_neck=dict(
++        type='SECONDFPN',
++        in_channels=[128, 256],
++        out_channels=[256, 256],
++        upsample_strides=[1, 2],
++        norm_cfg=dict(type='BN', eps=0.001, momentum=0.01),
++        upsample_cfg=dict(type='deconv', bias=False),
++        use_conv_for_no_stride=True),
++    bbox_head=dict(
++        type='TransFusionHead',
++        num_proposals=500,
++        auxiliary=True,
++        in_channels=512,
++        hidden_channel=128,
++        num_classes=1,
++        nms_kernel_size=3,
++        bn_momentum=0.1,
++        num_decoder_layers=1,
++        decoder_layer=dict(
++            type='TransformerDecoderLayer',
++            self_attn_cfg=dict(embed_dims=128, num_heads=8, dropout=0.1),
++            cross_attn_cfg=dict(embed_dims=128, num_heads=8, dropout=0.1),
++            ffn_cfg=dict(
++                embed_dims=128,
++                feedforward_channels=256,
++                num_fcs=2,
++                ffn_drop=0.1,
++                act_cfg=dict(type='ReLU', inplace=True)),
++            norm_cfg=dict(type='LN'),
++            pos_encoding_cfg=dict(input_channel=2, num_pos_feats=128)),
++        train_cfg=dict(
++            dataset='custom_zod',
++            point_cloud_range=point_cloud_range,
++            grid_size=grid_size,
++            voxel_size=voxel_size,
++            out_size_factor=out_size_factor,
++            gaussian_overlap=0.1,
++            min_radius=2,
++            pos_weight=-1,
++            code_weights=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
++            assigner=dict(
++                type='HungarianAssigner3D',
++                iou_calculator=dict(type='BboxOverlaps3D', coordinate='lidar'),
++                cls_cost=dict(
++                    type='mmdet.FocalLossCost',
++                    gamma=2.0,
++                    alpha=0.25,
++                    weight=0.15),
++                reg_cost=dict(type='BBoxBEVL1Cost', weight=0.25),
++                iou_cost=dict(type='IoU3DCost', weight=0.25))),
++        test_cfg=dict(
++            dataset='custom_zod',
++            grid_size=grid_size,
++            out_size_factor=out_size_factor,
++            voxel_size=voxel_size[:2],
++            pc_range=point_cloud_range[:2],
++            nms_type='circle'),
++        common_heads=dict(
++            center=[2, 2], height=[1, 2], dim=[3, 2], rot=[2, 2]),
++        bbox_coder=dict(
++            type='TransFusionBBoxCoder',
++            pc_range=point_cloud_range[:2],
++            post_center_range=[0.0, -54.0, -10.0, 108.0, 54.0, 10.0],
++            score_threshold=0.0,
++            out_size_factor=out_size_factor,
++            voxel_size=voxel_size[:2],
++            code_size=8),
++        loss_cls=dict(
++            type='mmdet.FocalLoss',
++            use_sigmoid=True,
++            gamma=2.0,
++            alpha=0.25,
++            reduction='mean',
++            loss_weight=1.0),
++        loss_heatmap=dict(
++            type='mmdet.GaussianFocalLoss', reduction='mean', loss_weight=1.0),
++        loss_bbox=dict(
++            type='mmdet.L1Loss', reduction='mean', loss_weight=0.25)))
++
++train_pipeline = [
++    dict(
++        type='LoadPointsFromFile',
++        coord_type='LIDAR',
++        load_dim=4,
++        use_dim=4,
++        backend_args=backend_args),
++    dict(
++        type='LoadAnnotations3D',
++        with_bbox_3d=True,
++        with_label_3d=True,
++        with_attr_label=False),
++    dict(
++        type='GlobalRotScaleTrans',
++        scale_ratio_range=[0.9, 1.1],
++        rot_range=[0, 0],
++        translation_std=0.5),
++    dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
++    dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
++    dict(type='ObjectNameFilter', classes=class_names),
++    dict(type='PointShuffle'),
++    dict(
++        type='Pack3DDetInputs',
++        keys=['points', 'gt_bboxes_3d', 'gt_labels_3d'],
++        meta_keys=[
++            'box_type_3d', 'sample_idx', 'lidar_path',
++            'transformation_3d_flow', 'pcd_rotation',
++            'pcd_scale_factor', 'pcd_trans', 'lidar_aug_matrix'
++        ])
++]
++
++test_pipeline = [
++    dict(
++        type='LoadPointsFromFile',
++        coord_type='LIDAR',
++        load_dim=4,
++        use_dim=4,
++        backend_args=backend_args),
++    dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
++    dict(
++        type='Pack3DDetInputs',
++        keys=['points'],
++        meta_keys=['box_type_3d', 'sample_idx', 'lidar_path',
++                   'num_pts_feats'])
++]
++
++train_dataloader = dict(
++    batch_size=2,
++    num_workers=2,
++    persistent_workers=True,
++    sampler=dict(type='DefaultSampler', shuffle=True),
++    dataset=dict(
++        type=dataset_type,
++        data_root=data_root,
++        ann_file='infos/zod_nuscenes_infos_train.pkl',
++        pipeline=train_pipeline,
++        metainfo=metainfo,
++        modality=input_modality,
++        data_prefix=data_prefix,
++        test_mode=False,
++        use_valid_flag=False,
++        with_velocity=False,
++        box_type_3d='LiDAR'))
++
++val_dataloader = dict(
++    batch_size=1,
++    num_workers=4,
++    persistent_workers=True,
++    drop_last=False,
++    sampler=dict(type='DefaultSampler', shuffle=False),
++    dataset=dict(
++        type=dataset_type,
++        data_root=data_root,
++        ann_file='infos/zod_nuscenes_infos_val.pkl',
++        pipeline=test_pipeline,
++        metainfo=metainfo,
++        modality=input_modality,
++        data_prefix=data_prefix,
++        test_mode=True,
++        use_valid_flag=False,
++        with_velocity=False,
++        box_type_3d='LiDAR',
++        backend_args=backend_args))
++
++test_dataloader = dict(
++    batch_size=1,
++    num_workers=4,
++    persistent_workers=True,
++    drop_last=False,
++    sampler=dict(type='DefaultSampler', shuffle=False),
++    dataset=dict(
++        type=dataset_type,
++        data_root=data_root,
++        ann_file='infos/zod_nuscenes_infos_test.pkl',
++        pipeline=test_pipeline,
++        metainfo=metainfo,
++        modality=input_modality,
++        data_prefix=data_prefix,
++        test_mode=True,
++        use_valid_flag=False,
++        with_velocity=False,
++        box_type_3d='LiDAR',
++        backend_args=backend_args))
++
++val_evaluator = dict(type='IndoorMetric', iou_thr=[0.25, 0.5])
++test_evaluator = dict(type='IndoorMetric', iou_thr=[0.25, 0.5])
++
++vis_backends = [dict(type='LocalVisBackend')]
++visualizer = dict(
++    type='Det3DLocalVisualizer', vis_backends=vis_backends, name='visualizer')
++
++lr = 0.0001
++param_scheduler = [
++    dict(
++        type='CosineAnnealingLR',
++        T_max=8, eta_min=lr * 10,
++        begin=0, end=8, by_epoch=True, convert_to_iter_based=True),
++    dict(
++        type='CosineAnnealingLR',
++        T_max=12, eta_min=lr * 1e-4,
++        begin=8, end=20, by_epoch=True, convert_to_iter_based=True),
++    dict(
++        type='CosineAnnealingMomentum',
++        T_max=8, eta_min=0.85 / 0.95,
++        begin=0, end=8, by_epoch=True, convert_to_iter_based=True),
++    dict(
++        type='CosineAnnealingMomentum',
++        T_max=12, eta_min=1,
++        begin=8, end=20, by_epoch=True, convert_to_iter_based=True)
++]
++
++train_cfg = dict(by_epoch=True, max_epochs=20, val_interval=1)
++val_cfg = dict()
++test_cfg = dict()
++
++optim_wrapper = dict(
++    type='OptimWrapper',
++    optimizer=dict(type='AdamW', lr=lr, weight_decay=0.01),
++    clip_grad=dict(max_norm=35, norm_type=2))
++
++auto_scale_lr = dict(enable=False, base_batch_size=32)
++log_processor = dict(window_size=50)
++
++default_hooks = dict(
++    logger=dict(type='LoggerHook', interval=50),
++    checkpoint=dict(type='CheckpointHook', interval=5))
++
++custom_hooks = [
++    dict(type='BEVFeatureVisualizationHook'),
++    dict(type='BEVPredictionVisualizationHook', score_thr=0.3),
++]
 diff --git a/configs/zod/zod_lidar_only_overfit_noaug.py b/configs/zod/zod_lidar_only_overfit_noaug.py
-index 9876d7ca..253d7b4a 100644
---- a/configs/zod/zod_lidar_only_overfit_noaug.py
+new file mode 100644
+index 00000000..fb730d9a
+--- /dev/null
 +++ b/configs/zod/zod_lidar_only_overfit_noaug.py
-@@ -1,12 +1,11 @@
- _base_ = ['./zod_lidar_only.py']
- 
- # =========================================================================
--# Overfit sanity test: 20 frames, NO augmentation
+@@ -0,0 +1,71 @@
++_base_ = ['./zod_lidar_only.py']
++
++# =========================================================================
 +# Overfit sanity test: 20 frames, NO augmentation, CONSTANT LR
- #
- # Purpose: verify that the box format, coordinate conventions, and target
- # generation are correct by overfitting on a tiny subset.  If matched_ious
--# climb above 0 within 10-20 epochs, the pipeline is sound and the training
--# issues are caused by augmentation (asymmetric X-range + flip/rotation).
++#
++# Purpose: verify that the box format, coordinate conventions, and target
++# generation are correct by overfitting on a tiny subset.  If matched_ious
 +# climb above ~0.1 within 50-100 epochs, the pipeline is sound.
- # =========================================================================
- 
- # --- train pipeline: deterministic only, no geometric augmentation -------
-@@ -45,20 +44,25 @@ train_dataloader = dict(
-         ann_file='infos/zod_nuscenes_infos_train_overfit20.pkl',
-         pipeline=train_pipeline))
- 
--# --- validation: reuse full val set but keep lightweight -----------------
--val_dataloader = dict(
--    num_workers=0,
--    persistent_workers=False)
--test_dataloader = dict(
--    num_workers=0,
--    persistent_workers=False)
++# =========================================================================
++
++# --- train pipeline: deterministic only, no geometric augmentation -------
++train_pipeline = [
++    dict(
++        type='LoadPointsFromFile',
++        coord_type='LIDAR',
++        load_dim=4,
++        use_dim=4,
++        backend_args=None),
++    dict(
++        type='LoadAnnotations3D',
++        with_bbox_3d=True,
++        with_label_3d=True,
++        with_attr_label=False),
++    dict(type='PointsRangeFilter',
++         point_cloud_range=[0.0, -54.0, -5.0, 108.0, 54.0, 3.0]),
++    dict(type='ObjectRangeFilter',
++         point_cloud_range=[0.0, -54.0, -5.0, 108.0, 54.0, 3.0]),
++    dict(type='ObjectNameFilter', classes=['pedestrian']),
++    dict(
++        type='Pack3DDetInputs',
++        keys=['points', 'gt_bboxes_3d', 'gt_labels_3d'],
++        meta_keys=[
++            'box_type_3d', 'sample_idx', 'lidar_path',
++        ])
++]
++
++# --- tiny training set: 20 frames with GT instances ---------------------
++train_dataloader = dict(
++    batch_size=1,
++    num_workers=0,
++    persistent_workers=False,
++    sampler=dict(type='DefaultSampler', shuffle=True),
++    dataset=dict(
++        ann_file='infos/zod_nuscenes_infos_train_overfit20.pkl',
++        pipeline=train_pipeline))
++
 +# --- completely disable validation so it never runs ---------------------
 +val_dataloader = None
 +val_evaluator = None
@@ -38,171 +354,391 @@ index 9876d7ca..253d7b4a 100644
 +
 +# --- constant LR for clean overfit signal --------------------------------
 +param_scheduler = [
-+    dict(type='ConstantLR', factor=1.0, begin=0, end=200, by_epoch=True)
++    dict(type='ConstantLR', factor=1.0, begin=0, end=100, by_epoch=True)
 +]
- 
- # --- training schedule: enough epochs to overfit, frequent logging -------
--train_cfg = dict(by_epoch=True, max_epochs=30, val_interval=10)
-+train_cfg = dict(by_epoch=True, max_epochs=200, val_interval=9999)
- 
- default_hooks = dict(
-     logger=dict(type='LoggerHook', interval=1),
--    checkpoint=dict(type='CheckpointHook', interval=10))
++
++# --- training schedule: enough epochs to overfit, frequent logging -------
++train_cfg = dict(by_epoch=True, max_epochs=100, val_interval=9999)
++
++default_hooks = dict(
++    logger=dict(type='LoggerHook', interval=1),
 +    checkpoint=dict(type='CheckpointHook', interval=50))
++
++# --- viz hooks: score_thr=0.3 for clean plots (suppresses noisy clusters) --
++custom_hooks = [
++    dict(type='BEVFeatureVisualizationHook'),
++    dict(type='BEVPredictionVisualizationHook', score_thr=0.3),
++]
+diff --git a/mmdet3d/__init__.py b/mmdet3d/__init__.py
+index 17c17773..2d48e050 100644
+--- a/mmdet3d/__init__.py
++++ b/mmdet3d/__init__.py
+@@ -7,7 +7,7 @@ from mmengine.utils import digit_version
+ from .version import __version__, version_info
  
- # --- keep viz hooks (score_thr very low for early weak predictions) ------
- custom_hooks = [
+ mmcv_minimum_version = '2.0.0rc4'
+-mmcv_maximum_version = '2.2.0'
++mmcv_maximum_version = '2.3.0'
+ mmcv_version = digit_version(mmcv.__version__)
+ 
+ mmengine_minimum_version = '0.8.0'
+diff --git a/mmdet3d/engine/hooks/__init__.py b/mmdet3d/engine/hooks/__init__.py
+index 578f173d..9a6f3b17 100644
+--- a/mmdet3d/engine/hooks/__init__.py
++++ b/mmdet3d/engine/hooks/__init__.py
+@@ -1,8 +1,11 @@
+ # Copyright (c) OpenMMLab. All rights reserved.
+ from .benchmark_hook import BenchmarkHook
++from .bev_visualization_hook import (BEVFeatureVisualizationHook,
++                                     BEVPredictionVisualizationHook)
+ from .disable_object_sample_hook import DisableObjectSampleHook
+ from .visualization_hook import Det3DVisualizationHook
+ 
+ __all__ = [
+-    'Det3DVisualizationHook', 'BenchmarkHook', 'DisableObjectSampleHook'
++    'Det3DVisualizationHook', 'BenchmarkHook', 'DisableObjectSampleHook',
++    'BEVFeatureVisualizationHook', 'BEVPredictionVisualizationHook',
+ ]
 diff --git a/mmdet3d/engine/hooks/bev_visualization_hook.py b/mmdet3d/engine/hooks/bev_visualization_hook.py
-index ee896038..0313a0d0 100644
---- a/mmdet3d/engine/hooks/bev_visualization_hook.py
+new file mode 100644
+index 00000000..be472a7e
+--- /dev/null
 +++ b/mmdet3d/engine/hooks/bev_visualization_hook.py
-@@ -30,20 +30,27 @@ def _unwrap_model(runner):
- 
- 
- def _should_visualize(runner):
--    """True at epochs 1, 11, 21, 31, and the final epoch."""
--    epoch = runner.epoch + 1          # runner.epoch is 0-based
+@@ -0,0 +1,242 @@
++"""Lightweight BEV visualization hooks for BEVFusion training diagnostics.
++
++BEVFeatureVisualizationHook  – L2-norm heatmap of FPN BEV features
++BEVPredictionVisualizationHook – predicted vs GT boxes in BEV over LiDAR points
++"""
++
++import os
++import os.path as osp
++
++import matplotlib
++matplotlib.use('Agg')
++import matplotlib.pyplot as plt
++import matplotlib.patches as patches
++import numpy as np
++import torch
++from mmengine.hooks import Hook
++from mmengine.model import is_model_wrapper
++
++from mmdet3d.registry import HOOKS
++
++
++# ── shared helpers ──────────────────────────────────────────────────────
++
++def _unwrap_model(runner):
++    model = runner.model
++    if is_model_wrapper(model):
++        model = model.module
++    return model
++
++
++def _should_visualize(runner):
 +    """True at epochs 1, 11, 21, 31, every 50th, and the final epoch."""
 +    epoch = runner.epoch + 1
-     max_epochs = runner.max_epochs
--    return epoch in {1, 11, 21, 31, max_epochs}
++    max_epochs = runner.max_epochs
 +    if epoch in {1, 11, 21, 31, max_epochs}:
 +        return True
 +    if epoch % 50 == 0:
 +        return True
 +    return False
- 
- 
--def _first_val_batch(runner):
--    """Build a single-sample batch from val dataset[0].
++
++
 +def _first_sample_batch(runner):
-+    """Build a single-sample batch from val dataset[0], or fall back to train.
- 
-     Uses the dataset directly instead of iterating the DataLoader so we
-     never interfere with persistent workers that the val loop relies on.
-     """
-     from mmengine.dataset import pseudo_collate
--    dataset = runner.val_dataloader.dataset
++    """Build a single-sample batch from val or train dataset[0]."""
++    from mmengine.dataset import pseudo_collate
 +    try:
 +        dataset = runner.val_dataloader.dataset
 +    except (AttributeError, TypeError):
 +        dataset = runner.train_dataloader.dataset
-     if len(dataset) == 0:
-         return None
-     sample = dataset[0]
-@@ -54,6 +61,12 @@ def _ensure_dir(path):
-     os.makedirs(osp.dirname(path), exist_ok=True)
- 
- 
++    if len(dataset) == 0:
++        return None
++    return pseudo_collate([dataset[0]])
++
++
++def _ensure_dir(path):
++    os.makedirs(osp.dirname(path), exist_ok=True)
++
++
 +def _preprocess_and_forward(model, batch, mode='predict'):
-+    """Preprocess a collated batch and run the model forward pass."""
 +    data = model.data_preprocessor(batch, training=False)
 +    return model(**data, mode=mode), data
 +
 +
- # ── Hook 1: feature-map heatmaps ───────────────────────────────────────
- 
- @HOOKS.register_module()
-@@ -67,7 +80,7 @@ class BEVFeatureVisualizationHook(Hook):
-             return
-         epoch = runner.epoch + 1
-         model = _unwrap_model(runner)
--        batch = _first_val_batch(runner)
++# ── Hook 1: FPN feature-map heatmap ────────────────────────────────────
++
++@HOOKS.register_module()
++class BEVFeatureVisualizationHook(Hook):
++    """Save L2-norm BEV heatmaps of sparse encoder and FPN outputs."""
++
++    priority = 'LOW'
++
++    def after_train_epoch(self, runner):
++        if not _should_visualize(runner):
++            return
++        epoch = runner.epoch + 1
++        model = _unwrap_model(runner)
 +        batch = _first_sample_batch(runner)
-         if batch is None:
-             return
- 
-@@ -87,10 +100,10 @@ class BEVFeatureVisualizationHook(Hook):
-         model.eval()
-         with torch.no_grad():
-             try:
--                model.data_preprocessor(batch, training=False)
--                model(**batch, mode='predict')
--            except Exception:
--                pass
++        if batch is None:
++            return
++
++        captured = {}
++
++        def _make_hook(name):
++            def _hook(module, inp, out):
++                captured[name] = out
++            return _hook
++
++        h1 = model.pts_middle_encoder.register_forward_hook(
++            _make_hook('sparse'))
++        h2 = model.pts_neck.register_forward_hook(
++            _make_hook('fpn'))
++
++        prev_training = model.training
++        model.eval()
++        with torch.no_grad():
++            try:
 +                _preprocess_and_forward(model, batch, mode='predict')
 +            except Exception as e:
 +                runner.logger.warning(
 +                    f'BEVFeatureVisualizationHook forward failed: {e}')
-         model.train(prev_training)
-         h1.remove()
-         h2.remove()
-@@ -100,6 +113,9 @@ class BEVFeatureVisualizationHook(Hook):
-         for key, tag in [('sparse', 'bev_sparse'), ('fpn', 'bev_fpn')]:
-             feat = captured.get(key)
-             if feat is None:
-+                runner.logger.warning(
-+                    f'BEVFeatureVisualizationHook: no captured tensor for '
-+                    f'"{key}" – skipping {tag}')
-                 continue
-             if hasattr(feat, 'dense'):
-                 feat = feat.dense()
-@@ -158,7 +174,7 @@ class BEVPredictionVisualizationHook(Hook):
-             return
-         epoch = runner.epoch + 1
-         model = _unwrap_model(runner)
--        batch = _first_val_batch(runner)
++        model.train(prev_training)
++        h1.remove()
++        h2.remove()
++
++        vis_dir = osp.join(runner.work_dir, 'visualizations')
++
++        stages = [
++            ('sparse', 'bev_before_backbone', 'BEV features (before backbone)'),
++            ('fpn',    'bev_after_fpn',        'BEV features (after FPN)'),
++        ]
++        for key, filename_tag, title_prefix in stages:
++            feat = captured.get(key)
++            if feat is None:
++                continue
++            if isinstance(feat, (list, tuple)):
++                feat = feat[0]
++            feat = feat[0]  # drop batch dim  → (C, H, W)
++            heatmap = feat.norm(dim=0).cpu().numpy()
++
++            vmax = np.percentile(heatmap[heatmap > 0], 95) \
++                if (heatmap > 0).any() else 1.0
++
++            out_path = osp.join(vis_dir,
++                                f'{filename_tag}_epoch_{epoch}.png')
++            _ensure_dir(out_path)
++
++            fig, ax = plt.subplots(1, 1, figsize=(8, 7))
++            im = ax.imshow(heatmap, cmap='viridis', origin='lower',
++                            aspect='equal', vmin=0, vmax=vmax)
++            fig.colorbar(im, ax=ax, shrink=0.8)
++            ax.set_xlabel('W  (X grid)')
++            ax.set_ylabel('H  (Y grid)')
++            ax.set_title(f'{title_prefix} \u2013 L2 norm  (epoch {epoch})')
++            fig.tight_layout()
++            fig.savefig(out_path, dpi=150)
++            plt.close(fig)
++            runner.logger.info(f'Saved {out_path}')
++
++
++# ── Hook 2: prediction vs GT in BEV ────────────────────────────────────
++
++def _corners_from_box(cx, cy, dx, dy, yaw):
++    cos, sin = np.cos(yaw), np.sin(yaw)
++    hdx, hdy = dx / 2, dy / 2
++    corners = np.array([
++        [-hdx, -hdy],
++        [ hdx, -hdy],
++        [ hdx,  hdy],
++        [-hdx,  hdy],
++    ])
++    R = np.array([[cos, -sin], [sin, cos]])
++    return (R @ corners.T).T + np.array([cx, cy])
++
++
++def _draw_box(ax, cx, cy, dx, dy, yaw, color='green', lw=1.0):
++    pts = _corners_from_box(cx, cy, dx, dy, yaw)
++    poly = patches.Polygon(pts, closed=True, fill=False,
++                           edgecolor=color, linewidth=lw)
++    ax.add_patch(poly)
++
++
++@HOOKS.register_module()
++class BEVPredictionVisualizationHook(Hook):
++    """Overlay predicted and GT boxes in BEV for a fixed sample."""
++
++    priority = 'LOW'
++
++    def __init__(self, score_thr=0.3):
++        self.score_thr = score_thr
++
++    def after_train_epoch(self, runner):
++        if not _should_visualize(runner):
++            return
++        epoch = runner.epoch + 1
++        model = _unwrap_model(runner)
 +        batch = _first_sample_batch(runner)
-         if batch is None:
-             return
- 
-@@ -185,29 +201,39 @@ class BEVPredictionVisualizationHook(Hook):
- 
-         points = batch['inputs']['points'][0].cpu().numpy()
- 
--        fig, ax = plt.subplots(1, 1, figsize=(8, 8))
++        if batch is None:
++            return
++
++        prev_training = model.training
++        model.eval()
++        with torch.no_grad():
++            data = model.data_preprocessor(batch, training=False)
++            results = model(**data, mode='predict')
++        model.train(prev_training)
++
++        result = results[0]
++        pred_bboxes = result.pred_instances_3d.bboxes_3d
++        pred_scores = result.pred_instances_3d.scores_3d
++
++        gt_bboxes = None
++        if hasattr(result, 'gt_instances_3d') and \
++                hasattr(result.gt_instances_3d, 'bboxes_3d'):
++            gt_bboxes = result.gt_instances_3d.bboxes_3d
++        elif 'data_samples' in batch:
++            ds = batch['data_samples'][0]
++            if hasattr(ds, 'gt_instances_3d') and \
++                    hasattr(ds.gt_instances_3d, 'bboxes_3d'):
++                gt_bboxes = ds.gt_instances_3d.bboxes_3d
++
++        points = batch['inputs']['points'][0].cpu().numpy()
++
 +        fig, ax = plt.subplots(1, 1, figsize=(10, 10))
-         ax.scatter(points[:, 0], points[:, 1], s=0.05, c='gray', alpha=0.3)
- 
++        ax.scatter(points[:, 0], points[:, 1], s=0.05, c='gray', alpha=0.3)
++
 +        n_gt = 0
-         if gt_bboxes is not None:
-             if hasattr(gt_bboxes, 'tensor'):
-                 gt_np = gt_bboxes.tensor.cpu().numpy()
-             else:
-                 gt_np = gt_bboxes.cpu().numpy()
++        if gt_bboxes is not None:
++            gt_np = gt_bboxes.tensor.cpu().numpy() \
++                if hasattr(gt_bboxes, 'tensor') else gt_bboxes.cpu().numpy()
 +            n_gt = len(gt_np)
-             for b in gt_np:
-                 _draw_box(ax, b[0], b[1], b[3], b[4], b[6],
-                           color='green', lw=1.2)
- 
--        mask = pred_scores.cpu().numpy() >= self.score_thr
++            for b in gt_np:
++                _draw_box(ax, b[0], b[1], b[3], b[4], b[6],
++                          color='green', lw=1.2)
++
 +        all_scores = pred_scores.cpu().numpy()
 +        mask = all_scores >= self.score_thr
-         if hasattr(pred_bboxes, 'tensor'):
-             pred_np = pred_bboxes.tensor.cpu().numpy()
-         else:
-             pred_np = pred_bboxes.cpu().numpy()
--        for b in pred_np[mask]:
++        pred_np = pred_bboxes.tensor.cpu().numpy() \
++            if hasattr(pred_bboxes, 'tensor') else pred_bboxes.cpu().numpy()
 +        n_pred = int(mask.sum())
 +        for i, b in enumerate(pred_np[mask]):
 +            score = all_scores[mask][i]
-             _draw_box(ax, b[0], b[1], b[3], b[4], b[6],
-                       color='red', lw=1.0)
++            _draw_box(ax, b[0], b[1], b[3], b[4], b[6],
++                      color='red', lw=1.0)
 +            ax.text(b[0], b[1], f'{score:.2f}', fontsize=5, color='red',
 +                    ha='center', va='bottom')
- 
-         ax.set_aspect('equal')
--        ax.set_title(f'BEV pred(red) vs GT(green)  epoch {epoch}')
++
++        ax.set_aspect('equal')
 +        ax.set_title(
 +            f'BEV pred(red) vs GT(green)  epoch {epoch}\n'
-+            f'GT: {n_gt}  |  pred (score≥{self.score_thr}): {n_pred}  |  '
++            f'GT: {n_gt}  |  pred (score\u2265{self.score_thr}): {n_pred}  |  '
 +            f'max score: {all_scores.max():.3f}')
-         ax.set_xlabel('x (m)')
-         ax.set_ylabel('y (m)')
- 
-@@ -215,6 +241,8 @@ class BEVPredictionVisualizationHook(Hook):
-                             f'bev_pred_vs_gt_epoch_{epoch}.png')
-         _ensure_dir(out_path)
-         fig.tight_layout()
--        fig.savefig(out_path, dpi=120)
++        ax.set_xlabel('x (m)')
++        ax.set_ylabel('y (m)')
++
++        out_path = osp.join(runner.work_dir, 'visualizations',
++                            f'bev_pred_vs_gt_epoch_{epoch}.png')
++        _ensure_dir(out_path)
++        fig.tight_layout()
 +        fig.savefig(out_path, dpi=150)
-         plt.close(fig)
--        runner.logger.info(f'Saved {out_path}')
++        plt.close(fig)
 +        runner.logger.info(
 +            f'Saved {out_path}  (GT={n_gt}, pred={n_pred}, '
 +            f'max_score={all_scores.max():.3f})')
+diff --git a/projects/BEVFusion/bevfusion/__init__.py b/projects/BEVFusion/bevfusion/__init__.py
+index db06d3af..d51f9608 100644
+--- a/projects/BEVFusion/bevfusion/__init__.py
++++ b/projects/BEVFusion/bevfusion/__init__.py
+@@ -1,20 +1,28 @@
+-from .bevfusion import BEVFusion
+-from .bevfusion_necks import GeneralizedLSSFPN
+-from .depth_lss import DepthLSSTransform, LSSTransform
+-from .loading import BEVLoadMultiViewImageFromFiles
+ from .sparse_encoder import BEVFusionSparseEncoder
+-from .transformer import TransformerDecoderLayer
+-from .transforms_3d import (BEVFusionGlobalRotScaleTrans,
+-                            BEVFusionRandomFlip3D, GridMask, ImageAug3D)
+-from .transfusion_head import ConvFuser, TransFusionHead
+-from .utils import (BBoxBEVL1Cost, HeuristicAssigner3D, HungarianAssigner3D,
+-                    IoU3DCost)
+ 
+-__all__ = [
+-    'BEVFusion', 'TransFusionHead', 'ConvFuser', 'ImageAug3D', 'GridMask',
+-    'GeneralizedLSSFPN', 'HungarianAssigner3D', 'BBoxBEVL1Cost', 'IoU3DCost',
+-    'HeuristicAssigner3D', 'DepthLSSTransform', 'LSSTransform',
+-    'BEVLoadMultiViewImageFromFiles', 'BEVFusionSparseEncoder',
+-    'TransformerDecoderLayer', 'BEVFusionRandomFlip3D',
+-    'BEVFusionGlobalRotScaleTrans'
+-]
++__all__ = ['BEVFusionSparseEncoder']
++
++# Some BEVFusion modules require custom CUDA extensions (e.g., bev_pool_ext).
++# Keep sparse encoder importable even if those optional ops are unavailable.
++try:
++    from .bevfusion import BEVFusion
++    from .bevfusion_necks import GeneralizedLSSFPN
++    from .depth_lss import DepthLSSTransform, LSSTransform
++    from .loading import BEVLoadMultiViewImageFromFiles
++    from .transformer import TransformerDecoderLayer
++    from .transforms_3d import (BEVFusionGlobalRotScaleTrans,
++                                BEVFusionRandomFlip3D, GridMask, ImageAug3D)
++    from .transfusion_head import ConvFuser, TransFusionHead
++    from .utils import (BBoxBEVL1Cost, HeuristicAssigner3D, HungarianAssigner3D,
++                        IoU3DCost)
++
++    __all__ += [
++        'BEVFusion', 'TransFusionHead', 'ConvFuser', 'ImageAug3D', 'GridMask',
++        'GeneralizedLSSFPN', 'HungarianAssigner3D', 'BBoxBEVL1Cost',
++        'IoU3DCost', 'HeuristicAssigner3D', 'DepthLSSTransform',
++        'LSSTransform', 'BEVLoadMultiViewImageFromFiles',
++        'TransformerDecoderLayer', 'BEVFusionRandomFlip3D',
++        'BEVFusionGlobalRotScaleTrans'
++    ]
++except Exception:
++    pass
+diff --git a/projects/BEVFusion/bevfusion/bevfusion.py b/projects/BEVFusion/bevfusion/bevfusion.py
+index 9f56934e..94feed4f 100644
+--- a/projects/BEVFusion/bevfusion/bevfusion.py
++++ b/projects/BEVFusion/bevfusion/bevfusion.py
+@@ -169,6 +169,9 @@ class BEVFusion(Base3DDetector):
+             points = [point.float() for point in points]
+             feats, coords, sizes = self.voxelize(points)
+             batch_size = coords[-1, 0] + 1
++            # mmcv voxelizer outputs coords as (batch, Z, Y, X)
++            # BEVFusionSparseEncoder expects (batch, Y, X, Z)
++            coords = coords[:, [0, 2, 3, 1]]
+         x = self.pts_middle_encoder(feats, coords, batch_size)
+         return x
+ 
+@@ -176,6 +179,8 @@ class BEVFusion(Base3DDetector):
+     def voxelize(self, points):
+         feats, coords, sizes = [], [], []
+         for k, res in enumerate(points):
++            if res.shape[0] == 0:
++                res = res.new_zeros(1, res.shape[1])
+             ret = self.pts_voxel_layer(res)
+             if len(ret) == 3:
+                 # hard voxelize
+diff --git a/projects/BEVFusion/bevfusion/ops/__init__.py b/projects/BEVFusion/bevfusion/ops/__init__.py
+index 03830c32..ac446da6 100644
+--- a/projects/BEVFusion/bevfusion/ops/__init__.py
++++ b/projects/BEVFusion/bevfusion/ops/__init__.py
+@@ -1,5 +1,10 @@
+ from .bev_pool import bev_pool
+-from .voxel import DynamicScatter, Voxelization, dynamic_scatter, voxelization
++try:
++    from .voxel import DynamicScatter, Voxelization, dynamic_scatter, voxelization
++except Exception:
++    # Fallback to MMCV ops when BEVFusion custom voxel extension is unavailable.
++    from mmcv.ops import DynamicScatter, Voxelization
++    from mmcv.ops import dynamic_scatter, voxelization
+ 
+ __all__ = [
+     'bev_pool', 'Voxelization', 'voxelization', 'dynamic_scatter',
 diff --git a/projects/BEVFusion/bevfusion/transfusion_head.py b/projects/BEVFusion/bevfusion/transfusion_head.py
-index 8a3e1750..7b08f1ac 100644
+index 8a3e1750..eb4e8aaa 100644
 --- a/projects/BEVFusion/bevfusion/transfusion_head.py
 +++ b/projects/BEVFusion/bevfusion/transfusion_head.py
 @@ -163,12 +163,12 @@ class TransFusionHead(nn.Module):
@@ -221,7 +757,70 @@ index 8a3e1750..7b08f1ac 100644
          coord_base = coord_base.view(1, 2, -1).permute(0, 2, 1)
          return coord_base
  
-@@ -724,11 +724,8 @@ class TransFusionHead(nn.Module):
+@@ -227,26 +227,27 @@ class TransFusionHead(nn.Module):
+         with torch.autocast('cuda', enabled=False):
+             dense_heatmap = self.heatmap_head(fusion_feat.float())
+         heatmap = dense_heatmap.detach().sigmoid()
+-        padding = self.nms_kernel_size // 2
+-        local_max = torch.zeros_like(heatmap)
+-        # equals to nms radius = voxel_size * out_size_factor * kenel_size
+-        local_max_inner = F.max_pool2d(
+-            heatmap, kernel_size=self.nms_kernel_size, stride=1, padding=0)
+-        local_max[:, :, padding:(-padding),
+-                  padding:(-padding)] = local_max_inner
+-        # for Pedestrian & Traffic_cone in nuScenes
+-        if self.test_cfg['dataset'] == 'nuScenes':
+-            local_max[:, 8, ] = F.max_pool2d(
+-                heatmap[:, 8], kernel_size=1, stride=1, padding=0)
+-            local_max[:, 9, ] = F.max_pool2d(
+-                heatmap[:, 9], kernel_size=1, stride=1, padding=0)
+-        elif self.test_cfg[
+-                'dataset'] == 'Waymo':  # for Pedestrian & Cyclist in Waymo
+-            local_max[:, 1, ] = F.max_pool2d(
+-                heatmap[:, 1], kernel_size=1, stride=1, padding=0)
+-            local_max[:, 2, ] = F.max_pool2d(
+-                heatmap[:, 2], kernel_size=1, stride=1, padding=0)
+-        heatmap = heatmap * (heatmap == local_max)
++        if self.nms_kernel_size > 1:
++            padding = self.nms_kernel_size // 2
++            local_max = torch.zeros_like(heatmap)
++            local_max_inner = F.max_pool2d(
++                heatmap, kernel_size=self.nms_kernel_size, stride=1, padding=0)
++            local_max[:, :, padding:(-padding),
++                      padding:(-padding)] = local_max_inner
++            if self.test_cfg['dataset'] == 'nuScenes':
++                local_max[:, 8, ] = F.max_pool2d(
++                    heatmap[:, 8], kernel_size=1, stride=1, padding=0)
++                local_max[:, 9, ] = F.max_pool2d(
++                    heatmap[:, 9], kernel_size=1, stride=1, padding=0)
++            elif self.test_cfg['dataset'] == 'Waymo':
++                local_max[:, 1, ] = F.max_pool2d(
++                    heatmap[:, 1], kernel_size=1, stride=1, padding=0)
++                local_max[:, 2, ] = F.max_pool2d(
++                    heatmap[:, 2], kernel_size=1, stride=1, padding=0)
++            elif self.test_cfg['dataset'] == 'custom_zod':
++                local_max[:, 0, ] = F.max_pool2d(
++                    heatmap[:, 0], kernel_size=1, stride=1, padding=0)
++            heatmap = heatmap * (heatmap == local_max)
+         heatmap = heatmap.view(batch_size, heatmap.shape[1], -1)
+ 
+         # top num_proposals among all classes
+@@ -424,6 +425,14 @@ class TransFusionHead(nn.Module):
+                         indices=[2],
+                         radius=0.7),
+                 ]
++            elif self.test_cfg['dataset'] == 'custom_zod':
++                self.tasks = [
++                    dict(
++                        num_class=1,
++                        class_names=['pedestrian'],
++                        indices=[0],
++                        radius=0.175),
++                ]
+ 
+             ret_layer = []
+             for i in range(batch_size):
+@@ -724,11 +733,8 @@ class TransFusionHead(nn.Module):
                                        device=device)
                  center_int = center.to(torch.int32)
  
@@ -234,3 +833,211 @@ index 8a3e1750..7b08f1ac 100644
  
          mean_iou = ious[pos_inds].sum() / max(len(pos_inds), 1)
          return (
+diff --git a/tools/debug_heatmap_coords.py b/tools/debug_heatmap_coords.py
+new file mode 100644
+index 00000000..43ab2b9f
+--- /dev/null
++++ b/tools/debug_heatmap_coords.py
+@@ -0,0 +1,202 @@
++"""Debug script: verify heatmap target placement vs feature map semantics.
++
++Loads one training sample from the overfit config, projects GT centers
++to feature map coordinates, and checks whether the current code places
++them at the correct spatial position.
++
++Usage:
++    cd /home/edgelab/mmdetection3d
++    PYTHONPATH=. python tools/debug_heatmap_coords.py
++"""
++
++import pickle
++import sys
++import torch
++import numpy as np
++
++# ── config values (from zod_lidar_only.py) ──────────────────────────────
++voxel_size = [0.075, 0.075, 0.2]
++point_cloud_range = [0.0, -54.0, -5.0, 108.0, 54.0, 3.0]
++grid_size = [1440, 1440, 40]
++out_size_factor = 8
++
++pc_range = torch.tensor(point_cloud_range)
++vs = torch.tensor(voxel_size)
++feature_map_size = torch.tensor(grid_size[:2]) // out_size_factor  # [180, 180]
++
++print("=" * 70)
++print("CONFIG")
++print("=" * 70)
++print(f"  point_cloud_range = {point_cloud_range}")
++print(f"  pc_range[0] (x_min) = {pc_range[0].item()}")
++print(f"  pc_range[1] (y_min) = {pc_range[1].item()}")
++print(f"  voxel_size      = {voxel_size}")
++print(f"  grid_size        = {grid_size}")
++print(f"  out_size_factor  = {out_size_factor}")
++print(f"  feature_map_size = {feature_map_size.tolist()}  (grid_size[:2] // osf)")
++print(f"  heatmap shape    = (C, feature_map_size[1], feature_map_size[0])")
++print(f"                   = (C, {feature_map_size[1].item()}, {feature_map_size[0].item()})")
++print()
++
++# ── load one sample's GT boxes ──────────────────────────────────────────
++pkl_path = "/mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_train_overfit20.pkl"
++with open(pkl_path, "rb") as f:
++    infos = pickle.load(f)
++
++sample = infos["data_list"][0]
++gt_boxes_raw = np.array(sample["instances"][0]["bbox_3d"])
++print(f"Sample: {sample['lidar_points']['lidar_path']}")
++print(f"  num GT instances = {len(sample['instances'])}")
++print()
++
++# ── trace heatmap target projection for each GT box ─────────────────────
++print("=" * 70)
++print("PHASE 3 — PROJECTED GT CENTERS (current code with [[1,0]] swap)")
++print("=" * 70)
++print()
++print(f"{'GT#':>3s}  {'x_m':>8s} {'y_m':>8s} | {'coor_x':>8s} {'coor_y':>8s} | "
++      f"{'SWAP center':>18s} | {'draw x(col)':>12s} {'draw y(row)':>12s} | "
++      f"{'in_bounds':>9s}")
++print("-" * 120)
++
++for idx, inst in enumerate(sample["instances"]):
++    box = np.array(inst["bbox_3d"])  # [x, y, z, x_size, y_size, z_size, yaw]
++    x, y = box[0], box[1]
++
++    coor_x = (x - pc_range[0].item()) / vs[0].item() / out_size_factor
++    coor_y = (y - pc_range[1].item()) / vs[1].item() / out_size_factor
++
++    # Current code: center_int[[1, 0]]  →  passes (iy, ix) to draw_heatmap_gaussian
++    center = torch.tensor([coor_x, coor_y])
++    center_int = center.to(torch.int32)
++    swapped = center_int[[1, 0]]  # [iy, ix]
++
++    # draw_heatmap_gaussian interprets center[0]=x=col, center[1]=y=row
++    draw_x = int(swapped[0])  # = iy  → treated as column index
++    draw_y = int(swapped[1])  # = ix  → treated as row index
++
++    # heatmap shape (after class indexing): (feature_map_size[1], feature_map_size[0]) = (y_len, x_len)
++    h_height = feature_map_size[1].item()  # y_len
++    h_width = feature_map_size[0].item()   # x_len
++    in_bounds = (0 <= draw_x < h_width) and (0 <= draw_y < h_height)
++
++    print(f"{idx:3d}  {x:8.2f} {y:8.2f} | {coor_x:8.2f} {coor_y:8.2f} | "
++          f"[{int(swapped[0]):4d}, {int(swapped[1]):4d}]         | "
++          f"{draw_x:12d} {draw_y:12d} | "
++          f"{'YES' if in_bounds else 'NO':>9s}")
++
++print()
++
++# ── check what world position the feature at (row, col) represents ──────
++print("=" * 70)
++print("PHASE 4 — FEATURE MAP POSITION vs GT POSITION")
++print("=" * 70)
++print()
++print("For each GT box, we check: what world (x, y) does the feature map")
++print("position where the heatmap target is placed actually represent?")
++print()
++print(f"{'GT#':>3s}  {'GT x':>8s} {'GT y':>8s} | {'heatmap (row,col)':>20s} | "
++      f"{'feat x':>8s} {'feat y':>8s} | {'dx':>8s} {'dy':>8s} | MISMATCH?")
++print("-" * 110)
++
++for idx, inst in enumerate(sample["instances"]):
++    box = np.array(inst["bbox_3d"])
++    x, y = box[0], box[1]
++
++    coor_x = (x - pc_range[0].item()) / vs[0].item() / out_size_factor
++    coor_y = (y - pc_range[1].item()) / vs[1].item() / out_size_factor
++    ix, iy = int(coor_x), int(coor_y)
++
++    # With swap: heatmap target at (row=ix, col=iy)
++    row, col = ix, iy
++
++    # Feature map: (B, C, H=y_len, W=x_len)
++    # Position (h, w) = (row, col) represents:
++    #   world_x = col * voxel_size[0] * osf + pc_range[0]
++    #   world_y = row * voxel_size[1] * osf + pc_range[1]
++    feat_x = col * vs[0].item() * out_size_factor + pc_range[0].item()
++    feat_y = row * vs[1].item() * out_size_factor + pc_range[1].item()
++
++    dx = feat_x - x
++    dy = feat_y - y
++    mismatch = abs(dx) > 1.0 or abs(dy) > 1.0
++
++    print(f"{idx:3d}  {x:8.2f} {y:8.2f} | ({row:4d}, {col:4d})             | "
++          f"{feat_x:8.2f} {feat_y:8.2f} | {dx:+8.2f} {dy:+8.2f} | "
++          f"{'*** YES ***' if mismatch else 'no'}")
++
++print()
++
++# ── show what the CORRECT placement (no swap) would look like ───────────
++print("=" * 70)
++print("CORRECT PLACEMENT (without [[1,0]] swap)")
++print("=" * 70)
++print()
++print(f"{'GT#':>3s}  {'GT x':>8s} {'GT y':>8s} | {'heatmap (row,col)':>20s} | "
++      f"{'feat x':>8s} {'feat y':>8s} | {'dx':>8s} {'dy':>8s} | MISMATCH?")
++print("-" * 110)
++
++for idx, inst in enumerate(sample["instances"]):
++    box = np.array(inst["bbox_3d"])
++    x, y = box[0], box[1]
++
++    coor_x = (x - pc_range[0].item()) / vs[0].item() / out_size_factor
++    coor_y = (y - pc_range[1].item()) / vs[1].item() / out_size_factor
++    ix, iy = int(coor_x), int(coor_y)
++
++    # Without swap: heatmap target at (row=iy, col=ix)
++    row, col = iy, ix
++
++    feat_x = col * vs[0].item() * out_size_factor + pc_range[0].item()
++    feat_y = row * vs[1].item() * out_size_factor + pc_range[1].item()
++
++    dx = feat_x - x
++    dy = feat_y - y
++    mismatch = abs(dx) > 1.0 or abs(dy) > 1.0
++
++    print(f"{idx:3d}  {x:8.2f} {y:8.2f} | ({row:4d}, {col:4d})             | "
++          f"{feat_x:8.2f} {feat_y:8.2f} | {dx:+8.2f} {dy:+8.2f} | "
++          f"{'*** YES ***' if mismatch else 'no'}")
++
++print()
++
++# ── bev_pos audit ───────────────────────────────────────────────────────
++print("=" * 70)
++print("BEV_POS AUDIT — does positional encoding match feature layout?")
++print("=" * 70)
++print()
++x_size = grid_size[0] // out_size_factor  # 180
++y_size = grid_size[1] // out_size_factor  # 180
++
++meshgrid_inputs = [
++    torch.linspace(0, x_size - 1, x_size),
++    torch.linspace(0, y_size - 1, y_size),
++]
++batch_x, batch_y = torch.meshgrid(*meshgrid_inputs)
++batch_x = batch_x + 0.5
++batch_y = batch_y + 0.5
++coord_base = torch.cat([batch_x[None], batch_y[None]], dim=0)[None]
++bev_pos = coord_base.view(1, 2, -1).permute(0, 2, 1)
++
++print(f"create_2D_grid(x_size={x_size}, y_size={y_size})")
++print(f"bev_pos shape = {bev_pos.shape}")
++print()
++
++for m in [0, 1, 179, 180, 181, 32399]:
++    h = m // x_size
++    w = m % x_size
++    feat_world_x = w * vs[0].item() * out_size_factor + pc_range[0].item()
++    feat_world_y = h * vs[1].item() * out_size_factor + pc_range[1].item()
++    bev_ch0 = bev_pos[0, m, 0].item()
++    bev_ch1 = bev_pos[0, m, 1].item()
++    print(f"  flat_idx={m:5d}  feat_pos=(h={h:3d}, w={w:3d})  "
++          f"feat_world=({feat_world_x:6.1f}, {feat_world_y:6.1f})  "
++          f"bev_pos=({bev_ch0:5.1f}, {bev_ch1:5.1f})  "
++          f"bev_ch0_is={'Y_idx' if abs(bev_ch0 - h - 0.5) < 0.01 else 'X_idx'}  "
++          f"bev_ch1_is={'Y_idx' if abs(bev_ch1 - h - 0.5) < 0.01 else 'X_idx'}")
++
++print()
++print("CONCLUSION: bev_pos channel 0 stores the FIRST meshgrid dim index.")
++print("The first meshgrid dim iterates over x_size but maps to the H (row)")
++print("dimension of the feature map. So bev_pos[m, 0] = row_index = Y_idx")
++print("when it SHOULD be X_idx for consistency with encode target[0] = ix.")
