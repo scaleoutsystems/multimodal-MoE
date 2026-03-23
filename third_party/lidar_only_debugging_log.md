@@ -165,6 +165,43 @@ Also wrapped the entire NMS block in `if self.nms_kernel_size > 1:` to handle
 the edge case where `nms_kernel_size=1` globally (which causes a zero-size tensor
 slice with `padding=0`).
 
+**How the NMS bypass mechanism works in detail**:
+
+The config sets `nms_kernel_size=3` as the *default* for all classes. In
+`forward_single`, the code first applies 3×3 max-pool NMS to the entire heatmap
+(all class channels), keeping only local maxima. Then, dataset-specific `if/elif`
+branches *override* specific class channels by rewriting them with the original
+un-suppressed values using `kernel_size=1` (an identity operation):
+
+```python
+# Step 1: apply 3x3 NMS to ALL classes
+local_max_inner = F.max_pool2d(heatmap, kernel_size=3, stride=1, padding=0)
+local_max[:, :, padding:-padding, padding:-padding] = local_max_inner
+
+# Step 2: override specific classes per dataset
+if self.test_cfg['dataset'] == 'nuScenes':
+    local_max[:, 8, ] = F.max_pool2d(heatmap[:, 8], kernel_size=1, ...)  # pedestrian
+    local_max[:, 9, ] = F.max_pool2d(heatmap[:, 9], kernel_size=1, ...)  # traffic_cone
+elif self.test_cfg['dataset'] == 'Waymo':
+    local_max[:, 1, ] = F.max_pool2d(heatmap[:, 1], kernel_size=1, ...)  # pedestrian
+    local_max[:, 2, ] = F.max_pool2d(heatmap[:, 2], kernel_size=1, ...)  # cyclist
+elif self.test_cfg['dataset'] == 'custom_zod':
+    local_max[:, 0, ] = F.max_pool2d(heatmap[:, 0], kernel_size=1, ...)  # pedestrian
+
+# Step 3: zero out non-maxima
+heatmap = heatmap * (heatmap == local_max)
+```
+
+The string `'custom_zod'` is set in both `train_cfg.dataset` and `test_cfg.dataset`
+in the config file. It is just an identifier — it can be any string as long as the
+config and the `if/elif` branches in `transfusion_head.py` match.
+
+The `nms_kernel_size=3` default is kept in the config (rather than changing it to 1)
+because: (a) the override pattern matches exactly what NuScenes and Waymo already do,
+(b) if vehicle classes are added later they should still get 3×3 NMS, and (c) setting
+`nms_kernel_size=1` globally caused a crash due to a zero-size tensor slice in the
+padding logic.
+
 **Result**: Center L1 error dropped from 4.5 to 0.1 pixels. Matched IoU rose from
 0.26 to 0.62. Loss_bbox dropped 6.6× (1.38 → 0.21 at epoch 100).
 
