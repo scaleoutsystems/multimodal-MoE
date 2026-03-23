@@ -218,9 +218,21 @@ An initial attempt with `nms_kernel_size=1` (global NMS disable) and 200 proposa
 showed 4× worse loss_bbox than the NMS=3 baseline, with gradient norms of 150–170
 (vs 20 in the baseline). The proposals lacked spatial diversity.
 
-**Fix**: Increased `num_proposals` from 200 to 500. With ~37 GT blobs per frame and
-~12 high-value pixels per blob, 500 proposals capture most GT locations while
-maintaining the spatial diversity benefits of NMS bypass.
+**Fix**: Increased `num_proposals` from 200 to 500. Each GT pedestrian creates a
+Gaussian blob of ~12 significant pixels on the heatmap. With ~37 GT per frame,
+~444 pixels have significant values. Top-200 captures only 45% of these, leaving
+many GT blobs with zero proposals. Top-500 captures nearly all of them, giving
+every GT blob multiple nearby proposals for Hungarian matching.
+
+**Critical: changes 6 and 7 are inseparable.** Neither works alone:
+- NMS bypass alone (200 proposals): top-200 from the un-suppressed heatmap clusters
+  around the few strongest peaks. Many GT blobs get 0 proposals. Training diverges
+  (loss_bbox ~10, grad_norm ~170).
+- More proposals alone (500 proposals, NMS=3 kept): suppressed peaks remain at zero
+  regardless of how many proposals are selected. The top-500 after NMS still can't
+  include a peak that was zeroed out.
+- Both together: NMS bypass ensures peaks survive; 500 proposals ensures enough
+  capacity to cover all ~444 significant pixels across ~37 GT blobs.
 
 **Result**: Combined with the NMS bypass (change 6), this produced stable training
 with smooth loss convergence and matched IoU reaching 0.62.
