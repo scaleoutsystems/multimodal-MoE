@@ -63,14 +63,14 @@ Added a `custom_zod` branch in the `predict_by_feat` method that defines a singl
 
 ### 6. `mmdet3d/engine/hooks/__init__.py`
 
-**Change**: Added imports and `__all__` entries for `BEVFeatureVisualizationHook` and `BEVPredictionVisualizationHook`.
-**Why**: Registers the two new custom visualization hooks so they can be referenced by type name in config files.
+**Change**: Added imports and `__all__` entries for `BEVFeatureVisualizationHook`, `BEVPredictionVisualizationHook`, and `BEVValPredictionVisualizationHook`.
+**Why**: Registers the three custom visualization hooks so they can be referenced by type name in config files.
 
 ---
 
 ## New files (2 files)
 
-### 7. `configs/zod/zod_lidar_only.py` (289 lines)
+### 7. `configs/zod/zod_lidar_only.py` (290 lines)
 
 Full MMDetection3D config for LiDAR-only BEVFusion training on the ZOD-MoE pedestrian dataset.
 Key settings:
@@ -84,10 +84,15 @@ Key settings:
 - Single class: `pedestrian`
 - Pretrained from NuScenes LiDAR-only BEVFusion checkpoint
 - Uses `IndoorMetric` for evaluation (no nuscenes-devkit dependency)
-- Includes custom BEV visualization hooks
+- Includes three custom BEV visualization hooks (feature heatmap, train BEV predictions, val BEV predictions)
 
-### 8. `mmdet3d/engine/hooks/bev_visualization_hook.py` (210 lines)
+### 8. `mmdet3d/engine/hooks/bev_visualization_hook.py` (~400 lines)
 
-Two MMEngine custom hooks for training diagnostics:
-- **`BEVFeatureVisualizationHook`**: Saves L2-norm heatmaps of the sparse encoder and FPN outputs for a fixed validation sample at selected epochs.
-- **`BEVPredictionVisualizationHook`**: Overlays predicted vs GT bounding boxes in BEV on LiDAR points for the same sample.
+Three MMEngine custom hooks for training diagnostics:
+- **`BEVFeatureVisualizationHook`**: Saves L2-norm heatmaps of the sparse encoder and FPN outputs for a fixed sample at selected epochs.
+- **`BEVPredictionVisualizationHook`**: Overlays predicted vs GT bounding boxes in BEV on LiDAR points for a fixed **training** sample. Displays the keyframe ID in the plot title.
+- **`BEVValPredictionVisualizationHook`**: Same visualization for a fixed **validation** sample. Since the val pipeline (`test_pipeline`) does not include `LoadAnnotations3D`, this hook loads GT boxes directly from the dataset info dict via `dataset.get_data_info(idx)`, filtering by `dataset.label_mapping`. This bypasses the pipeline entirely for GT, while predictions come from the model's normal `predict` mode on the unmodified val input. Displays the keyframe ID in the plot title.
+
+Shared helpers:
+- `_load_gt_from_info(dataset, idx)` — reads GT boxes from the raw dataset info, filtered by `label_mapping` (e.g., raw label 7 → pedestrian, all others discarded)
+- `_keyframe_id_from_path(lidar_path)` — extracts keyframe ID (e.g., `000011`) from the `.bin` filename

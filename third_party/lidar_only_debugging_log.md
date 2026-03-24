@@ -291,7 +291,7 @@ flips in both X and Y randomly. Disabling it entirely is the safest approach.
 
 ## 10. Visualization Hooks (`mmdet3d/engine/hooks/bev_visualization_hook.py`)
 
-**Added** two custom MMEngine hooks for training diagnostics:
+**Added** three custom MMEngine hooks for training diagnostics:
 
 - **`BEVFeatureVisualizationHook`**: At selected epochs, saves L2-norm heatmaps of
   (a) the sparse encoder output (before backbone) and (b) the FPN output (after
@@ -300,11 +300,21 @@ flips in both X and Y randomly. Disabling it entirely is the safest approach.
 
 - **`BEVPredictionVisualizationHook`**: At selected epochs, overlays predicted
   bounding boxes (red) against GT boxes (green) on a BEV scatter plot of LiDAR
-  points. Uses a configurable `score_thr` (set to 0.3) to filter low-confidence
-  predictions.
+  points for a fixed **training** sample. Uses a configurable `score_thr` (set to
+  0.3) to filter low-confidence predictions. Displays the keyframe ID in the plot
+  title.
 
-Both hooks are registered in `mmdet3d/engine/hooks/__init__.py` and referenced by
-type name in the config.
+- **`BEVValPredictionVisualizationHook`**: Same visualization style, but for a fixed
+  **validation** sample. The val pipeline (`test_pipeline`) intentionally omits
+  `LoadAnnotations3D`, so GT boxes are not available in the batch. This hook solves
+  the problem by loading GT directly from the dataset info dict via
+  `dataset.get_data_info(idx)` and filtering instances with `dataset.label_mapping`
+  (raw label 7 → pedestrian class 0, all others discarded). Predictions come from
+  the model's normal `predict` mode on the unmodified val input. Displays the
+  keyframe ID in the plot title. Output: `bev_val_pred_vs_gt_epoch_{N}.png`.
+
+All three hooks are registered in `mmdet3d/engine/hooks/__init__.py` and referenced
+by type name in the config.
 
 ---
 
@@ -323,7 +333,7 @@ type name in the config.
 | 7 | `zod_lidar_only.py` | Increase num_proposals 200 → 500 | Proposal coverage |
 | 8 | `transfusion_head.py` | Add test-time circle NMS for custom_zod | Evaluation |
 | 9 | `zod_lidar_only.py` | Remove flips, disable rotation | Augmentation |
-| 10 | `bev_visualization_hook.py` | Add BEV feature + prediction viz hooks | Diagnostics |
+| 10 | `bev_visualization_hook.py` | Add BEV feature + train/val prediction viz hooks | Diagnostics |
 
 ---
 
