@@ -1,0 +1,61 @@
+# ============================================================================
+# multimodal-MoE — pip requirements
+# ============================================================================
+# Python 3.10  |  PyTorch 2.4 + CUDA 12.1  |  OpenMMLab stack
+#
+# Install with:
+#   pip install --extra-index-url https://download.pytorch.org/whl/cu121 \
+#               -r requirements.txt
+#
+# NOTE: mmcv requires pre-built CUDA wheels. After installing this file, run:
+#   mim install mmcv==2.2.0
+#
+# NOTE: mmdet3d (v1.4.0) is installed from a local clone with thesis-specific
+# patches.  See third_party/mmdetection3d_changes.md for details.
+#   cd /path/to/mmdetection3d && pip install -e .
+# ============================================================================
+
+# ── PyTorch (CUDA 12.1 wheels) ──────────────────────────────────────────
+# Requires --extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.4.0+cu121
+torchvision==0.19.0+cu121
+torchaudio==2.4.0+cu121
+
+# ── Core scientific stack ────────────────────────────────────────────────
+numpy==1.26.4               # pinned: mmcv/mmdet3d require numpy <2
+scipy==1.15.3
+pandas==2.3.3
+scikit-learn==1.7.2
+pyarrow>=14.0               # parquet I/O via pandas
+
+# ── Image & vision ──────────────────────────────────────────────────────
+opencv-python==4.9.0.80
+pillow>=12.0
+matplotlib>=3.5
+ultralytics>=8.4            # YOLO / RT-DETR inference (lazy import)
+
+# ── OpenMMLab ecosystem ─────────────────────────────────────────────────
+# Install order matters: mmengine → mmcv (via mim) → mmdet → mmdet3d
+mmengine==0.10.7
+mmdet==3.3.0
+openmim==0.3.9              # needed to install mmcv with correct CUDA ops
+# mmcv==2.2.0              # ← install via: mim install mmcv==2.2.0
+# mmdet3d==1.4.0           # ← install via: pip install -e /path/to/mmdetection3d
+
+# ── Dataset & domain-specific ───────────────────────────────────────────
+zod==0.8.0                  # Zenseact Open Dataset SDK
+nuscenes-devkit==1.1.11     # required by mmdet3d for NuScenes format
+pycocotools>=2.0            # COCO evaluation (required by mmdet)
+
+# ── Training, logging, utilities ─────────────────────────────────────────
+tqdm>=4.65
+tensorboard>=2.14
+pyyaml>=6.0
+rich>=13.0
+tabulate>=0.9
+
+# ── Notebook extras (optional — skip for headless training) ──────────────
+# plotly>=6.0
+# h5py>=3.10
+# ipykernel>=7.0
+# ipywidgets>=8.0
