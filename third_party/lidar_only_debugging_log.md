@@ -31,30 +31,60 @@ mmcv 2.2.x. The import fails at startup.
 
 **Problem**: BEVFusion's `__init__.py` unconditionally imports camera modules
 (`DepthLSSTransform`, `ImageAug3D`) that require custom CUDA extensions
-(`bev_pool_ext`). These are not compiled in our LiDAR-only setup.
+(`bev_pool_ext`). These are not compiled in our setup (see 1c for why).
 
 **Fix**: Wrapped camera-specific imports in `try/except`. Only
 `BEVFusionSparseEncoder` is imported unconditionally.
 
 ### 1c. Voxelization ops fallback (`bevfusion/ops/__init__.py`)
 
-**Problem**: Same issue — BEVFusion's custom voxel CUDA extension may not be compiled.
+**Problem**: BEVFusion ships its own custom CUDA extensions for voxelization
+(`voxel_layer`) and camera BEV pooling (`bev_pool_ext`). These are **not** built
+by the normal `pip install -e .` of mmdetection3d. They require a separate
+compilation step:
 
-**Fix**: Added `try/except` fallback to import `Voxelization` and `DynamicScatter`
-from `mmcv.ops` instead.
+```bash
+cd projects/BEVFusion && python setup.py develop
+```
+
+This `setup.py` builds both extensions together in a single invocation. We chose
+not to run it because:
+
+1. The LiDAR-only pipeline does not need `bev_pool_ext` (camera BEV pooling).
+2. The `setup.py` hardcodes CUDA arch flags (`sm_70` through `sm_86`), which may
+   not match every deployment GPU without manual editing.
+3. mmcv already provides functionally equivalent `Voxelization` and
+   `DynamicScatter` ops that are pre-compiled in the mmcv wheel.
+
+**Fix**: Added `try/except` fallback: if BEVFusion's custom `voxel_layer` is not
+compiled, import `Voxelization` and `DynamicScatter` from `mmcv.ops` instead.
+
+**Side effect**: This substitution changes the coordinate order of the voxelization
+output (see Change 2 below). The two ops are functionally equivalent but return
+coordinates in different column order.
 
 ---
 
 ## 2. Voxel Coordinate Ordering (`bevfusion/bevfusion.py`)
 
-**Problem**: After voxelization, the mmcv `Voxelization` op returns coordinates in
-`(batch, Z, Y, X)` order. `BEVFusionSparseEncoder` expects `(batch, Y, X, Z)`.
-Without correction, the spatial dimensions are swapped throughout the sparse encoder,
-producing a transposed BEV feature map. The detection head receives features where
-X and Y are flipped, causing a shape mismatch.
+**This change is a direct consequence of Change 1c** (falling back to mmcv's
+voxelization op). It has nothing to do with the asymmetric BEV range.
 
-**Evidence**: The model crashed with a tensor shape mismatch in the detection head
-heatmap convolution.
+**Problem**: BEVFusion's custom `voxel_layer` returns voxel coordinates in
+`(batch, Y, X, Z)` order — the order that `BEVFusionSparseEncoder` expects.
+mmcv's `Voxelization` returns them in `(batch, Z, Y, X)` order. Without
+correction, Z-dimension values (range 0–40) end up in the Y slot and Y-dimension
+values (range 0–1439) end up in the Z slot. Since the sparse tensor shape is
+`[1440, 1440, 41]`, a Y-coordinate value like 800 placed in the Z dimension
+(max 41) causes an out-of-bounds crash.
+
+**Why this would NOT happen in upstream BEVFusion**: The original code uses its
+own `voxel_layer` extension, which already outputs coordinates in the order the
+sparse encoder expects. No reorder is needed. We only need the reorder because
+we substituted mmcv's op (Change 1c), which uses a different convention.
+
+**Evidence**: The model crashed with an out-of-bounds / shape mismatch error in
+the sparse encoder.
 
 **Fix**: Added `coords = coords[:, [0, 2, 3, 1]]` after voxelization to reorder
 from `(batch, Z, Y, X)` to `(batch, Y, X, Z)`.
@@ -325,7 +355,7 @@ by type name in the config.
 | 1a | `mmdet3d/__init__.py` | Bump mmcv version cap | Environment |
 | 1b | `bevfusion/__init__.py` | Wrap camera imports in try/except | Environment |
 | 1c | `bevfusion/ops/__init__.py` | Fallback to mmcv voxel ops | Environment |
-| 2 | `bevfusion/bevfusion.py` | Reorder voxel coords (Z,Y,X) → (Y,X,Z) | Geometry bug |
+| 2 | `bevfusion/bevfusion.py` | Reorder voxel coords (Z,Y,X) → (Y,X,Z) *(caused by 1c)* | Ops compat |
 | 3 | `bevfusion/bevfusion.py` | Guard against empty point clouds | Robustness |
 | 4 | `transfusion_head.py` | Remove x/y swap in heatmap target placement | Geometry bug |
 | 5 | `transfusion_head.py` | Fix positional encoding channel order | Geometry bug |
