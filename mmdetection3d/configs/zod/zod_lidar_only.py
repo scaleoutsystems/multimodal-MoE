@@ -285,10 +285,16 @@ log_processor = dict(window_size=50)
 
 default_hooks = dict(
     logger=dict(type='LoggerHook', interval=50),
-    checkpoint=dict(type='CheckpointHook', interval=5))
+    checkpoint=dict(
+        type='CheckpointHook',
+        interval=5,
+        save_best='mAP_0.25',
+        rule='greater'))
 
 custom_hooks = [
     dict(type='BEVFeatureVisualizationHook'),
     dict(type='BEVPredictionVisualizationHook', score_thr=0.3),
     dict(type='BEVValPredictionVisualizationHook', score_thr=0.3),
+    dict(type='TrainingEfficiencyHook'),
+    dict(type='RunSummaryHook'),
 ]
