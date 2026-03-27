@@ -214,3 +214,8 @@ outputs/exports/
 # Model checkpoints, train/val visuals, and benchmark outputs are large/derived.
 outputs/runs/
 outputs/eval/
+
+# ── mmdetection3d (monorepo subtree) ────────────────────────────────────
+# Heavy / generated dirs that should never be committed.
+mmdetection3d/work_dirs/
+mmdetection3d/data/

@@ -32,8 +32,8 @@ values are never changed.
 Example
 -------
 python scripts/dataset/create_splits.py \\
-  --input-parquet /mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/index/zod_moe_dataset_with_weather_group.parquet \\
-  --output-dir    /mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/splits \\
+  --input-parquet /mnt/tier2/project/p201222/u103958/zod_moe/index/zod_moe_dataset_with_weather_group.parquet \\
+  --output-dir    /mnt/tier2/project/p201222/u103958/zod_moe/splits \\
   --train-frac 0.80 --val-frac 0.10 --test-frac 0.10 --seed 42
 """
 
@@ -50,11 +50,11 @@ from sklearn.model_selection import train_test_split
 # Defaults
 # ------------------------------------------------------------------
 DEFAULT_INPUT = Path(
-    "/mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/index/"
+    "/mnt/tier2/project/p201222/u103958/zod_moe/index/"
     "zod_moe_dataset_with_weather_group.parquet"
 )
 DEFAULT_OUTPUT_DIR = Path(
-    "/mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/splits"
+    "/mnt/tier2/project/p201222/u103958/zod_moe/splits"
 )
 
 

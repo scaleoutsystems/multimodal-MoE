@@ -64,8 +64,8 @@ Example
 python scripts/dataset/build_infos.py
 
 python scripts/dataset/build_infos.py \\
-    --source-root /mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe \\
-    --final-root  /mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe/zod_nuscenes \\
+    --source-root /mnt/tier2/project/p201222/u103958/zod_moe \\
+    --final-root  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes \\
     --limit 100
 """
 
@@ -86,7 +86,7 @@ import pandas as pd
 # ==================================================================
 # Defaults — change these if your mount point differs
 # ==================================================================
-_MNT = Path("/mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe")
+_MNT = Path("/mnt/tier2/project/p201222/u103958/zod_moe")
 
 DEFAULT_SOURCE_ROOT = _MNT
 DEFAULT_FINAL_ROOT = _MNT / "zod_nuscenes"
@@ -228,11 +228,21 @@ def make_instance_entry(inst: dict) -> dict:
 # Context metadata (for later MoE routing)
 # ------------------------------------------------------------------
 def make_context_entry(row: pd.Series) -> dict:
-    """Extract context fields from a parquet row as raw strings."""
     return {
+        # numeric
+        "solar_angle_elevation": row.get("solar_angle_elevation", None),
+
+        # categorical
         "solar_context_bin": str(row.get("solar_context_bin", "")),
+        "time_of_day": str(row.get("time_of_day", "")),
+        "scraped_weather": str(row.get("scraped_weather", "")),
         "weather_group": str(row.get("weather_group", "")),
         "road_type": str(row.get("road_type", "")),
+        "road_condition": str(row.get("road_condition", "")),
+
+        # numeric (useful later)
+        "ped_count_clear": row.get("ped_count_clear", None),
+        "ped_count_unclear": row.get("ped_count_unclear", None),
     }
 
 
