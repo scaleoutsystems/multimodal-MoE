@@ -262,22 +262,17 @@ def make_context_entry(row: pd.Series) -> dict:
         "road_type": _str("road_type"),
         "road_condition": _str("road_condition"),
 
-        # ── geography ──
-        "country_code": _str("country_code"),
-
         # ── pedestrian counts ──
         "num_pedestrians_final": _int("num_pedestrians_final"),
-        "ped_count_clear": _int("ped_count_clear"),
-        "ped_count_unclear": _int("ped_count_unclear"),
         "ped_present": _int("ped_present"),
 
-        # ── occlusion breakdown ──
-        "ped_occ_none": _int("ped_occ_none"),
+        # ── occlusion breakdown ── WE ARE NOT USING THIS
+       """ "ped_occ_none": _int("ped_occ_none"),
         "ped_occ_light": _int("ped_occ_light"),
         "ped_occ_medium": _int("ped_occ_medium"),
         "ped_occ_heavy": _int("ped_occ_heavy"),
         "ped_occ_veryheavy": _int("ped_occ_veryheavy"),
-        "ped_occ_missing": _int("ped_occ_missing"),
+        "ped_occ_missing": _int("ped_occ_missing"),"""
 
         # ── derived scene complexity ──
         "complexity_score": _num("complexity_score"),
