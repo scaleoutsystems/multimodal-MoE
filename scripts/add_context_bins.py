@@ -93,8 +93,8 @@ def main() -> None:
         raise ValueError("Expected 'solar_angle_elevation' column.")
 
     solar = pd.to_numeric(df["solar_angle_elevation"], errors="coerce")
-    solar_bins = [-1e9, -6.0, 0.0, 1e9]
-    solar_labels = ["night", "twilight", "day"]
+    solar_bins = [-1e9, -3.0, 1e9]
+    solar_labels = ["night", "day"]
 
     df["solar_context_bin"] = (
         pd.cut(solar, bins=solar_bins, labels=solar_labels, include_lowest=True)
