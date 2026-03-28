@@ -90,7 +90,7 @@ _MNT = Path("/mnt/tier2/project/p201222/u103958/zod_moe")
 
 DEFAULT_SOURCE_ROOT = _MNT
 DEFAULT_FINAL_ROOT = _MNT / "zod_nuscenes"
-DEFAULT_INDEX_PARQUET = _MNT / "index" / "zod_moe_dataset_bev108.parquet"
+DEFAULT_INDEX_PARQUET = _MNT / "index" / "zod_moe_dataset_bev108_with_complexity_bin.parquet"
 DEFAULT_TRAIN_SPLIT = _MNT / "index" / "train.txt"
 DEFAULT_VAL_SPLIT = _MNT / "index" / "val.txt"
 DEFAULT_TEST_SPLIT = _MNT / "index" / "test.txt"
@@ -228,21 +228,60 @@ def make_instance_entry(inst: dict) -> dict:
 # Context metadata (for later MoE routing)
 # ------------------------------------------------------------------
 def make_context_entry(row: pd.Series) -> dict:
+    """Pack all context signals from the enriched parquet into the info dict.
+
+    These travel through to each sample and are available at training /
+    evaluation time for MoE routing, per-context analysis, etc.
+    """
+    def _str(key: str) -> str:
+        return str(row.get(key, ""))
+
+    def _num(key: str):
+        v = row.get(key, None)
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return None
+        return float(v)
+
+    def _int(key: str):
+        v = row.get(key, None)
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return None
+        return int(v)
+
     return {
-        # numeric
-        "solar_angle_elevation": row.get("solar_angle_elevation", None),
+        # ── illumination ──
+        "solar_angle_elevation": _num("solar_angle_elevation"),
+        "solar_context_bin": _str("solar_context_bin"),
+        "time_of_day": _str("time_of_day"),
 
-        # categorical
-        "solar_context_bin": str(row.get("solar_context_bin", "")),
-        "time_of_day": str(row.get("time_of_day", "")),
-        "scraped_weather": str(row.get("scraped_weather", "")),
-        "weather_group": str(row.get("weather_group", "")),
-        "road_type": str(row.get("road_type", "")),
-        "road_condition": str(row.get("road_condition", "")),
+        # ── weather ──
+        "scraped_weather": _str("scraped_weather"),
+        "weather_group": _str("weather_group"),
 
-        # numeric (useful later)
-        "ped_count_clear": row.get("ped_count_clear", None),
-        "ped_count_unclear": row.get("ped_count_unclear", None),
+        # ── road ──
+        "road_type": _str("road_type"),
+        "road_condition": _str("road_condition"),
+
+        # ── geography ──
+        "country_code": _str("country_code"),
+
+        # ── pedestrian counts ──
+        "num_pedestrians_final": _int("num_pedestrians_final"),
+        "ped_count_clear": _int("ped_count_clear"),
+        "ped_count_unclear": _int("ped_count_unclear"),
+        "ped_present": _int("ped_present"),
+
+        # ── occlusion breakdown ──
+        "ped_occ_none": _int("ped_occ_none"),
+        "ped_occ_light": _int("ped_occ_light"),
+        "ped_occ_medium": _int("ped_occ_medium"),
+        "ped_occ_heavy": _int("ped_occ_heavy"),
+        "ped_occ_veryheavy": _int("ped_occ_veryheavy"),
+        "ped_occ_missing": _int("ped_occ_missing"),
+
+        # ── derived scene complexity ──
+        "complexity_score": _num("complexity_score"),
+        "complexity_bin": _str("complexity_bin"),
     }
 
 
@@ -561,7 +600,7 @@ def main() -> None:
     if args.limit:
         print(f"(--limit {args.limit} was active)")
 
-    # Quick sanity: confirm new per-instance fields are present
+    # Quick sanity: confirm per-instance and context fields are present
     for name in ("train", "val", "test"):
         pkl = out_paths[name]
         if pkl.exists():
@@ -575,7 +614,14 @@ def main() -> None:
                     print(f"\n  Instance field check ({name}, sample {sample['sample_idx']}):")
                     print(f"    bbox_3d_isvalid : {ex.get('bbox_3d_isvalid', 'MISSING')}")
                     print(f"    num_lidar_pts   : {ex.get('num_lidar_pts', 'MISSING')}")
-                    break
+                ctx = sample.get("context", {})
+                if ctx:
+                    print(f"  Context fields ({name}): {sorted(ctx.keys())}")
+                    print(f"    complexity_bin  : {ctx.get('complexity_bin', 'MISSING')}")
+                    print(f"    scraped_weather : {ctx.get('scraped_weather', 'MISSING')}")
+                    print(f"    solar_context_bin: {ctx.get('solar_context_bin', 'MISSING')}")
+                    print(f"    country_code    : {ctx.get('country_code', 'MISSING')}")
+                break
 
     print("=" * 60)
 

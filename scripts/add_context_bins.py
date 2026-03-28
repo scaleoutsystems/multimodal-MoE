@@ -1,27 +1,22 @@
 """
-Add binned solar-elevation context labels to the source frame parquet.
+Add coarse solar bins and scene-complexity bins to the source frame parquet.
 
-Why this script exists:
-- We use categorical solar context for routing (not raw continuous angle),
-  because MoE routing is more stable/interpretable with coarse illumination regimes.
-- We keep the source parquet immutable and write a derived parquet with the new bins.
+Reads zod_moe_dataset_bev108.parquet and writes a derived parquet with two
+new/updated columns:
 
-How we chose the cutoff values:
-- The U.S. Naval Observatory defines standard illumination boundaries based on
-  solar elevation angle, where civil twilight occurs when the Sun is between
-  -6° and 0° below the horizon, and sunrise/sunset occurs at 0°:
-  https://aa.usno.navy.mil/faq/RST_defs
-- Using these definitions, we group solar elevation into three illumination regimes:
-  - (< -6°) night-like conditions
-  - (-6° to 0°) civil twilight transition
-  - (>= 0°) daytime
-- This categorization is useful in computer vision because illumination strongly
-  affects visibility, contrast, and detection difficulty, making solar elevation
-  a meaningful context signal for analysis and context-aware routing (e.g., MoE).
-- We further split daytime into 0..15, 15..45, and >45 deg bins.
-  These are practical ML routing bands (not strict astronomy classes) used to
-  separate low-sun / mid-sun / high-sun lighting geometry, which often changes
-  shadows, glare, and overall scene appearance for detection.
+  solar_context_bin   — coarse 3-class illumination (night / twilight / day)
+  complexity_bin      — scene difficulty (empty / low / medium / high)
+
+The old 5-class solar_context_bin is overwritten with the coarse version.
+
+Solar bin cutoffs (US Naval Observatory civil-twilight definitions):
+  < -6°    night
+  -6° – 0° twilight
+  >= 0°    day
+
+Complexity score:
+  ped_count_total + 0.25*light + 0.5*medium + 1.0*heavy + 1.5*veryheavy
+  Bins: 0 → empty, (0,4] → low, (4,10] → medium, >10 → high
 """
 
 from __future__ import annotations
@@ -32,40 +27,52 @@ import sys
 
 import pandas as pd
 
-# Allow running as either:
-# - python -m scripts.add_solar_context_bins
-# - python scripts/add_solar_context_bins.py
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.paths import (
-    INDEX_DIR,
-    ZODMOE_FRAMES_WITH_BOXES_PARQUET,
-)
+INDEX_DIR = Path("/mnt/tier2/project/p201222/u103958/zod_moe/index")
+DEFAULT_IN = INDEX_DIR / "zod_moe_dataset_bev108.parquet"
+DEFAULT_OUT = INDEX_DIR / "zod_moe_dataset_bev108_with_complexity_bin.parquet"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Add solar context bins and save derived parquet.")
-    parser.add_argument(
-        "--in-parquet",
-        type=str,
-        default=str(ZODMOE_FRAMES_WITH_BOXES_PARQUET),
-        help="Input source-of-truth parquet path.",
-    )
-    parser.add_argument(
-        "--out-parquet",
-        type=str,
-        default=str(INDEX_DIR / "ZODmoe_frames_with_xyxy_bboxes_and_solar_bins.parquet"),
-        help="Output derived parquet path with solar_context_bin column.",
-    )
-    parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite output parquet if it already exists.",
-    )
-    return parser.parse_args()
+    p = argparse.ArgumentParser(
+        description="Add coarse solar bins + complexity bins to parquet.")
+    p.add_argument("--in-parquet", type=str, default=str(DEFAULT_IN),
+                   help="Input source-of-truth parquet.")
+    p.add_argument("--out-parquet", type=str, default=str(DEFAULT_OUT),
+                   help="Output derived parquet.")
+    p.add_argument("--overwrite", action="store_true",
+                   help="Overwrite output if it already exists.")
+    return p.parse_args()
 
+
+# ── Complexity scoring ───────────────────────────────────────────────
+
+def compute_complexity_score(row: pd.Series) -> float:
+    """Weighted sum of pedestrian count + occlusion difficulty."""
+    return (
+        row["num_pedestrians_final"]
+        + 0.25 * row["ped_occ_light"]
+        + 0.50 * row["ped_occ_medium"]
+        + 1.00 * row["ped_occ_heavy"]
+        + 1.50 * row["ped_occ_veryheavy"]
+    )
+
+
+def assign_complexity_bin(score: float) -> str:
+    if score == 0:
+        return "empty"
+    elif score <= 4:
+        return "low"
+    elif score <= 10:
+        return "medium"
+    else:
+        return "high"
+
+
+# ── Main ─────────────────────────────────────────────────────────────
 
 def main() -> None:
     args = parse_args()
@@ -76,43 +83,47 @@ def main() -> None:
         raise FileNotFoundError(f"Input parquet not found: {in_parquet}")
     if out_parquet.exists() and not args.overwrite:
         raise FileExistsError(
-            f"Output parquet already exists: {out_parquet}. "
-            "Use --overwrite to replace it."
-        )
+            f"Output already exists: {out_parquet}. Use --overwrite to replace.")
 
     df = pd.read_parquet(in_parquet)
+    print(f"Loaded {len(df)} rows from {in_parquet}")
+
+    # ── 1. Coarse solar bins (replaces old 5-class solar_context_bin) ──
     if "solar_angle_elevation" not in df.columns:
-        raise ValueError("Expected 'solar_angle_elevation' column in input parquet.")
+        raise ValueError("Expected 'solar_angle_elevation' column.")
 
     solar = pd.to_numeric(df["solar_angle_elevation"], errors="coerce")
+    solar_bins = [-1e9, -6.0, 0.0, 1e9]
+    solar_labels = ["night", "twilight", "day"]
 
-    # I use fixed bins aligned with common illumination regimes.
-    solar_bins = [-1e9, -6.0, 0.0, 15.0, 45.0, 1e9]
-    solar_labels = [
-        "night(<-6)",
-        "twilight(-6..0)",
-        "low_sun(0..15)",
-        "mid_sun(15..45)",
-        "high_sun(>45)",
-    ]
-
-    solar_binned = pd.cut(
-        solar,
-        bins=solar_bins,
-        labels=solar_labels,
-        include_lowest=True,
+    df["solar_context_bin"] = (
+        pd.cut(solar, bins=solar_bins, labels=solar_labels, include_lowest=True)
+        .astype("string")
+        .fillna("missing")
     )
 
-    # Store as plain strings for portability in downstream code/parquet reads.
-    df["solar_context_bin"] = solar_binned.astype("string").fillna("missing")
+    # ── 2. Complexity bin ──
+    required = ["num_pedestrians_final", "ped_occ_light", "ped_occ_medium",
+                "ped_occ_heavy", "ped_occ_veryheavy"]
+    for col in required:
+        if col not in df.columns:
+            raise ValueError(f"Missing column for complexity: {col}")
 
+    df["complexity_score"] = df.apply(compute_complexity_score, axis=1)
+    df["complexity_bin"] = df["complexity_score"].apply(assign_complexity_bin)
+
+    # ── 3. Save ──
     out_parquet.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(out_parquet, index=False)
 
-    print(f"Input parquet  -> {in_parquet}")
-    print(f"Output parquet -> {out_parquet}")
-    print("solar_context_bin counts:")
+    print(f"\nInput:  {in_parquet}")
+    print(f"Output: {out_parquet}")
+    print(f"\nsolar_context_bin counts:")
     print(df["solar_context_bin"].value_counts(dropna=False).to_string())
+    print(f"\ncomplexity_bin counts:")
+    print(df["complexity_bin"].value_counts(dropna=False).to_string())
+    print(f"\ncomplexity_score stats:")
+    print(df["complexity_score"].describe().to_string())
 
 
 if __name__ == "__main__":

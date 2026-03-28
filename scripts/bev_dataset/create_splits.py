@@ -2,38 +2,29 @@
 """
 Create reproducible train / val / test splits for the ZOD-MoE dataset.
 
-Reads the final dataset parquet and writes three text files (one frame_id
-per line) plus a CSV that records every frame's split assignment.
+Reads the enriched parquet (with complexity_bin) and writes three text files
+(one frame_id per line) plus a CSV recording every frame's split assignment.
 
 Stratification
 --------------
-Splits are stratified on ``solar_context_bin + road_type``.  This ensures
-that each split has a representative mix of:
+Splits are stratified on ``scraped_weather + complexity_bin``.  This ensures
+each split has a representative mix of:
 
-  * **Illumination conditions** (night, twilight, low/mid/high sun) —
-    because detector performance varies strongly with lighting, and an
-    imbalanced split would bias evaluation metrics.
-  * **Scene layout** (city, highway, arterial-urban/rural, smaller-rural) —
-    because road type correlates with pedestrian density, occlusion
-    patterns, and LiDAR point density.
-
-Weather (``weather_group``) is intentionally *not* part of the split key.
-It stays in the parquet so it can be used later as a context signal for
-the MoE router, but we don't want to couple the primary train/val/test
-partitioning to it.
+  * **Weather conditions** — detector performance varies with rain, snow, fog.
+  * **Scene complexity** — empty, low, medium, high pedestrian scenes must be
+    balanced to avoid biased evaluation.
 
 Rare-group handling
 -------------------
-If any ``solar_context_bin × road_type`` combination has fewer than
-``--min-group-size`` samples, those rows are merged into a temporary
-"RARE" bucket for stratification purposes only.  The original column
-values are never changed.
+If any stratification-key combination has fewer than ``--min-group-size``
+samples, those rows are merged into a temporary "RARE" bucket for
+stratification only.  Original column values are never changed.
 
 Example
 -------
-python scripts/dataset/create_splits.py \\
-  --input-parquet /mnt/tier2/project/p201222/u103958/zod_moe/index/zod_moe_dataset_with_weather_group.parquet \\
-  --output-dir    /mnt/tier2/project/p201222/u103958/zod_moe/splits \\
+python scripts/bev_dataset/create_splits.py \\
+  --input-parquet /mnt/tier2/.../index/zod_moe_dataset_bev108_with_complexity_bin.parquet \\
+  --output-dir    /mnt/tier2/.../index \\
   --train-frac 0.80 --val-frac 0.10 --test-frac 0.10 --seed 42
 """
 
@@ -51,10 +42,10 @@ from sklearn.model_selection import train_test_split
 # ------------------------------------------------------------------
 DEFAULT_INPUT = Path(
     "/mnt/tier2/project/p201222/u103958/zod_moe/index/"
-    "zod_moe_dataset_with_weather_group.parquet"
+    "zod_moe_dataset_bev108_with_complexity_bin.parquet"
 )
 DEFAULT_OUTPUT_DIR = Path(
-    "/mnt/tier2/project/p201222/u103958/zod_moe/splits"
+    "/mnt/tier2/project/p201222/u103958/zod_moe/index"
 )
 
 
@@ -87,16 +78,15 @@ def build_strat_key(
     df: pd.DataFrame,
     min_group_size: int,
 ) -> pd.Series:
-    """Build a stratification key from solar_context_bin + road_type.
+    """Build a stratification key from scraped_weather + complexity_bin.
 
     Groups with fewer than ``min_group_size`` members are replaced with
-    the string ``"RARE"`` so that ``train_test_split`` can still perform
-    stratified sampling without raising an error.
+    "RARE" so ``train_test_split`` can still perform stratified sampling.
     """
     raw_key = (
-        df["solar_context_bin"].fillna("NULL").astype(str)
+        df["scraped_weather"].fillna("NULL").astype(str)
         + "__"
-        + df["road_type"].fillna("NULL").astype(str)
+        + df["complexity_bin"].fillna("NULL").astype(str)
     )
 
     counts = raw_key.value_counts()
@@ -123,7 +113,7 @@ def print_cross_distribution(
     split_col: str,
     field: str,
 ) -> pd.DataFrame:
-    """Print and return a split × field cross-tabulation."""
+    """Print and return a split x field cross-tabulation."""
     ct = pd.crosstab(df[split_col], df[field], margins=True)
     print(f"\n--- {field} distribution per split ---")
     print(ct.to_string())
@@ -147,8 +137,8 @@ def main() -> None:
     df = pd.read_parquet(args.input_parquet)
     print(f"Loaded {len(df)} rows from {args.input_parquet}")
 
-    for col in ("frame_id", "solar_context_bin", "road_type"):
-        assert col in df.columns, f"Missing column: {col}"
+    for col in ("frame_id", "scraped_weather", "complexity_bin"):
+        assert col in df.columns, f"Missing required column: {col}"
 
     frame_ids = df["frame_id"].astype(str).values
 
@@ -168,8 +158,6 @@ def main() -> None:
     )
 
     # ---- Second split: val vs test ----
-    # temp_frac is (val + test); within temp, test's share is:
-    #   test_frac / (val_frac + test_frac)
     test_share_of_temp = args.test_frac / temp_frac
 
     val_ids, test_ids = train_test_split(
@@ -204,7 +192,6 @@ def main() -> None:
     # ---- Write split_assignments.csv ----
     train_set = set(train_ids)
     val_set = set(val_ids)
-    test_set = set(test_ids)
 
     def assign(fid: str) -> str:
         if fid in train_set:
@@ -216,26 +203,24 @@ def main() -> None:
     df["split"] = df["frame_id"].astype(str).apply(assign)
 
     csv_path = args.output_dir / "split_assignments.csv"
-    df[["frame_id", "split", "solar_context_bin", "road_type"]].to_csv(
-        csv_path, index=False
-    )
+    df[["frame_id", "split", "scraped_weather", "complexity_bin",
+        "solar_context_bin", "road_type"]].to_csv(csv_path, index=False)
     print(f"Wrote: {csv_path}")
 
     # ---- Cross-distribution summaries ----
+    ct_weather = print_cross_distribution(df, "split", "scraped_weather")
+    ct_complexity = print_cross_distribution(df, "split", "complexity_bin")
     ct_solar = print_cross_distribution(df, "split", "solar_context_bin")
     ct_road = print_cross_distribution(df, "split", "road_type")
 
-    # Save summary CSVs
+    ct_weather.to_csv(args.output_dir / "split_by_scraped_weather.csv")
+    ct_complexity.to_csv(args.output_dir / "split_by_complexity_bin.csv")
     ct_solar.to_csv(args.output_dir / "split_by_solar_context_bin.csv")
     ct_road.to_csv(args.output_dir / "split_by_road_type.csv")
 
     print(f"\nSaved summary CSVs to {args.output_dir}")
 
     # ---- Final report ----
-    n_unknown_weather = 0
-    if "weather_group" in df.columns:
-        n_unknown_weather = int((df["weather_group"] == "unknown").sum())
-
     print("\n" + "=" * 50)
     print("SUMMARY")
     print("=" * 50)
@@ -246,9 +231,7 @@ def main() -> None:
     print(f"Val:            {len(val_ids)}")
     print(f"Test:           {len(test_ids)}")
     print(f"Seed:           {args.seed}")
-    print(f"Strat key:      solar_context_bin + road_type")
-    if "weather_group" in df.columns:
-        print(f"Weather unknown:{n_unknown_weather} (not used in split key)")
+    print(f"Strat key:      scraped_weather + complexity_bin")
 
 
 if __name__ == "__main__":
