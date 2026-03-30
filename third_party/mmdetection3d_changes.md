@@ -15,7 +15,13 @@ git apply /home/edgelab/multimodal-MoE/third_party/mmdetection3d_thesis.patch
 
 ---
 
-## Modified files (7 files, small edits)
+## Current BEV axis convention (active)
+
+- LiDAR BEV path uses `mmcv.ops` voxelization, then `coords = coords[:, [0, 2, 3, 1]]`, so spatial order is `(Y, X)`.
+- Camera BEV from `DepthLSSTransform` is produced as `(X, Y)` and is transposed with `img_feature = img_feature.transpose(-1, -2)` before fusion.
+- Therefore both branches are aligned to `(Y, X)` before `ConvFuser`.
+
+## Modified files (6 files, small edits)
 
 ### 1. `mmdet3d/__init__.py`
 
@@ -25,22 +31,30 @@ git apply /home/edgelab/multimodal-MoE/third_party/mmdetection3d_thesis.patch
 ### 2. `projects/BEVFusion/bevfusion/__init__.py`
 
 **Change**: Wrapped imports of camera-specific BEVFusion modules (e.g., `DepthLSSTransform`, `ImageAug3D`, `BEVFusion` model class) in a `try/except` block. Only `BEVFusionSparseEncoder` is imported unconditionally.
-**Why**: BEVFusion ships custom CUDA extensions (`bev_pool_ext` for camera BEV pooling, `voxel_layer` for voxelization) that are **not** built by the normal `pip install -e .` of mmdetection3d. They require a separate compilation step: `cd projects/BEVFusion && python setup.py develop`. We chose not to run this step because (a) the LiDAR-only pipeline does not need `bev_pool_ext`, (b) the `setup.py` hardcodes CUDA arch flags (`sm_70`–`sm_86`) that may not match every GPU without manual editing, and (c) mmcv already provides functionally equivalent voxelization ops that are pre-compiled in the mmcv wheel. This `try/except` lets the package import cleanly without those extensions.
+**Why**: BEVFusion ships custom CUDA extensions (`bev_pool_ext` for camera BEV pooling, `voxel_layer` for voxelization) that are **not** built by the normal `pip install -e .` of mmdetection3d. They require a separate compilation step: `cd projects/BEVFusion && python setup.py develop`. In the current setup, `bev_pool_ext` may be built separately for camera+LiDAR runs, while voxelization is intentionally taken from `mmcv.ops` (see §3) to keep coordinate conventions consistent. This `try/except` keeps imports robust when camera-specific extensions are absent.
 
 ### 3. `projects/BEVFusion/bevfusion/ops/__init__.py`
 
-**Change**: Added `try/except` fallback: if BEVFusion's custom `voxel_layer` extension is not compiled, import `Voxelization` and `DynamicScatter` from `mmcv.ops` instead.
-**Why**: Direct consequence of not compiling BEVFusion's custom extensions (see §2 above). mmcv's ops are functionally equivalent but return voxel coordinates in a different column order — this creates the need for Change 4A below.
+**Change**:
+- Kept `bev_pool` as a guarded import with an explicit runtime error if missing (no silent `None` fallback).
+- Forced voxel ops to always use `mmcv.ops` (`Voxelization`, `DynamicScatter`, etc.), even when BEVFusion's custom `voxel_layer` extension is present.
+**Why**:
+- Camera+LiDAR BEVFusion requires `bev_pool`; failing loudly gives clear setup feedback.
+- BEVFusion custom `voxel_layer` emits coordinates in `(X, Y, Z)`, while the current LiDAR path in `bevfusion.py` is implemented for mmcv's `(Z, Y, X)` output plus the reorder in Change 4A. Forcing mmcv voxel ops avoids convention drift and prevents sparse-conv coordinate mismatches.
 
-### 4. `projects/BEVFusion/bevfusion/bevfusion.py` (2 changes)
+### 4. `projects/BEVFusion/bevfusion/bevfusion.py` (3 changes)
 
 **Change A – Coordinate reordering in `extract_pts_feat`** *(direct consequence of §3)*:
 Added `coords = coords[:, [0, 2, 3, 1]]` after voxelization.
-**Why**: BEVFusion's own `voxel_layer` returns coordinates in `(batch, Y, X, Z)` order — the order `BEVFusionSparseEncoder` expects. The mmcv `Voxelization` fallback (§3) returns them in `(batch, Z, Y, X)` order. Without this permutation, Y-coordinates (range 0–1439) end up in the Z slot (max 41), causing an out-of-bounds crash during sparse tensor creation. This fix is purely a consequence of using mmcv's voxelization instead of BEVFusion's custom one; it is unrelated to the asymmetric BEV range.
+**Why**: mmcv `Voxelization` returns coordinates in `(batch, Z, Y, X)`, while `BEVFusionSparseEncoder` expects `(batch, Y, X, Z)`. Without this permutation, Y-coordinates (range 0–1439) end up in the Z slot (max 41), causing an out-of-bounds crash during sparse tensor creation.
 
 **Change B – Zero-point guard in `voxelize`**:
 Added a check: if a sample's point cloud has 0 points (e.g., after `PointsRangeFilter`), substitute a single dummy zero-point.
 **Why**: The `hard_voxelize_forward` CUDA kernel crashes with `invalid configuration argument` when given an empty input. This can happen during validation on edge-case samples.
+
+**Change C – Camera BEV transpose before fusion in `extract_feat`**:
+Added `img_feature = img_feature.transpose(-1, -2)` right after `extract_img_feat(...)`.
+**Why**: With Change 4A, LiDAR BEV uses `(Y, X)` spatial ordering. Camera BEV from `DepthLSSTransform` is produced in `(X, Y)`. Without transposing camera BEV, `ConvFuser` concatenates features that are spatially axis-swapped across branches. The transpose enforces a shared `(Y, X)` convention before fusion.
 
 ### 5. `projects/BEVFusion/bevfusion/transfusion_head.py` (4 changes)
 

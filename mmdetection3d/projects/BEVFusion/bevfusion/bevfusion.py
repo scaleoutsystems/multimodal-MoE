@@ -273,6 +273,11 @@ class BEVFusion(Base3DDetector):
                                                 camera2lidar, img_aug_matrix,
                                                 lidar_aug_matrix,
                                                 batch_input_metas)
+            # bev_pool produces camera BEV in (B, C, X, Y) order, but the
+            # LiDAR BEV is in (B, C, Y, X) after the mmcv-voxelizer coord
+            # reorder in extract_pts_feat.  Transpose so both branches use
+            # the same spatial convention before fusion.
+            img_feature = img_feature.transpose(-1, -2)
             features.append(img_feature)
         pts_feature = self.extract_pts_feat(batch_inputs_dict)
         features.append(pts_feature)

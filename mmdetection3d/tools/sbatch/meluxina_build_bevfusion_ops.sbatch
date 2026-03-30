@@ -64,6 +64,40 @@ if ! command -v nvcc &>/dev/null; then
   done
 fi
 
+# PyTorch 2.4 requires GCC >= 9.  MeluXina RHEL8 ships GCC 8 in /usr/bin,
+# so we must use a newer GCCcore from EasyBuild.
+_gcc_found=false
+if declare -F module &>/dev/null; then
+  for _gcc in GCCcore/13.3.0 GCCcore/12.3.0 GCC/13.3.0 GCC/12.3.0; do
+    if module load "${_gcc}" 2>/dev/null; then
+      echo "Loaded module: ${_gcc}"
+      _gcc_found=true
+      break
+    fi
+  done
+fi
+if [[ "${_gcc_found}" != true ]]; then
+  for _gcc_root in \
+    /apps/USE/easybuild/release/2024.1/software/GCCcore/13.3.0 \
+    /apps/USE/easybuild/release/2025.1/software/GCCcore/14.2.0 \
+    /apps/USE/easybuild/release/2024.1/software/GCCcore/12.3.0; do
+    if [[ -x "${_gcc_root}/bin/gcc" ]]; then
+      export PATH="${_gcc_root}/bin:${PATH}"
+      export LD_LIBRARY_PATH="${_gcc_root}/lib64:${LD_LIBRARY_PATH:-}"
+      echo "Using GCC from ${_gcc_root}/bin/gcc"
+      _gcc_found=true
+      break
+    fi
+  done
+fi
+if [[ "${_gcc_found}" != true ]]; then
+  echo "ERROR: Could not find GCC >= 9. PyTorch 2.4 CUDA extensions require it." >&2
+  exit 1
+fi
+export CC="$(command -v gcc)"
+export CXX="$(command -v g++)"
+echo "CC=${CC}  ($(gcc --version | head -1))"
+
 export FORCE_CUDA=1
 export MAX_JOBS="${MAX_JOBS:-8}"
 

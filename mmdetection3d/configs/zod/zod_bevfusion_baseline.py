@@ -86,9 +86,7 @@ model = dict(
         convert_weights=True,
         init_cfg=dict(
             type='Pretrained',
-            checkpoint=(
-                'https://github.com/SwinTransformer/storage/releases'
-                '/download/v1.0.0/swin_tiny_patch4_window7_224.pth'))),
+            checkpoint='/mnt/tier2/project/p201222/u103958/checkpoints/swin_tiny_patch4_window7_224.pth')),
     img_neck=dict(
         type='GeneralizedLSSFPN',
         in_channels=[192, 384, 768],
