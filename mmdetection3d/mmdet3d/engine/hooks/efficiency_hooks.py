@@ -100,14 +100,15 @@ class TrainingEfficiencyHook(Hook):
         mem_alloc = torch.cuda.max_memory_allocated() / (1024 ** 2)
         mem_reserved = torch.cuda.max_memory_reserved() / (1024 ** 2)
 
-        runner.log_buffer.update({
+        log_vars = {
             'train/sec_per_iter': round(sec_per_iter, 4),
             'train/iters_per_sec': round(iters_per_sec, 2),
             'train/samples_per_sec': round(samples_per_sec, 2),
             'train/samples_per_sec_per_gpu': round(samples_per_sec_gpu, 2),
             'train/max_mem_allocated_mb': round(mem_alloc, 1),
             'train/max_mem_reserved_mb': round(mem_reserved, 1),
-        })
+        }
+        runner.message_hub.update_scalars(log_vars)
 
     def after_train_epoch(self, runner) -> None:
         if not _is_rank0():

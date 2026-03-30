@@ -251,7 +251,7 @@ vis_backends = [dict(type='LocalVisBackend')]
 visualizer = dict(
     type='Det3DLocalVisualizer', vis_backends=vis_backends, name='visualizer')
 
-lr = 0.0001
+lr = 5e-5
 param_scheduler = [
     dict(
         type='CosineAnnealingLR',
@@ -285,10 +285,10 @@ test_cfg = dict()
 optim_wrapper = dict(
     type='AmpOptimWrapper',
     optimizer=dict(type='AdamW', lr=lr, weight_decay=0.01),
-    clip_grad=dict(max_norm=35, norm_type=2),
+    clip_grad=dict(max_norm=10, norm_type=2),
     loss_scale='dynamic')
 
-auto_scale_lr = dict(enable=True, base_batch_size=32)
+auto_scale_lr = dict(enable=False)
 log_processor = dict(window_size=50)
 
 default_hooks = dict(
