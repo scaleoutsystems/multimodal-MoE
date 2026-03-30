@@ -115,6 +115,10 @@ class BEVFeatureVisualizationHook(Hook):
 
     priority = 'LOW'
 
+    def __init__(self, x_range=(0, 108), y_range=(-54, 54)):
+        self.x_range = tuple(x_range)
+        self.y_range = tuple(y_range)
+
     def after_train_epoch(self, runner):
         if not _should_visualize(runner):
             return
@@ -170,12 +174,16 @@ class BEVFeatureVisualizationHook(Hook):
                                 f'{filename_tag}_epoch_{epoch}.png')
             _ensure_dir(out_path)
 
+            extent = [self.x_range[0], self.x_range[1],
+                      self.y_range[0], self.y_range[1]]
+
             fig, ax = plt.subplots(1, 1, figsize=(8, 7))
             im = ax.imshow(heatmap, cmap='viridis', origin='lower',
-                            aspect='equal', vmin=0, vmax=vmax)
+                            aspect='equal', vmin=0, vmax=vmax,
+                            extent=extent)
             fig.colorbar(im, ax=ax, shrink=0.8)
-            ax.set_xlabel('W  (X grid)')
-            ax.set_ylabel('H  (Y grid)')
+            ax.set_xlabel('X forward (m)')
+            ax.set_ylabel('Y lateral (m)')
             ax.set_title(f'{title_prefix} \u2013 L2 norm  (epoch {epoch})')
             fig.tight_layout()
             fig.savefig(out_path, dpi=150)
@@ -211,7 +219,7 @@ class BEVPredictionVisualizationHook(Hook):
 
     priority = 'LOW'
 
-    def __init__(self, score_thr=0.3):
+    def __init__(self, score_thr=0.2):
         self.score_thr = score_thr
 
     def after_train_epoch(self, runner):
@@ -312,7 +320,7 @@ class BEVValPredictionVisualizationHook(Hook):
 
     priority = 'LOW'
 
-    def __init__(self, score_thr=0.3, sample_idx=0):
+    def __init__(self, score_thr=0.2, sample_idx=0):
         self.score_thr = score_thr
         self.sample_idx = sample_idx
 

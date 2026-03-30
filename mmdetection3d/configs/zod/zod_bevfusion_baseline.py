@@ -423,9 +423,9 @@ custom_hooks = [
     # LiDAR BEV feature heatmaps (same as lidar-only)
     dict(type='BEVFeatureVisualizationHook'),
     # train-set prediction vs GT overlay
-    dict(type='BEVPredictionVisualizationHook', score_thr=0.3),
+    dict(type='BEVPredictionVisualizationHook', score_thr=0.2),
     # val-set prediction vs GT overlay
-    dict(type='BEVValPredictionVisualizationHook', score_thr=0.3),
+    dict(type='BEVValPredictionVisualizationHook', score_thr=0.2),
     # camera BEV + fused BEV heatmaps (new for fusion)
     dict(type='BEVCameraFeatureVisualizationHook'),
     # DepthLSSTransform diagnostic (sparse depth, predicted depth, entropy)

@@ -301,8 +301,8 @@ default_hooks = dict(
 
 custom_hooks = [
     dict(type='BEVFeatureVisualizationHook'),
-    dict(type='BEVPredictionVisualizationHook', score_thr=0.3),
-    dict(type='BEVValPredictionVisualizationHook', score_thr=0.3),
+    dict(type='BEVPredictionVisualizationHook', score_thr=0.2),
+    dict(type='BEVValPredictionVisualizationHook', score_thr=0.2),
     dict(type='TrainingEfficiencyHook'),
     dict(type='RunSummaryHook'),
 ]

@@ -52,6 +52,10 @@ class BEVCameraFeatureVisualizationHook(Hook):
 
     priority = 'LOW'
 
+    def __init__(self, x_range=(0, 108), y_range=(-54, 54)):
+        self.x_range = tuple(x_range)
+        self.y_range = tuple(y_range)
+
     def after_train_epoch(self, runner):
         if not _should_visualize(runner):
             return
@@ -109,6 +113,10 @@ class BEVCameraFeatureVisualizationHook(Hook):
                 feat = feat[0]
             feat = feat[0]  # drop batch dim → (C, H, W)
             heatmap = feat.float().norm(dim=0).cpu().numpy()
+            if key == 'camera_bev':
+                # view_transform outputs (B,C,X,Y); model transposes to
+                # (B,C,Y,X) after the hook fires — mirror that here.
+                heatmap = heatmap.T
 
             vmax = (np.percentile(heatmap[heatmap > 0], 95)
                     if (heatmap > 0).any() else 1.0)
@@ -117,12 +125,16 @@ class BEVCameraFeatureVisualizationHook(Hook):
                 vis_dir, f'{filename_tag}_epoch_{epoch}.png')
             _ensure_dir(out_path)
 
+            extent = [self.x_range[0], self.x_range[1],
+                      self.y_range[0], self.y_range[1]]
+
             fig, ax = plt.subplots(1, 1, figsize=(8, 7))
             im = ax.imshow(heatmap, cmap='viridis', origin='lower',
-                           aspect='equal', vmin=0, vmax=vmax)
+                           aspect='equal', vmin=0, vmax=vmax,
+                           extent=extent)
             fig.colorbar(im, ax=ax, shrink=0.8)
-            ax.set_xlabel('W  (X grid)')
-            ax.set_ylabel('H  (Y grid)')
+            ax.set_xlabel('X forward (m)')
+            ax.set_ylabel('Y lateral (m)')
             ax.set_title(f'{title_prefix} \u2013 L2 norm  (epoch {epoch})')
             fig.tight_layout()
             fig.savefig(out_path, dpi=150)
@@ -196,16 +208,27 @@ class DepthTransformDiagnosticHook(Hook):
 
         # --- Panel 1: sparse LiDAR depth on image ---
         sd = captured.get('sparse_depth')
+        img_h, img_w = 0, 0
         if sd is not None:
             sd_np = sd[0, 0].cpu().float().numpy()  # cam 0, channel 0
+            img_h, img_w = sd_np.shape
             ax = axes[0, 0]
-            im = ax.imshow(sd_np, cmap='magma', origin='upper', aspect='auto')
-            fig.colorbar(im, ax=ax, shrink=0.8, label='depth (m)')
-            ax.set_title('Sparse LiDAR depth on image')
+            from matplotlib.colors import LogNorm
             nz = sd_np[sd_np > 0]
+            vmin_log = max(nz.min(), 1.0) if len(nz) > 0 else 1.0
+            vmax_log = nz.max() if len(nz) > 0 else 60.0
+            sd_plot = np.where(sd_np > 0, sd_np, np.nan)
+            im = ax.imshow(sd_plot, cmap='turbo', origin='upper',
+                           aspect='auto',
+                           norm=LogNorm(vmin=vmin_log, vmax=vmax_log))
+            fig.colorbar(im, ax=ax, shrink=0.8, label='depth (m)')
+            ax.set_title(f'Sparse LiDAR depth on image ({img_h}\u00d7{img_w} px)')
+            ax.set_xlabel('u (pixels)')
+            ax.set_ylabel('v (pixels)')
             stats = f'pixels with depth: {len(nz)}'
             if len(nz) > 0:
                 stats += f'\nrange: [{nz.min():.1f}, {nz.max():.1f}] m'
+            ax.set_facecolor('black')
             ax.text(0.02, 0.98, stats, transform=ax.transAxes, fontsize=8,
                     va='top',
                     bbox=dict(boxstyle='round', fc='white', alpha=0.8))
@@ -214,6 +237,10 @@ class DepthTransformDiagnosticHook(Hook):
 
         # --- Panel 2: predicted depth (argmax) ---
         dn = captured.get('dn_out')
+        feat_extent = None
+        if img_h > 0 and img_w > 0:
+            feat_extent = [0, img_w, img_h, 0]
+
         if dn is not None:
             dn0 = dn[0].float()  # cam 0: (D+C, fH, fW)
             depth_logits = dn0[:D]
@@ -225,11 +252,15 @@ class DepthTransformDiagnosticHook(Hook):
             depth_map = depth_bins[
                 depth_dist.argmax(dim=0).cpu()].numpy()
 
+            fH, fW = depth_map.shape
             ax = axes[0, 1]
             im = ax.imshow(depth_map, cmap='turbo', origin='upper',
-                           aspect='auto')
+                           aspect='auto', extent=feat_extent)
             fig.colorbar(im, ax=ax, shrink=0.8, label='depth (m)')
-            ax.set_title('Predicted depth (argmax of softmax)')
+            ax.set_title(
+                f'Predicted depth \u2013 argmax ({fH}\u00d7{fW} feat grid)')
+            ax.set_xlabel('u (pixels)')
+            ax.set_ylabel('v (pixels)')
 
             # --- Panel 3: entropy of depth distribution ---
             eps = 1e-8
@@ -238,9 +269,11 @@ class DepthTransformDiagnosticHook(Hook):
 
             ax = axes[1, 0]
             im = ax.imshow(entropy, cmap='hot', origin='upper',
-                           aspect='auto')
+                           aspect='auto', extent=feat_extent)
             fig.colorbar(im, ax=ax, shrink=0.8, label='entropy (nats)')
             ax.set_title('Depth distribution entropy')
+            ax.set_xlabel('u (pixels)')
+            ax.set_ylabel('v (pixels)')
             ax.text(0.02, 0.98,
                     f'mean: {entropy.mean():.2f}\nmax: {entropy.max():.2f}',
                     transform=ax.transAxes, fontsize=8, va='top',
@@ -258,9 +291,12 @@ class DepthTransformDiagnosticHook(Hook):
                     if (dt_norm > 0).any() else 1.0)
             ax = axes[1, 1]
             im = ax.imshow(dt_norm, cmap='viridis', origin='upper',
-                           aspect='auto', vmin=0, vmax=vmax)
+                           aspect='auto', vmin=0, vmax=vmax,
+                           extent=feat_extent)
             fig.colorbar(im, ax=ax, shrink=0.8)
             ax.set_title('Processed depth features (L2 norm)')
+            ax.set_xlabel('u (pixels)')
+            ax.set_ylabel('v (pixels)')
         else:
             axes[1, 1].set_visible(False)
 
