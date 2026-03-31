@@ -64,9 +64,9 @@ default_hooks = dict(
     logger=dict(type='LoggerHook', interval=1),
     checkpoint=dict(type='CheckpointHook', interval=50))
 
-# --- viz hooks: score_thr=0.2 for clean plots (suppresses noisy clusters) --
+# --- viz hooks: score_thr=0.3 for clean plots (suppresses noisy clusters) --
 custom_hooks = [
     dict(type='BEVFeatureVisualizationHook'),
-    dict(type='BEVPredictionVisualizationHook', score_thr=0.2),
-    dict(type='BEVValPredictionVisualizationHook', score_thr=0.2),
+    dict(type='BEVPredictionVisualizationHook', score_thr=0.3),
+    dict(type='BEVValPredictionVisualizationHook', score_thr=0.3),
 ]

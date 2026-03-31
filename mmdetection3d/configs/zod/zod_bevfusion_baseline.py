@@ -29,11 +29,17 @@ custom_imports = dict(
     imports=['projects.BEVFusion.bevfusion'], allow_failed_imports=False)
 
 # ---------------------------------------------------------------------------
-# Pretrained LiDAR branch: same NuScenes LiDAR-only BEVFusion checkpoint.
+# Pretrained LiDAR branch: use OUR trained ZOD LiDAR-only checkpoint.
+# The NuScenes checkpoint has spconv weight-layout mismatches that prevent
+# loading the sparse encoder — our own checkpoint was trained with the same
+# spconv build, so every LiDAR weight loads correctly.
 # Camera backbone (Swin-T) loads ImageNet weights via its own init_cfg.
 # Fusion layer, img_neck, and view_transform start from scratch.
 # ---------------------------------------------------------------------------
-load_from = '/mnt/tier2/project/p201222/u103958/checkpoints/bevfusion_lidar_voxel0075_second_secfpn_8xb4-cyclic-20e_nus-3d-2628f933.pth'
+load_from = '/home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4436121/epoch_10.pth'
+
+# DDP must tolerate frozen LiDAR params during the camera-warmup phase
+find_unused_parameters = True
 
 # ===== geometry =====
 voxel_size = [0.075, 0.075, 0.2]
@@ -404,8 +410,14 @@ test_cfg = dict()
 optim_wrapper = dict(
     type='AmpOptimWrapper',
     optimizer=dict(type='AdamW', lr=lr, weight_decay=0.01),
-    clip_grad=dict(max_norm=10, norm_type=2),
-    loss_scale='dynamic')
+    clip_grad=dict(max_norm=15, norm_type=2),
+    loss_scale='dynamic',
+    paramwise_cfg=dict(
+        custom_keys={
+            'pts_middle_encoder': dict(lr_mult=0.1),
+            'pts_backbone': dict(lr_mult=0.1),
+            'pts_neck': dict(lr_mult=0.1),
+        }))
 
 auto_scale_lr = dict(enable=False)
 log_processor = dict(window_size=50)
@@ -420,12 +432,14 @@ default_hooks = dict(
         rule='greater'))
 
 custom_hooks = [
+    # --- fusion training strategy: freeze LiDAR for first 5 epochs ---
+    dict(type='FusionTrainingStrategyHook', freeze_lidar_epochs=5),
     # LiDAR BEV feature heatmaps (same as lidar-only)
     dict(type='BEVFeatureVisualizationHook'),
     # train-set prediction vs GT overlay
-    dict(type='BEVPredictionVisualizationHook', score_thr=0.2),
+    dict(type='BEVPredictionVisualizationHook', score_thr=0.3),
     # val-set prediction vs GT overlay
-    dict(type='BEVValPredictionVisualizationHook', score_thr=0.2),
+    dict(type='BEVValPredictionVisualizationHook', score_thr=0.3),
     # camera BEV + fused BEV heatmaps (new for fusion)
     dict(type='BEVCameraFeatureVisualizationHook'),
     # DepthLSSTransform diagnostic (sparse depth, predicted depth, entropy)

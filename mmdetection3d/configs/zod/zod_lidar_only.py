@@ -296,13 +296,13 @@ default_hooks = dict(
     checkpoint=dict(
         type='CheckpointHook',
         interval=5,
-        save_best='mAP_0.25',
+        save_best='mAP_0.50',
         rule='greater'))
 
 custom_hooks = [
     dict(type='BEVFeatureVisualizationHook'),
-    dict(type='BEVPredictionVisualizationHook', score_thr=0.2),
-    dict(type='BEVValPredictionVisualizationHook', score_thr=0.2),
+    dict(type='BEVPredictionVisualizationHook', score_thr=0.3),
+    dict(type='BEVValPredictionVisualizationHook', score_thr=0.3),
     dict(type='TrainingEfficiencyHook'),
     dict(type='RunSummaryHook'),
 ]

@@ -182,8 +182,8 @@ class BEVFeatureVisualizationHook(Hook):
                             aspect='equal', vmin=0, vmax=vmax,
                             extent=extent)
             fig.colorbar(im, ax=ax, shrink=0.8)
-            ax.set_xlabel('X forward (m)')
-            ax.set_ylabel('Y lateral (m)')
+            ax.set_xlabel('X (m)')
+            ax.set_ylabel('Y (m)')
             ax.set_title(f'{title_prefix} \u2013 L2 norm  (epoch {epoch})')
             fig.tight_layout()
             fig.savefig(out_path, dpi=150)
@@ -219,7 +219,7 @@ class BEVPredictionVisualizationHook(Hook):
 
     priority = 'LOW'
 
-    def __init__(self, score_thr=0.2):
+    def __init__(self, score_thr=0.3):
         self.score_thr = score_thr
 
     def after_train_epoch(self, runner):

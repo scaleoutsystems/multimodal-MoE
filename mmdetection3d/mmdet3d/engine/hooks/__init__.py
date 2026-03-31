@@ -7,6 +7,7 @@ from .bevfusion_visualization_hook import (BEVCameraFeatureVisualizationHook,
                                            DepthTransformDiagnosticHook)
 from .disable_object_sample_hook import DisableObjectSampleHook
 from .efficiency_hooks import RunSummaryHook, TrainingEfficiencyHook
+from .fusion_training_hook import FusionTrainingStrategyHook
 from .visualization_hook import Det3DVisualizationHook
 
 __all__ = [
@@ -15,4 +16,5 @@ __all__ = [
     'BEVValPredictionVisualizationHook',
     'BEVCameraFeatureVisualizationHook', 'DepthTransformDiagnosticHook',
     'TrainingEfficiencyHook', 'RunSummaryHook',
+    'FusionTrainingStrategyHook',
 ]
