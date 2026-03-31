@@ -1,11 +1,6 @@
 """Camera + LiDAR BEVFusion baseline for ZOD pedestrian detection.
 
-Architecture
-    Swin-T → GeneralizedLSSFPN → DepthLSSTransform  ──┐
-                                                      ├─ ConvFuser → SECOND → SECONDFPN → TransFusionHead
-    HardSimpleVFE → BEVFusionSparseEncoder            ──┘
 
-Derived from:
     configs/zod/zod_lidar_only.py          — dataset, training, evaluator, hooks
     configs/mmdet3d/zod_bevfusion_template.py  — camera encoder + view transform + fusion
 
@@ -75,6 +70,7 @@ model = dict(
 
     # ── camera encoder ──
     img_backbone=dict(
+        # camera backbone architecture
         type='mmdet.SwinTransformer',
         embed_dims=96,
         depths=[2, 2, 6, 2],
@@ -94,6 +90,7 @@ model = dict(
             type='Pretrained',
             checkpoint='/mnt/tier2/project/p201222/u103958/checkpoints/swin_tiny_patch4_window7_224.pth')),
     img_neck=dict(
+        # camera feature extractor, which takes the camera features and extracts the features for the BEV
         type='GeneralizedLSSFPN',
         in_channels=[192, 384, 768],
         out_channels=256,
@@ -108,8 +105,8 @@ model = dict(
         type='DepthLSSTransform',
         in_channels=256,
         out_channels=80,
-        image_size=[448, 1248],
-        feature_size=[56, 156],
+        image_size=[704, 1248],
+        feature_size=[88, 156],
         xbound=[0.0, 108.0, 0.3],
         ybound=[-54.0, 54.0, 0.3],
         zbound=[-10.0, 10.0, 20.0],
@@ -243,7 +240,7 @@ train_pipeline = [
         with_attr_label=False),
     dict(
         type='ImageAug3D',
-        final_dim=[448, 1248],
+        final_dim=[704, 1248],
         resize_lim=[1.0, 1.0],
         bot_pct_lim=[0.0, 0.0],
         rot_lim=[0.0, 0.0],
@@ -296,7 +293,7 @@ test_pipeline = [
         backend_args=backend_args),
     dict(
         type='ImageAug3D',
-        final_dim=[448, 1248],
+        final_dim=[704, 1248],
         resize_lim=[1.0, 1.0],
         bot_pct_lim=[0.0, 0.0],
         rot_lim=[0.0, 0.0],
@@ -428,7 +425,7 @@ default_hooks = dict(
     checkpoint=dict(
         type='CheckpointHook',
         interval=5,
-        save_best='mAP_0.25',
+        save_best='mAP_0.50',
         rule='greater'))
 
 custom_hooks = [
@@ -448,4 +445,6 @@ custom_hooks = [
     dict(type='TrainingEfficiencyHook'),
     # end-of-run summary
     dict(type='RunSummaryHook'),
+    # one-shot geometry debug (fires at epoch 1 only)
+    dict(type='DepthProjectionDebugHook'),
 ]

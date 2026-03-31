@@ -305,4 +305,9 @@ class BEVFusion(Base3DDetector):
 
         losses.update(bbox_loss)
 
+        vt = getattr(self, 'view_transform', None)
+        aux = getattr(vt, '_aux_depth_loss', None) if vt else None
+        if aux is not None and aux.numel() > 0 and aux.item() > 0:
+            losses['aux_depth_loss'] = aux
+
         return losses

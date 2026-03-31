@@ -255,6 +255,33 @@ class LSSTransform(BaseViewTransform):
 
 class BaseDepthTransform(BaseViewTransform):
 
+    def __init__(self, *args, splat_radius: int = 0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.splat_radius = splat_radius
+
+    @staticmethod
+    def _splat_depth(depth, coords, dist, image_size, radius):
+        """Write depth values with optional NxN neighbourhood splatting.
+
+        When radius > 0, each LiDAR hit is written to a (2r+1)² patch.
+        Closer (smaller) depth wins at each pixel.
+        """
+        H, W = image_size
+        if radius <= 0:
+            depth[0, coords[:, 0], coords[:, 1]] = dist
+            return depth
+        for dr in range(-radius, radius + 1):
+            for dc in range(-radius, radius + 1):
+                nr = coords[:, 0] + dr
+                nc = coords[:, 1] + dc
+                valid = (nr >= 0) & (nr < H) & (nc >= 0) & (nc < W)
+                nr, nc, d = nr[valid], nc[valid], dist[valid]
+                cur = depth[0, nr, nc]
+                # keep the closer depth at each pixel
+                new = torch.where((cur == 0) | (d < cur), d, cur)
+                depth[0, nr, nc] = new
+        return depth
+
     def forward(
         self,
         img,
@@ -311,8 +338,9 @@ class BaseDepthTransform(BaseViewTransform):
                 masked_coords = cur_coords[c, on_img[c]].long()
                 masked_dist = dist[c, on_img[c]]
                 depth = depth.to(masked_dist.dtype)
-                depth[b, c, 0, masked_coords[:, 0],
-                      masked_coords[:, 1]] = masked_dist
+                self._splat_depth(
+                    depth[b, c], masked_coords, masked_dist,
+                    self.image_size, self.splat_radius)
 
         extra_rots = lidar_aug_matrix[..., :3, :3]
         extra_trans = lidar_aug_matrix[..., :3, 3]
@@ -345,9 +373,21 @@ class DepthLSSTransform(BaseDepthTransform):
         zbound: Tuple[float, float, float],
         dbound: Tuple[float, float, float],
         downsample: int = 1,
+        splat_radius: int = 0,
+        aux_depth_loss_weight: float = 0.0,
     ) -> None:
         """Compared with `LSSTransform`, `DepthLSSTransform` adds sparse depth
-        information from lidar points into the inputs of the `depthnet`."""
+        information from lidar points into the inputs of the `depthnet`.
+
+        Args:
+            splat_radius: if >0, each LiDAR hit is written to a (2r+1)²
+                neighbourhood in the sparse depth map (closer depth wins).
+            aux_depth_loss_weight: if >0, an auxiliary cross-entropy loss is
+                added on the depth logits, supervised by the sparse GT depth
+                quantized into the same D bins.  Stored in
+                ``self._aux_depth_loss`` after each forward for the training
+                loop to pick up.
+        """
         super().__init__(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -357,7 +397,10 @@ class DepthLSSTransform(BaseDepthTransform):
             ybound=ybound,
             zbound=zbound,
             dbound=dbound,
+            splat_radius=splat_radius,
         )
+        self.aux_depth_loss_weight = aux_depth_loss_weight
+        self._aux_depth_loss = None
         self.dtransform = nn.Sequential(
             nn.Conv2d(1, 8, 1),
             nn.BatchNorm2d(8),
@@ -406,6 +449,7 @@ class DepthLSSTransform(BaseDepthTransform):
     def get_cam_feats(self, x, d):
         B, N, C, fH, fW = x.shape
 
+        d_full = d  # (B, N, 1, H, W) — keep for aux loss
         d = d.view(B * N, *d.shape[2:])
         x = x.view(B * N, C, fH, fW)
 
@@ -413,12 +457,54 @@ class DepthLSSTransform(BaseDepthTransform):
         x = torch.cat([d, x], dim=1)
         x = self.depthnet(x)
 
-        depth = x[:, :self.D].softmax(dim=1)
-        x = depth.unsqueeze(1) * x[:, self.D:(self.D + self.C)].unsqueeze(2)
+        depth_logits = x[:, :self.D]
+        depth = depth_logits.softmax(dim=1)
+        feat = x[:, self.D:(self.D + self.C)]
 
+        # auxiliary depth supervision
+        if self.training and self.aux_depth_loss_weight > 0:
+            self._aux_depth_loss = self._compute_aux_depth_loss(
+                depth_logits, d_full, B, N, fH, fW)
+        else:
+            self._aux_depth_loss = None
+
+        x = depth.unsqueeze(1) * feat.unsqueeze(2)
         x = x.view(B, N, self.C, self.D, fH, fW)
         x = x.permute(0, 1, 3, 4, 5, 2)
         return x
+
+    def _compute_aux_depth_loss(self, depth_logits, d_full, B, N, fH, fW):
+        """Cross-entropy loss between predicted depth distribution and sparse
+        GT depth quantized into the same D bins.
+
+        Only pixels that have valid sparse depth are supervised.
+        """
+        import torch.nn.functional as F
+
+        dmin, dmax, dstep = self.dbound
+        D = self.D
+
+        # Downsample GT depth from (B,N,1,H,W) to (BN,1,fH,fW) via
+        # nearest-taking-max-depth to match feature resolution.
+        gt = d_full.view(B * N, 1, *self.image_size)
+        gt_ds = F.adaptive_max_pool2d(gt, (fH, fW)).squeeze(1)  # (BN, fH, fW)
+
+        # Quantize depth into bin index
+        valid = gt_ds > 0
+        if valid.sum() == 0:
+            return depth_logits.new_tensor(0.0)
+
+        bin_idx = ((gt_ds - dmin) / dstep).long()
+        bin_idx = bin_idx.clamp(0, D - 1)
+
+        # Masked cross-entropy
+        logits_flat = depth_logits.permute(0, 2, 3, 1).reshape(-1, D)
+        target_flat = bin_idx.reshape(-1)
+        valid_flat = valid.reshape(-1)
+
+        loss = F.cross_entropy(
+            logits_flat[valid_flat], target_flat[valid_flat], reduction='mean')
+        return loss * self.aux_depth_loss_weight
 
     def forward(self, *args, **kwargs):
         x = super().forward(*args, **kwargs)

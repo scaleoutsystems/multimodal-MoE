@@ -28,7 +28,7 @@
 # Default training work_dir: multimodal-MoE/outputs/runs/zod_bevfusion/<jobname>_<id>/
 #
 # Watch progress (use the JOBID printed by sbatch, not an old one):
-#   tail -f ~/projects/multimodal-MoE/outputs/runs/slurm_logs/zod-bevfusion-JOBID.out
+#   tail -f ~/projects/multimodal-MoE/outputs/runs/slurm_logs/zod-bevfusion-4436539.out
 # =============================================================================
 
 #SBATCH --job-name=zod-bevfusion
@@ -42,7 +42,8 @@
 #SBATCH --gpus-per-task=1
 #SBATCH --cpus-per-task=8
 #SBATCH --constraint=40ga100
-#SBATCH --time=48:00:00
+## TEMPORARILY SET TO 2 HOURS FOR DEBUGGING. Change back to 48 hours before submission.
+#SBATCH --time=02:00:00
 #SBATCH --output=/home/users/%u/projects/multimodal-MoE/outputs/runs/slurm_logs/%x-%j.out
 #SBATCH --error=/home/users/%u/projects/multimodal-MoE/outputs/runs/slurm_logs/%x-%j.err
 
