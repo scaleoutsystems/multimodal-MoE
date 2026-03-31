@@ -112,7 +112,7 @@ model = dict(
         zbound=[-10.0, 10.0, 20.0],
         dbound=[1.0, 60.0, 0.5],
         downsample=2,
-        splat_radius=1
+        splat_radius=1,
         aux_depth_loss_weight=3.0),
 
     # ── fusion (camera BEV 80-ch + LiDAR BEV 256-ch → 256-ch) ──
