@@ -1,4 +1,5 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+from .center_distance_metric import CenterDistanceMetric  # noqa: F401,F403
 from .indoor_metric import IndoorMetric  # noqa: F401,F403
 from .instance_seg_metric import InstanceSegMetric  # noqa: F401,F403
 from .kitti_metric import KittiMetric  # noqa: F401,F403
@@ -10,5 +11,6 @@ from .waymo_metric import WaymoMetric  # noqa: F401,F403
 
 __all__ = [
     'KittiMetric', 'NuScenesMetric', 'IndoorMetric', 'LyftMetric', 'SegMetric',
-    'InstanceSegMetric', 'WaymoMetric', 'PanopticSegMetric'
+    'InstanceSegMetric', 'WaymoMetric', 'PanopticSegMetric',
+    'CenterDistanceMetric'
 ]

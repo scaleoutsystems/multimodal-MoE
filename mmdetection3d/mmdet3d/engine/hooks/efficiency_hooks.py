@@ -168,17 +168,32 @@ class RunSummaryHook(Hook):
         self._peak_mem_alloc = max(self._peak_mem_alloc, mem)
         self._peak_mem_reserved = max(self._peak_mem_reserved, rsv)
 
+    # Ordered list of metric keys to try as primary for best-epoch tracking.
+    # First match wins.
+    _PRIMARY_KEYS = [
+        'mAP_1.0m',      # center-distance (preferred for outdoor)
+        'mAP_2.0m',      # center-distance (nuScenes leaderboard default)
+        'mAP_0.50',      # 3D IoU @ 0.50
+        'mAP_0.25',      # 3D IoU @ 0.25
+        'mAP',           # generic fallback
+    ]
+
     def after_val_epoch(self, runner, metrics=None) -> None:
         if metrics is None:
             return
         self._final_metrics = dict(metrics)
-        primary = metrics.get('mAP_0.25', metrics.get('mAP', None))
-        if primary is not None:
-            prev_best = self._best_metrics.get('mAP_0.25',
-                                               self._best_metrics.get('mAP', -1))
-            if primary > prev_best:
-                self._best_metrics = dict(metrics)
-                self._best_epoch = runner.epoch + 1
+        primary_key = None
+        for k in self._PRIMARY_KEYS:
+            if k in metrics:
+                primary_key = k
+                break
+        if primary_key is None:
+            return
+        cur = metrics[primary_key]
+        prev = self._best_metrics.get(primary_key, -1)
+        if cur > prev:
+            self._best_metrics = dict(metrics)
+            self._best_epoch = runner.epoch + 1
 
     def after_train(self, runner) -> None:
         if not _is_rank0():

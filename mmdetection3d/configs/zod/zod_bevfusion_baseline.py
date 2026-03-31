@@ -111,7 +111,9 @@ model = dict(
         ybound=[-54.0, 54.0, 0.3],
         zbound=[-10.0, 10.0, 20.0],
         dbound=[1.0, 60.0, 0.5],
-        downsample=2),
+        downsample=2,
+        splat_radius=1
+        aux_depth_loss_weight=3.0),
 
     # ── fusion (camera BEV 80-ch + LiDAR BEV 256-ch → 256-ch) ──
     fusion_layer=dict(
@@ -370,9 +372,17 @@ test_dataloader = dict(
         box_type_3d='LiDAR',
         backend_args=backend_args))
 
-# ===== evaluators (identical to zod_lidar_only) =====
-val_evaluator = dict(type='IndoorMetric', iou_thr=[0.25, 0.5])
-test_evaluator = dict(type='IndoorMetric', iou_thr=[0.25, 0.5])
+# ===== evaluators =====
+# 3D IoU matching (strict, good for box quality)
+# + BEV center-distance matching (nuScenes-style, better for outdoor detection)
+val_evaluator = [
+    dict(type='IndoorMetric', iou_thr=[0.25, 0.5]),
+    dict(type='CenterDistanceMetric', dist_thr=[0.5, 1.0, 2.0, 4.0]),
+]
+test_evaluator = [
+    dict(type='IndoorMetric', iou_thr=[0.25, 0.5]),
+    dict(type='CenterDistanceMetric', dist_thr=[0.5, 1.0, 2.0, 4.0]),
+]
 
 # ===== visualizer =====
 vis_backends = [dict(type='LocalVisBackend')]
@@ -425,7 +435,7 @@ default_hooks = dict(
     checkpoint=dict(
         type='CheckpointHook',
         interval=5,
-        save_best='mAP_0.50',
+        save_best='mAP_1.0m',
         rule='greater'))
 
 custom_hooks = [

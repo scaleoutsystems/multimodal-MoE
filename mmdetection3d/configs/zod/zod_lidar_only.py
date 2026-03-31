@@ -244,8 +244,14 @@ test_dataloader = dict(
         box_type_3d='LiDAR',
         backend_args=backend_args))
 
-val_evaluator = dict(type='IndoorMetric', iou_thr=[0.25, 0.5])
-test_evaluator = dict(type='IndoorMetric', iou_thr=[0.25, 0.5])
+val_evaluator = [
+    dict(type='IndoorMetric', iou_thr=[0.25, 0.5]),
+    dict(type='CenterDistanceMetric', dist_thr=[0.5, 1.0, 2.0, 4.0]),
+]
+test_evaluator = [
+    dict(type='IndoorMetric', iou_thr=[0.25, 0.5]),
+    dict(type='CenterDistanceMetric', dist_thr=[0.5, 1.0, 2.0, 4.0]),
+]
 
 vis_backends = [dict(type='LocalVisBackend')]
 visualizer = dict(
@@ -296,7 +302,7 @@ default_hooks = dict(
     checkpoint=dict(
         type='CheckpointHook',
         interval=5,
-        save_best='mAP_0.50',
+        save_best='mAP_1.0m',
         rule='greater'))
 
 custom_hooks = [
