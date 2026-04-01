@@ -28,7 +28,7 @@
 # Default training work_dir: multimodal-MoE/outputs/runs/zod_lidar_only/<jobname>_<id>/
 #
 # Watch progress (use the JOBID printed by sbatch, not an old one):
-#   tail -f ~/projects/multimodal-MoE/outputs/runs/slurm_logs/zod-lidar-only-JOBID.out
+#   tail -f ~/projects/multimodal-MoE/outputs/runs/slurm_logs/zod-lidar-only-4436539.out
 # =============================================================================
 
 #SBATCH --job-name=zod-lidar-only

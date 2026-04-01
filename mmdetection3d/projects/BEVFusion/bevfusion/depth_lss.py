@@ -380,7 +380,7 @@ class DepthLSSTransform(BaseDepthTransform):
         information from lidar points into the inputs of the `depthnet`.
 
         Args:
-            splat_radius: if >0, each LiDAR hit is written to a (2r+1)²
+            splat_radius: if >0, each LiDAR hit is written to a (2r+1)x(2r+1)
                 neighbourhood in the sparse depth map (closer depth wins).
             aux_depth_loss_weight: if >0, an auxiliary cross-entropy loss is
                 added on the depth logits, supervised by the sparse GT depth
@@ -480,8 +480,9 @@ class DepthLSSTransform(BaseDepthTransform):
         Only pixels that have valid sparse depth are supervised.
         """
         import torch.nn.functional as F
-
+        # self.dbound = [1.0, 60.0, 0.5]
         dmin, dmax, dstep = self.dbound
+        # total number of bins = (dmax - dmin) / dstep = (60.0 - 1.0) / 0.5 = 118
         D = self.D
 
         # Downsample GT depth from (B,N,1,H,W) to (BN,1,fH,fW) via

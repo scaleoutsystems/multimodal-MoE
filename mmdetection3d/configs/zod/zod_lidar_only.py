@@ -311,4 +311,6 @@ custom_hooks = [
     dict(type='BEVValPredictionVisualizationHook', score_thr=0.3),
     dict(type='TrainingEfficiencyHook'),
     dict(type='RunSummaryHook'),
+    dict(type='ValidationCurveHook',
+         metric_keys=('mAP_1.0m',)),
 ]
