@@ -1,53 +1,41 @@
-"""Camera + LiDAR BEVFusion baseline for ZOD pedestrian detection.
+"""Camera + LiDAR BEVFusion fine-tuning config for ZOD pedestrian detection.
 
-LiDAR branch loads the same NuScenes pretrained checkpoint used by
-zod_lidar_only; camera backbone (Swin-T) loads ImageNet weights.  All
-other parameters (camera neck, view transform, fusion layer) start random.
-Both branches train jointly for 20 epochs with a single uniform learning
-rate (no per-branch multipliers), matching the original BEVFusion approach.
-A LinearLR warmup (500 iters) stabilises early fusion when camera features
-are still uninformative.
+Derived from zod_bevfusion_baseline.py with minimal, targeted changes for
+staged fine-tuning.  Only the settings listed below differ from the baseline;
+everything else (model architecture, pipelines, dataloaders, evaluators,
+hooks, base LR, optimizer) is intentionally kept identical.
 
+Initialisation:
+    - LiDAR branch loads a strong ZOD-trained checkpoint
+      (best_mAP_1.0m_epoch_14.pth from the LiDAR-only run).  All sparse
+      encoder, SECOND backbone, SECONDFPN, and detection-head weights are
+      initialised from this checkpoint with matching spconv layout.
+      LiDAR remains fully trainable (not frozen).
+    - Camera backbone (Swin-T) loads ImageNet weights via init_cfg.
+    - Camera neck, view transform (DepthLSSTransform), and fusion layer
+      (ConvFuser) are randomly initialised.
 
+Schedule:
+    - 10 epochs (fine-tuning, not full from-scratch training).
+    - LinearLR warmup (500 iters, start_factor=1/3) is retained to
+      stabilise early fusion when camera features are still uninformative.
+    - Cosine annealing: phase 1 (0→4 ep) + phase 2 (4→10 ep).
 
-    configs/zod/zod_bevfusion_baseline.py          — dataset, training, evaluator, hooks, camera encoder + view transform + fusion
-
-Differences from the LiDAR-only config:
-    1. ``input_modality`` enables the camera branch.
-    2. ``data_prefix`` includes ``CAM_FRONT`` for image loading.
-    3. Data preprocessor adds ImageNet mean/std normalisation.
-    4. Model gains ``img_backbone``, ``img_neck``, ``view_transform``,
-       and ``fusion_layer``.
-    5. Pipelines add ``BEVLoadMultiViewImageFromFiles``, ``ImageAug3D``,
-       ``GridMask`` (disabled, prob=0), and ``BEVFusionGlobalRotScaleTrans``
-       (replaces ``GlobalRotScaleTrans`` to track ``lidar_aug_matrix``).
-    6. Pack3DDetInputs carries camera-specific meta keys.
-    7. Two new visualisation hooks: camera-BEV + fused-BEV heatmaps, and
-       DepthLSSTransform diagnostics (sparse depth, predicted depth,
-       entropy, processed depth features).
-    8. Camera depth projection extended to 90 m (dbound upper) to match
-       ZOD LiDAR coverage more closely while remaining impactful. Lifting 
-       Doesn't work great when distance is too large but we still want to
-       have similar coverage to the LiDAR branch (108m for lidar, 90m for camera)
-
-The LinearLR warmup (500 iters, start_factor=1/3). In early iterations the 
-camera produces random noise that gets fused with the LiDAR BEV — a brief 
-LR ramp helps stabilize this. The original BEVFusion includes this for exactly
-that reason.
+Losses:
+    - aux_depth_loss_weight reduced from 3.0 to 0.5 to avoid overwhelming
+      detection losses with noisy camera depth gradients early in training.
 """
 
-# initialize the base config
 _base_ = ['../_base_/default_runtime.py']
-# make bevfusion ops available
 custom_imports = dict(
     imports=['projects.BEVFusion.bevfusion'], allow_failed_imports=False)
 
 # ---------------------------------------------------------------------------
-# Pretrained LiDAR: same NuScenes checkpoint used by zod_lidar_only.
-# MMEngine loads with strict=False — camera/fusion layers are absent in
-# the checkpoint and start from scratch; Swin-T loads ImageNet via init_cfg.
+# Strong LiDAR init: ZOD-trained checkpoint (same spconv build → no layout
+# mismatch).  Camera/fusion layers are absent in the checkpoint and start
+# from scratch; Swin-T loads ImageNet via init_cfg.
 # ---------------------------------------------------------------------------
-load_from = '/mnt/tier2/project/p201222/u103958/checkpoints/bevfusion_lidar_voxel0075_second_secfpn_8xb4-cyclic-20e_nus-3d-2628f933.pth'
+load_from = '/home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4440636/best_mAP_1.0m_epoch_14.pth'
 
 # ===== geometry =====
 voxel_size = [0.075, 0.075, 0.2]
@@ -83,7 +71,6 @@ model = dict(
 
     # ── camera encoder ──
     img_backbone=dict(
-        # camera backbone architecture
         type='mmdet.SwinTransformer',
         embed_dims=96,
         depths=[2, 2, 6, 2],
@@ -103,7 +90,6 @@ model = dict(
             type='Pretrained',
             checkpoint='/mnt/tier2/project/p201222/u103958/checkpoints/swin_tiny_patch4_window7_224.pth')),
     img_neck=dict(
-        # camera feature extractor, which takes the camera features and extracts the features for the BEV
         type='GeneralizedLSSFPN',
         in_channels=[192, 384, 768],
         out_channels=256,
@@ -273,7 +259,7 @@ train_pipeline = [
         type='GridMask',
         use_h=True,
         use_w=True,
-        max_epoch=20,
+        max_epoch=10,
         rotate=1,
         offset=False,
         ratio=0.5,
@@ -386,8 +372,6 @@ test_dataloader = dict(
         backend_args=backend_args))
 
 # ===== evaluators =====
-# 3D IoU matching (strict, good for box quality)
-# + BEV center-distance matching (nuScenes-style, better for outdoor detection)
 val_evaluator = [
     dict(type='IndoorMetric', iou_thr=[0.25, 0.5]),
     dict(type='CenterDistanceMetric', dist_thr=[0.5, 1.0, 2.0, 4.0]),
@@ -403,12 +387,11 @@ visualizer = dict(
     type='Det3DLocalVisualizer', vis_backends=vis_backends, name='visualizer')
 
 # ===== optimizer / scheduler =====
-# Uniform LR — same NuScenes LiDAR init for both configs; neither branch
-# is ZOD-trained so no per-branch multiplier is needed.
-# LinearLR warmup (500 iters) follows the original BEVFusion fusion config:
-# early camera features are random noise fused with meaningful LiDAR BEV,
-# so a brief ramp stabilises training.
-# Cosine schedule mirrors zod_lidar_only: 8 + 12 = 20 epochs.
+# Uniform LR for all parameters.  LiDAR is already strong from the ZOD
+# checkpoint; camera/fusion components learn from scratch.
+# LinearLR warmup (500 iters) retained for stability: early camera features
+# are random noise fused with meaningful LiDAR BEV.
+# Cosine schedule: phase 1 (0→4 ep) + phase 2 (4→10 ep) = 10 epochs total.
 lr = 5e-5
 param_scheduler = [
     dict(
@@ -419,23 +402,23 @@ param_scheduler = [
         end=500),
     dict(
         type='CosineAnnealingLR',
-        T_max=8, eta_min=lr * 10,
-        begin=0, end=8, by_epoch=True, convert_to_iter_based=True),
+        T_max=4, eta_min=lr * 10,
+        begin=0, end=4, by_epoch=True, convert_to_iter_based=True),
     dict(
         type='CosineAnnealingLR',
-        T_max=12, eta_min=lr * 1e-4,
-        begin=8, end=20, by_epoch=True, convert_to_iter_based=True),
+        T_max=6, eta_min=lr * 1e-4,
+        begin=4, end=10, by_epoch=True, convert_to_iter_based=True),
     dict(
         type='CosineAnnealingMomentum',
-        T_max=8, eta_min=0.85 / 0.95,
-        begin=0, end=8, by_epoch=True, convert_to_iter_based=True),
+        T_max=4, eta_min=0.85 / 0.95,
+        begin=0, end=4, by_epoch=True, convert_to_iter_based=True),
     dict(
         type='CosineAnnealingMomentum',
-        T_max=12, eta_min=1,
-        begin=8, end=20, by_epoch=True, convert_to_iter_based=True),
+        T_max=6, eta_min=1,
+        begin=4, end=10, by_epoch=True, convert_to_iter_based=True),
 ]
 
-train_cfg = dict(by_epoch=True, max_epochs=20, val_interval=1)
+train_cfg = dict(by_epoch=True, max_epochs=10, val_interval=1)
 val_cfg = dict()
 test_cfg = dict()
 
@@ -453,28 +436,19 @@ default_hooks = dict(
     logger=dict(type='LoggerHook', interval=50),
     checkpoint=dict(
         type='CheckpointHook',
-        interval=5,
+        interval=2,
         save_best='mAP_1.0m',
         rule='greater'))
 
 custom_hooks = [
-    # LiDAR BEV feature heatmaps (same as lidar-only)
     dict(type='BEVFeatureVisualizationHook'),
-    # train-set prediction vs GT overlay
     dict(type='BEVPredictionVisualizationHook', score_thr=0.3),
-    # val-set prediction vs GT overlay
     dict(type='BEVValPredictionVisualizationHook', score_thr=0.3),
-    # camera BEV + fused BEV heatmaps (new for fusion)
     dict(type='BEVCameraFeatureVisualizationHook'),
-    # DepthLSSTransform diagnostic (sparse depth, predicted depth, entropy)
     dict(type='DepthTransformDiagnosticHook'),
-    # throughput / memory tracking
     dict(type='TrainingEfficiencyHook'),
-    # end-of-run summary
     dict(type='RunSummaryHook'),
-    # one-shot geometry debug (fires at epoch 1 only)
     dict(type='DepthProjectionDebugHook'),
-    # validation AP curve over epochs
     dict(type='ValidationCurveHook',
          metric_keys=('mAP_1.0m',)),
 ]

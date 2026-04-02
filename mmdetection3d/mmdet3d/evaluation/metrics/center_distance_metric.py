@@ -1,5 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-"""Center-distance-based 3D detection metric (nuScenes-style matching).
+"""FOR ZOD-MOE THESIS: 
+Center-distance-based 3D detection metric (nuScenes-style matching).
 
 Matches predictions to ground truths using BEV center distance instead of
 3D IoU.  This is the standard approach for outdoor driving benchmarks

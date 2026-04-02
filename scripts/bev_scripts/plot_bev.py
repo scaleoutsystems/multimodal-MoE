@@ -2,7 +2,12 @@
 """Plot BEV predictions vs ground truth from a BEVFusion checkpoint.
 
 Usage:
-    python scripts/bev_scripts/plot_bev.py <checkpoint_path> [--score-thr 0.2]
+    srun --partition=gpu --nodes=1 --ntasks=1 --gres=gpu:1 \
+     --account=p201222 --qos=default --time=01:00:00 --pty \
+     /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python \
+     scripts/bev_scripts/plot_bev.py \
+     outputs/runs/zod_lidar_only/zod-lidar-only_4440636/best_mAP_1.0m_epoch_14.pth \
+     --score-thr 0.2
 
 Outputs are saved to:
     outputs/runs/<run_name>/visualizations/bev_pred_vs_gt_epoch_<N>_<keyframe>.png
@@ -118,6 +123,24 @@ def load_gt_from_info(dataset, idx):
 def main():
     args = parse_args()
 
+    # Sparse convolutions (mmcv / spconv) are CUDA-only.  Fail early with a
+    # clear message rather than crashing inside the sparse encoder.
+    if not torch.cuda.is_available():
+        print(
+            'ERROR: No CUDA GPU detected.  plot_bev.py requires a GPU because '
+            'the LiDAR sparse encoder uses mmcv sparse convolutions that are '
+            'not implemented on CPU.\n'
+            '\n'
+            'Run on a GPU node instead, e.g.:\n'
+            '  srun --partition=gpu --nodes=1 --ntasks=1 --gres=gpu:1 \\\n'
+            '       --account=p201222 --qos=default --pty \\\n'
+            '       /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python \\\n'
+            '       scripts/bev_scripts/plot_bev.py <checkpoint> [--score-thr 0.2]\n'
+            '\n'
+            'Or submit as a short Slurm batch job.',
+            file=sys.stderr)
+        sys.exit(1)
+
     from mmengine.config import Config
     from mmengine.dataset import pseudo_collate
     from mmengine.registry import init_default_scope
@@ -136,25 +159,30 @@ def main():
     model = MODELS.build(cfg.model)
     load_checkpoint(model, args.checkpoint, map_location='cpu', strict=False)
     model.eval()
-    if torch.cuda.is_available():
-        model = model.cuda()
+    model = model.cuda()
 
     val_cfg = cfg.val_dataloader.dataset
     val_dataset = DATASETS.build(val_cfg)
 
     run_name = infer_run_name(args.checkpoint)
     epoch = infer_epoch(args.checkpoint)
-    out_dir = osp.join('outputs', 'runs', run_name, 'visualizations')
+    # Use an absolute path anchored to the repo root so the output location is
+    # the same regardless of cwd (the compute node may resolve relative paths
+    # differently from the login node).
+    #repo_root = osp.abspath(osp.join(osp.dirname(__file__), '..', '..'))
+    #out_dir = osp.join(repo_root, 'outputs', 'runs', run_name, 'visualizations')
+    #os.makedirs(out_dir, exist_ok=True)
+    # adjust to the project root and run name
+    out_dir = "~/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4440636/visualizations"
     os.makedirs(out_dir, exist_ok=True)
-
+    print(f'Output directory: {out_dir}')
     n_samples = min(args.max_samples, len(val_dataset))
     print(f'Plotting {n_samples} samples from val set  '
           f'(run={run_name}, epoch={epoch}, score_thr={args.score_thr})')
 
     for idx in range(n_samples):
         batch = pseudo_collate([val_dataset[idx]])
-        if torch.cuda.is_available():
-            batch = _to_cuda(batch)
+        batch = _to_cuda(batch)
 
         with torch.no_grad():
             data = model.data_preprocessor(batch, training=False)
@@ -198,7 +226,7 @@ def main():
 
         ax.set_aspect('equal')
         ax.set_title(
-            f'BEV pred(red) vs GT(green)  epoch {epoch}  '
+            f'BEV val pred(red) vs GT(green)  epoch {epoch}  '
             f'[keyframe {kf_id}]\n'
             f'GT: {n_gt}  |  pred (score\u2265{args.score_thr}): {n_pred}  |  '
             f'max score: {all_scores.max():.3f}')
