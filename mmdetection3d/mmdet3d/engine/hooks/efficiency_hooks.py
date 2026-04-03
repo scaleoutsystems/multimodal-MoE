@@ -193,7 +193,7 @@ class RunSummaryHook(Hook):
         prev = self._best_metrics.get(primary_key, -1)
         if cur > prev:
             self._best_metrics = dict(metrics)
-            self._best_epoch = runner.epoch + 1
+            self._best_epoch = runner.epoch
 
     def after_train(self, runner) -> None:
         if not _is_rank0():
@@ -215,7 +215,7 @@ class RunSummaryHook(Hook):
             f'     world_size           : {self._world}',
             f'     per_gpu_batch_size   : {self._batch_size}',
             f'     global_batch_size    : {self._batch_size * self._world}',
-            f'     total_epochs         : {runner.epoch + 1}',
+            f'     total_epochs         : {runner.epoch}',
             '',
             '  B) Validation Performance',
         ]

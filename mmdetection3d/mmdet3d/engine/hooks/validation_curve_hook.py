@@ -48,7 +48,7 @@ class ValidationCurveHook(Hook):
     def after_val_epoch(self, runner, metrics=None) -> None:
         if metrics is None:
             return
-        epoch = runner.epoch + 1
+        epoch = runner.epoch
         updated = False
         for key in self.metric_keys:
             if key in metrics:
