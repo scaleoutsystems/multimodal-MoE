@@ -313,4 +313,7 @@ custom_hooks = [
     dict(type='RunSummaryHook'),
     dict(type='ValidationCurveHook',
          metric_keys=('mAP_1.0m',)),
+    dict(type='ValidationCurveHook',
+         metric_keys=('mAP_0.50',),
+         filename='val_curve_ap_0_50'),
 ]
