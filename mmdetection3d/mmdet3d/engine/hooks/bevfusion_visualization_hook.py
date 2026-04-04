@@ -52,12 +52,13 @@ class BEVCameraFeatureVisualizationHook(Hook):
 
     priority = 'LOW'
 
-    def __init__(self, x_range=(0, 108), y_range=(-54, 54)):
+    def __init__(self, x_range=(0, 108), y_range=(-54, 54), vis_epochs=None):
         self.x_range = tuple(x_range)
         self.y_range = tuple(y_range)
+        self.vis_epochs = set(vis_epochs) if vis_epochs is not None else None
 
     def after_train_epoch(self, runner):
-        if not _should_visualize(runner):
+        if not _should_visualize(runner, self.vis_epochs):
             return
         epoch = runner.epoch + 1
         model = _unwrap(runner)
@@ -160,8 +161,11 @@ class DepthTransformDiagnosticHook(Hook):
 
     priority = 'LOW'
 
+    def __init__(self, vis_epochs=None):
+        self.vis_epochs = set(vis_epochs) if vis_epochs is not None else None
+
     def after_train_epoch(self, runner):
-        if not _should_visualize(runner):
+        if not _should_visualize(runner, self.vis_epochs):
             return
         epoch = runner.epoch + 1
         model = _unwrap(runner)

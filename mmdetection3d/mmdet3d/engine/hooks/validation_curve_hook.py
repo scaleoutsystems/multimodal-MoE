@@ -84,10 +84,11 @@ class ValidationCurveHook(Hook):
             ax.annotate(
                 f'{best_val:.4f}',
                 xy=(best_ep, best_val),
-                xytext=(0, 8),
+                xytext=(0, -14),
                 textcoords='offset points',
                 fontsize=8,
                 ha='center',
+                va='top',
                 color='green',
                 fontweight='bold',
             )

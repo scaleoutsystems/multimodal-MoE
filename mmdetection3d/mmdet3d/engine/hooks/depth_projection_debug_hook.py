@@ -1,6 +1,7 @@
-"""One-shot debug hook for DepthLSSTransform sparse-depth diagnostics.
+"""Debug hook for DepthLSSTransform sparse-depth diagnostics.
 
-Fires at epoch 1 and produces:
+Fires according to a configurable epoch schedule (default: epoch 1 only;
+pass vis_epochs to change) and always at the final epoch.  Produces:
   1. LiDAR overlay on the actual augmented image
   2. Multi-hit collision analysis (how many points map to the same pixel)
   3. Occupancy stats for sparse depth at full-res and after dtransform
@@ -22,7 +23,11 @@ from mmengine.model import is_model_wrapper
 
 from mmdet3d.registry import HOOKS
 
-from .bev_visualization_hook import _ensure_dir, _first_sample_batch
+from .bev_visualization_hook import (
+    _ensure_dir,
+    _first_sample_batch,
+    _should_visualize,
+)
 
 
 def _unwrap(runner):
@@ -43,20 +48,23 @@ def _np_fmt(arr, name, logger):
 
 @HOOKS.register_module()
 class DepthProjectionDebugHook(Hook):
-    """Sparse-depth quality diagnostics for DepthLSSTransform."""
+    """Sparse-depth quality diagnostics for DepthLSSTransform.
+
+    Args:
+        vis_epochs (tuple | list | None): 1-indexed epoch numbers at which to
+            run diagnostics.  The final epoch always runs regardless.
+            Defaults to ``(1,)`` (epoch 1 only, preserving the original
+            one-shot behaviour when not overridden in a config).
+    """
 
     priority = 'LOW'
 
-    def __init__(self):
-        self._done = False
+    def __init__(self, vis_epochs=(1,)):
+        self.vis_epochs = set(vis_epochs) if vis_epochs is not None else None
 
     def after_train_epoch(self, runner):
-        if self._done:
+        if not _should_visualize(runner, self.vis_epochs):
             return
-        epoch = runner.epoch + 1
-        if epoch != 1:
-            return
-        self._done = True
 
         logger = runner.logger
         model = _unwrap(runner)

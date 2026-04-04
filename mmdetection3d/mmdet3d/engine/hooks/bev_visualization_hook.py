@@ -28,11 +28,25 @@ def _unwrap_model(runner):
     return model
 
 
-def _should_visualize(runner):
-    """True at epochs 1, 10, 20, 30, every 50th, and the final epoch."""
-    epoch = runner.epoch + 1
+def _should_visualize(runner, vis_epochs=None):
+    """Return True if the current epoch should produce visualizations.
+
+    The final epoch always triggers visualization regardless of the schedule,
+    so callers never need to explicitly include ``max_epochs`` in ``vis_epochs``.
+
+    Args:
+        runner: MMEngine runner.
+        vis_epochs (set | tuple | list | None): Explicit 1-indexed epoch
+            numbers to visualize.  When ``None`` the default schedule is used:
+            epochs 1, 10, 20, 30, every 50th, and the final epoch.
+    """
+    epoch = runner.epoch + 1  # 1-indexed
     max_epochs = runner.max_epochs
-    if epoch in {1, 10, 20, 30, max_epochs}:
+    if epoch == max_epochs:
+        return True
+    if vis_epochs is not None:
+        return epoch in vis_epochs
+    if epoch in {1, 10, 20, 30}:
         return True
     if epoch % 50 == 0:
         return True
@@ -115,12 +129,13 @@ class BEVFeatureVisualizationHook(Hook):
 
     priority = 'LOW'
 
-    def __init__(self, x_range=(0, 108), y_range=(-54, 54)):
+    def __init__(self, x_range=(0, 108), y_range=(-54, 54), vis_epochs=None):
         self.x_range = tuple(x_range)
         self.y_range = tuple(y_range)
+        self.vis_epochs = set(vis_epochs) if vis_epochs is not None else None
 
     def after_train_epoch(self, runner):
-        if not _should_visualize(runner):
+        if not _should_visualize(runner, self.vis_epochs):
             return
         epoch = runner.epoch + 1
         model = _unwrap_model(runner)
@@ -219,11 +234,12 @@ class BEVPredictionVisualizationHook(Hook):
 
     priority = 'LOW'
 
-    def __init__(self, score_thr=0.3):
+    def __init__(self, score_thr=0.3, vis_epochs=None):
         self.score_thr = score_thr
+        self.vis_epochs = set(vis_epochs) if vis_epochs is not None else None
 
     def after_train_epoch(self, runner):
-        if not _should_visualize(runner):
+        if not _should_visualize(runner, self.vis_epochs):
             return
         epoch = runner.epoch + 1
         model = _unwrap_model(runner)
@@ -320,12 +336,13 @@ class BEVValPredictionVisualizationHook(Hook):
 
     priority = 'LOW'
 
-    def __init__(self, score_thr=0.2, sample_idx=0):
+    def __init__(self, score_thr=0.2, sample_idx=0, vis_epochs=None):
         self.score_thr = score_thr
         self.sample_idx = sample_idx
+        self.vis_epochs = set(vis_epochs) if vis_epochs is not None else None
 
     def after_train_epoch(self, runner):
-        if not _should_visualize(runner):
+        if not _should_visualize(runner, self.vis_epochs):
             return
         epoch = runner.epoch + 1
         model = _unwrap_model(runner)

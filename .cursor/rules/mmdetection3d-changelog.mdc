@@ -1,0 +1,32 @@
+---
+description: Keep third_party/mmdetection3d_changes.md up to date whenever mmdetection3d files are modified
+globs: mmdetection3d/**
+alwaysApply: false
+---
+
+# MMDetection3D Changelog Maintenance
+
+Whenever you create, modify, or delete any file under `mmdetection3d/`, update `third_party/mmdetection3d_changes.md` in the same response.
+
+## What to update
+
+- **New file**: add an entry under the appropriate section (Modified files / New files — configs / New files — hooks) describing what the file does and why it was added.
+- **Modified file**: update the existing entry for that file. If the change is purely additive (new parameter, new hook), append to the entry rather than rewriting it.
+- **Deleted file**: remove or strike-through its entry and note why it was removed.
+
+## Entry format
+
+```markdown
+### N. `path/relative/to/mmdetection3d/`
+
+**Change**: one-line summary of what changed.
+**Why**: reason — focus on *why* this was needed, not just what the code does.
+```
+
+For new files, include key design decisions (e.g. DDP requirements, epoch scheduling, parameter shapes).
+
+## What NOT to include
+
+- Upstream files that were not touched.
+- Changes to files outside `mmdetection3d/` (configs live inside mmdetection3d so they count; sbatch scripts and third_party docs do not).
+- Trivial formatting / comment-only changes unless they encode important design rationale.

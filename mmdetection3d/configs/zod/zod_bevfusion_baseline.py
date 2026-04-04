@@ -454,16 +454,16 @@ default_hooks = dict(
     checkpoint=dict(
         type='CheckpointHook',
         interval=5,
-        save_best='mAP_1.0m',
+        save_best='mAP_0.50',
         rule='greater'))
 
 custom_hooks = [
     # LiDAR BEV feature heatmaps (same as lidar-only)
     dict(type='BEVFeatureVisualizationHook'),
     # train-set prediction vs GT overlay
-    dict(type='BEVPredictionVisualizationHook', score_thr=0.3),
+    dict(type='BEVPredictionVisualizationHook', score_thr=0.2),
     # val-set prediction vs GT overlay
-    dict(type='BEVValPredictionVisualizationHook', score_thr=0.3),
+    dict(type='BEVValPredictionVisualizationHook', score_thr=0.2),
     # camera BEV + fused BEV heatmaps (new for fusion)
     dict(type='BEVCameraFeatureVisualizationHook'),
     # DepthLSSTransform diagnostic (sparse depth, predicted depth, entropy)
@@ -476,5 +476,6 @@ custom_hooks = [
     dict(type='DepthProjectionDebugHook'),
     # validation AP curve over epochs
     dict(type='ValidationCurveHook',
-         metric_keys=('mAP_1.0m',)),
+         metric_keys=('mAP_0.50', 'mAP_0.5m'),
+         filename='val_curve_ap_0_50_0_5m')
 ]

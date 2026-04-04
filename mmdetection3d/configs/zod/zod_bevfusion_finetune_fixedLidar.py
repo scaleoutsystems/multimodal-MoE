@@ -1,34 +1,70 @@
-"""Camera + LiDAR BEVFusion fine-tuning config for ZOD pedestrian detection.
+"""Camera + LiDAR BEVFusion fine-tuning config for ZOD — hard-frozen LiDAR branch.
 
-Derived from zod_bevfusion_baseline.py with minimal, targeted changes for
-staged fine-tuning.  Only the settings listed below differ from the baseline;
-everything else (model architecture, pipelines, dataloaders, evaluators,
-hooks, base LR, optimizer) is intentionally kept identical.
+Identical to zod_bevfusion_finetune.py in every respect except that the four
+LiDAR-only modules before the fusion layer are hard-frozen via
+FreezeLidarBranchHook:
+
+    pts_voxel_encoder   HardSimpleVFE
+    pts_middle_encoder  BEVFusionSparseEncoder
+    pts_backbone        SECOND
+    pts_neck            SECONDFPN
+
+Hard freeze means:
+    - requires_grad_(False): no gradient is computed or backpropagated
+      through those modules → saves backward memory and compute.
+    - eval() mode: BatchNorm running statistics (mean/var) are fixed and
+      not updated by training batches.
+    - Re-applied every epoch: the training loop calls model.train() at the
+      start of each epoch, which would recursively re-enable BN updates;
+      the hook overrides this in before_train_epoch.
+
+DDP requirement:
+    env_cfg overrides find_unused_parameters=True so that DDP does not hang
+    waiting for gradient buckets that will never fire for the frozen params.
+    (DDP registers backward hooks on all requires_grad=True params at
+    model-wrap time, before the freeze hook fires.)
+
+Rationale:
+    The LiDAR branch is already strong (initialised from a ZOD-trained
+    checkpoint).  Keeping it frozen during the first fusion stage prevents
+    the randomly-initialised camera/fusion components from corrupting the
+    well-converged LiDAR BEV features before they learn to produce anything
+    meaningful. Two-stage strategy: freeze the strong modality, let the weak
+    modality catch up, then unfreeze jointly.
 
 Initialisation:
     - LiDAR branch loads a strong ZOD-trained checkpoint
-      (best_mAP_1.0m_epoch_14.pth from the LiDAR-only run).  All sparse
-      encoder, SECOND backbone, SECONDFPN, and detection-head weights are
-      initialised from this checkpoint with matching spconv layout.
-      LiDAR remains fully trainable (not frozen).
+      (best_mAP_1.0m_epoch_14.pth from the LiDAR-only run).  Hard-frozen.
     - Camera backbone (Swin-T) loads ImageNet weights via init_cfg.
     - Camera neck, view transform (DepthLSSTransform), and fusion layer
       (ConvFuser) are randomly initialised.
 
-Schedule:
-    - 10 epochs (fine-tuning, not full from-scratch training).
-    - LinearLR warmup (500 iters, start_factor=1/3) is retained to
-      stabilise early fusion when camera features are still uninformative.
-    - Cosine annealing: phase 1 (0→4 ep) + phase 2 (4→10 ep).
+Schedule (14 epochs total):
+    - Phase 1 (0→4 ep):   LiDAR frozen.  LinearLR warmup (500 iters) +
+      cosine annealing.  Camera/fusion components learn from scratch.
+    - Phase 2 (4→10 ep):  LiDAR frozen.  Cosine decay continues.
+    - Phase 3 (10→14 ep): ALL modules unfrozen.  FreezeLidarBranchHook
+      re-enables requires_grad and train() on the LiDAR branch at epoch 10.
+      Cosine fine-tune of the full network jointly.
 
 Losses:
-    - aux_depth_loss_weight reduced from 3.0 to 0.5 to avoid overwhelming
+    - aux_depth_loss_weight set to 0.5 to avoid overwhelming
       detection losses with noisy camera depth gradients early in training.
 """
 
 _base_ = ['../_base_/default_runtime.py']
 custom_imports = dict(
     imports=['projects.BEVFusion.bevfusion'], allow_failed_imports=False)
+
+# FreezeLidarBranchHook sets requires_grad=False on the LiDAR modules in
+# before_run (after DDP wrap).  DDP would otherwise hang waiting for gradient
+# buckets that never fire; find_unused_parameters=True tells DDP to trace the
+# autograd graph each step and mark unfired buckets ready automatically.
+env_cfg = dict(
+    cudnn_benchmark=False,
+    mp_cfg=dict(mp_start_method='fork', opencv_num_threads=0),
+    dist_cfg=dict(backend='nccl', find_unused_parameters=True),
+)
 
 # ---------------------------------------------------------------------------
 # Strong LiDAR init: ZOD-trained checkpoint (same spconv build → no layout
@@ -118,7 +154,7 @@ model = dict(
     fusion_layer=dict(
         type='ConvFuser', in_channels=[80, 256], out_channels=256),
 
-    # ── LiDAR encoder (identical to zod_lidar_only) ──
+    # ── LiDAR encoder (identical to zod_lidar_only) — FROZEN ──
     pts_voxel_encoder=dict(type='HardSimpleVFE', num_features=4),
     pts_middle_encoder=dict(
         type='BEVFusionSparseEncoder',
@@ -387,12 +423,20 @@ visualizer = dict(
     type='Det3DLocalVisualizer', vis_backends=vis_backends, name='visualizer')
 
 # ===== optimizer / scheduler =====
-# Uniform LR for all parameters.  LiDAR is already strong from the ZOD
-# checkpoint; camera/fusion components learn from scratch.
-# LinearLR warmup (500 iters) retained for stability: early camera features
-# are random noise fused with meaningful LiDAR BEV.
-# Cosine schedule: phase 1 (0→4 ep) + phase 2 (4→10 ep) = 10 epochs total.
-
+# LiDAR branch is hard-frozen by FreezeLidarBranchHook (requires_grad=False,
+# eval mode).  Those parameters never accumulate a gradient, so AdamW skips
+# them naturally (param.grad is None → optimizer.step() continues).
+# No paramwise_cfg needed — frozen params are simply not updated.
+#
+# Schedule — three phases over 14 epochs:
+#   Phase 1 (0→4 ep):   camera/fusion warm-up, LiDAR frozen
+#   Phase 2 (4→10 ep):  camera/fusion cosine decay, LiDAR frozen
+#   Phase 3 (10→14 ep): ALL modules unfrozen (FreezeLidarBranchHook
+#                        re-enables LiDAR at epoch 10), joint cosine fine-tune
+#
+# Phase 3 re-uses the same cosine shape as phase 2 so the LiDAR branch
+# resumes from the existing AdamW moments at a sensible LR, avoiding a
+# sudden large-step update on newly-thawed parameters.
 lr = 5e-5
 param_scheduler = [
     dict(
@@ -403,52 +447,28 @@ param_scheduler = [
         end=500),
     dict(
         type='CosineAnnealingLR',
-        T_max=4,
-        eta_min=lr * 10,
-        begin=0,
-        end=4,
-        by_epoch=True,
-        convert_to_iter_based=True),
+        T_max=4, eta_min=lr * 10,
+        begin=0, end=4, by_epoch=True, convert_to_iter_based=True),
     dict(
         type='CosineAnnealingLR',
-        T_max=6,
-        eta_min=lr * 1e-4,
-        begin=4,
-        end=10,
-        by_epoch=True,
-        convert_to_iter_based=True),
+        T_max=6, eta_min=lr * 1e-4,
+        begin=4, end=10, by_epoch=True, convert_to_iter_based=True),
     dict(
         type='CosineAnnealingLR',
-        T_max=4,
-        eta_min=lr * 1e-4,
-        begin=10,
-        end=14,
-        by_epoch=True,
-        convert_to_iter_based=True),
+        T_max=4, eta_min=lr * 1e-4,
+        begin=10, end=14, by_epoch=True, convert_to_iter_based=True),
     dict(
         type='CosineAnnealingMomentum',
-        T_max=4,
-        eta_min=0.85 / 0.95,
-        begin=0,
-        end=4,
-        by_epoch=True,
-        convert_to_iter_based=True),
+        T_max=4, eta_min=0.85 / 0.95,
+        begin=0, end=4, by_epoch=True, convert_to_iter_based=True),
     dict(
         type='CosineAnnealingMomentum',
-        T_max=6,
-        eta_min=1,
-        begin=4,
-        end=10,
-        by_epoch=True,
-        convert_to_iter_based=True),
+        T_max=6, eta_min=1,
+        begin=4, end=10, by_epoch=True, convert_to_iter_based=True),
     dict(
         type='CosineAnnealingMomentum',
-        T_max=4,
-        eta_min=1,
-        begin=10,
-        end=14,
-        by_epoch=True,
-        convert_to_iter_based=True),
+        T_max=4, eta_min=1,
+        begin=10, end=14, by_epoch=True, convert_to_iter_based=True),
 ]
 
 train_cfg = dict(by_epoch=True, max_epochs=14, val_interval=1)
@@ -476,6 +496,7 @@ default_hooks = dict(
 _VIS_EPOCHS = (1, 3, 5, 7, 10, 12, 14)
 
 custom_hooks = [
+    dict(type='FreezeLidarBranchHook', unfreeze_epoch=10),
     dict(type='BEVFeatureVisualizationHook',
          vis_epochs=_VIS_EPOCHS),
     dict(type='BEVPredictionVisualizationHook', score_thr=0.15,

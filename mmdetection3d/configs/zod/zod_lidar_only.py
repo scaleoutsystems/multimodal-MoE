@@ -4,17 +4,51 @@ custom_imports = dict(
 
 # ---------------------------------------------------------------------------
 # Pretrained: NuScenes LiDAR-only BEVFusion checkpoint (10-class, voxel 0.075)
-# MMEngine loads with strict=False:
-#   - pts_middle_encoder.conv_input will NOT load (in_channels 5 vs 4)
-#   - bbox_head heatmap/class layers will NOT load (10 classes vs 1)
-#   - Everything else (encoder body, SECOND backbone, SECONDFPN, decoder)
-#     transfers cleanly.
+# MMEngine loads with strict=False; mismatched tensors are skipped and those
+# layers are randomly initialised.
+#
+# TRANSFERS CLEANLY (architecture identical between NuScenes and ZOD):
+#   pts_voxel_encoder      HardSimpleVFE — same 4-feature config
+#   pts_middle_encoder     body (all sparse-conv layers after conv_input) —
+#                          same channel progression (32→64→128→128)
+#   pts_backbone           SECOND — exact match, in_channels=256
+#   pts_neck               SECONDFPN — exact match
+#   bbox_head.decoder      TransformerDecoderLayer — same hidden_channel=128,
+#                          num_heads=8; learns geometry/attention, not classes
+#   bbox_head.*_heads      center / height / dim / rot regression heads —
+#                          class-agnostic, shapes match exactly
+#
+# DOES NOT TRANSFER (randomly re-initialised):
+#   pts_middle_encoder.conv_input
+#       NuScenes encodes 5 features (x,y,z,intensity,timestamp); ZOD uses 4
+#       (no per-point timestamp) → kernel shape mismatch on the very first
+#       sparse conv.
+#   bbox_head.heatmap_head
+#       Output channels 10 (NuScenes) vs 1 (pedestrian only) → shape mismatch.
+#   bbox_head.class_encoding
+#       Learned class-embedding table sized 10 vs 1.
+#   bbox_head.query_feat / query_pos
+#       NuScenes checkpoint uses 200 proposals; this config uses 500 →
+#       embedding tensor shapes incompatible.
+#   bbox_head.*_heads.vel
+#       NuScenes head includes a velocity regression output; this config sets
+#       with_velocity=False and omits 'vel' from common_heads entirely.
+#
+# NOTE: voxel_size (0.075) and BEV grid (1440×1440×41) are identical between
+# NuScenes and ZOD, so all transferred spatial-conv weights are dimensionally
+# compatible.  However, the NuScenes point cloud is 360° (x ∈ [-54,54]) while
+# ZOD is forward-facing (x ∈ [0,108]); spatial priors in the BEV feature maps
+# will not fully align and the model is expected to adapt them during fine-tuning.
 #
 # Local .pth avoids HTTPS download on every new node / offline compute jobs.
 # Original URL:
 #   https://download.openmmlab.com/mmdetection3d/v1.1.0_models/bevfusion/
 #   bevfusion_lidar_voxel0075_second_secfpn_8xb4-cyclic-20e_nus-3d-2628f933.pth
 # ---------------------------------------------------------------------------
+#NOTE: Spatial priors in the backbone/neck BEV maps will need to adapt during fine-tuning
+ #because the NuScenes point cloud is 360° symmetric while ZOD is forward-facing with 
+ #a doubled forward range.
+
 load_from = '/mnt/tier2/project/p201222/u103958/checkpoints/bevfusion_lidar_voxel0075_second_secfpn_8xb4-cyclic-20e_nus-3d-2628f933.pth'
 
 voxel_size = [0.075, 0.075, 0.2]
@@ -246,11 +280,11 @@ test_dataloader = dict(
 
 val_evaluator = [
     dict(type='IndoorMetric', iou_thr=[0.25, 0.5]),
-    dict(type='CenterDistanceMetric', dist_thr=[0.5, 1.0, 2.0, 4.0]),
+    dict(type='CenterDistanceMetric', dist_thr=[0.5, 1.0, 2.0]),
 ]
 test_evaluator = [
     dict(type='IndoorMetric', iou_thr=[0.25, 0.5]),
-    dict(type='CenterDistanceMetric', dist_thr=[0.5, 1.0, 2.0, 4.0]),
+    dict(type='CenterDistanceMetric', dist_thr=[0.5, 1.0, 2.0]),
 ]
 
 vis_backends = [dict(type='LocalVisBackend')]
@@ -277,7 +311,8 @@ param_scheduler = [
         begin=8, end=20, by_epoch=True, convert_to_iter_based=True)
 ]
 
-train_cfg = dict(by_epoch=True, max_epochs=20, val_interval=1)
+
+train_cfg = dict(by_epoch=True, max_epochs=25, val_interval=1)
 val_cfg = dict()
 test_cfg = dict()
 
@@ -302,18 +337,16 @@ default_hooks = dict(
     checkpoint=dict(
         type='CheckpointHook',
         interval=5,
-        save_best='mAP_1.0m',
+        save_best='mAP_0.50',
         rule='greater'))
 
 custom_hooks = [
     dict(type='BEVFeatureVisualizationHook'),
-    dict(type='BEVPredictionVisualizationHook', score_thr=0.3),
-    dict(type='BEVValPredictionVisualizationHook', score_thr=0.3),
+    dict(type='BEVPredictionVisualizationHook', score_thr=0.15),
+    dict(type='BEVValPredictionVisualizationHook', score_thr=0.15),
     dict(type='TrainingEfficiencyHook'),
     dict(type='RunSummaryHook'),
     dict(type='ValidationCurveHook',
-         metric_keys=('mAP_1.0m',)),
-    dict(type='ValidationCurveHook',
-         metric_keys=('mAP_0.50',),
-         filename='val_curve_ap_0_50'),
+         metric_keys=('mAP_0.50', 'mAP_0.5m'),
+         filename='val_curve_ap_0_50_0_5m'),
 ]
