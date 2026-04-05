@@ -56,8 +56,8 @@ Box convention
 --------------
 The build script stores ``box_3d`` as
 ``[x, y, z_bottom, dx, dy, dz, yaw]`` (z = bottom-centre of the box).
-MMDetection3D expects centre-z, so we convert:
-``z_center = z_bottom + dz / 2``.
+``LiDARInstance3DBoxes`` (mmdet3d's LiDAR box class) also uses z_bottom, so
+we store it directly without any z conversion.
 
 Example
 -------
@@ -126,6 +126,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Copy files instead of creating symlinks.",
     )
+    p.add_argument(
+        "--path-remap-from",
+        type=str,
+        default=None,
+        help="Stale path prefix in the parquet to replace (e.g. /mnt/ZOD_clone_2018_scaleout_zenseact/zod_moe).",
+    )
+    p.add_argument(
+        "--path-remap-to",
+        type=str,
+        default=None,
+        help="Replacement path prefix (e.g. /mnt/tier2/project/p201222/u103958/zod_moe).",
+    )
     return p.parse_args()
 
 
@@ -190,16 +202,6 @@ def load_label(json_path: str | Path) -> list[dict]:
     return data.get("instances", [])
 
 
-def convert_box_bottom_to_center(box_3d: list[float]) -> list[float]:
-    """Convert [x, y, z_bottom, dx, dy, dz, yaw] → [x, y, z_center, …].
-
-    The build script stores z as the bottom-centre of the 3D box.
-    MMDetection3D expects the geometric centre.
-    """
-    x, y, z_bottom, dx, dy, dz, yaw = box_3d
-    z_center = z_bottom + dz / 2.0
-    return [x, y, z_center, dx, dy, dz, yaw]
-
 
 def make_instance_entry(inst: dict) -> dict:
     """Convert one raw label instance into the MMDet3D format.
@@ -212,13 +214,13 @@ def make_instance_entry(inst: dict) -> dict:
         bbox_label_3d  — int, hardcoded to 7 (the nuScenes class index
                           for "pedestrian") so NuScenesDataset's label
                           mapping works out of the box
-        bbox_3d        — [x, y, z_center, dx, dy, dz, yaw]
+        bbox_3d        — [x, y, z_bottom, dx, dy, dz, yaw]
         bbox_3d_isvalid — bool, always True so NuScenesDataset works
                           with ``use_valid_flag=True``
     """
     return {
         "bbox_label_3d": 7,
-        "bbox_3d": convert_box_bottom_to_center(inst["box_3d"]),
+        "bbox_3d": inst["box_3d"],
         "bbox_3d_isvalid": True,
         "num_lidar_pts": 1,
     }
@@ -249,6 +251,9 @@ def make_context_entry(row: pd.Series) -> dict:
         return int(v)
 
     return {
+        # ── location ──
+        "country_code": _str("country_code"),
+
         # ── illumination ──
         "solar_angle_elevation": _num("solar_angle_elevation"),
         "solar_context_bin": _str("solar_context_bin"),
@@ -265,14 +270,8 @@ def make_context_entry(row: pd.Series) -> dict:
         # ── pedestrian counts ──
         "num_pedestrians_final": _int("num_pedestrians_final"),
         "ped_present": _int("ped_present"),
-
-        # ── occlusion breakdown ── WE ARE NOT USING THIS
-       """ "ped_occ_none": _int("ped_occ_none"),
-        "ped_occ_light": _int("ped_occ_light"),
-        "ped_occ_medium": _int("ped_occ_medium"),
-        "ped_occ_heavy": _int("ped_occ_heavy"),
-        "ped_occ_veryheavy": _int("ped_occ_veryheavy"),
-        "ped_occ_missing": _int("ped_occ_missing"),"""
+        "ped_count_clear": _int("ped_count_clear"),
+        "ped_count_unclear": _int("ped_count_unclear"),
 
         # ── derived scene complexity ──
         "complexity_score": _num("complexity_score"),
@@ -429,6 +428,14 @@ def main() -> None:
     # ----------------------------------------------------------
     df = pd.read_parquet(args.index_parquet)
     df["frame_id"] = df["frame_id"].astype(str)
+
+    if args.path_remap_from and args.path_remap_to:
+        path_cols = ["final_img_file_path", "final_points_file_path", "calib_file_path", "label_file_path"]
+        for col in path_cols:
+            if col in df.columns:
+                df[col] = df[col].str.replace(args.path_remap_from, args.path_remap_to, regex=False)
+        print(f"Path remap: '{args.path_remap_from}' → '{args.path_remap_to}'")
+
     parquet_ids = set(df["frame_id"])
     print(f"Parquet: {len(df)} rows,  {len(parquet_ids)} unique frame_ids")
 

@@ -45,6 +45,31 @@ class ValidationCurveHook(Hook):
             k: [] for k in self.metric_keys
         }
 
+    def before_run(self, runner) -> None:
+        """Restore history from an existing JSON sidecar when resuming.
+
+        This lets the plot accumulate correctly across SLURM restarts: the
+        previous epochs are loaded back so the curve continues from where it
+        left off rather than restarting from zero.
+        """
+        vis_dir = osp.join(runner.work_dir, 'visualizations')
+        json_path = osp.join(vis_dir, f'{self.filename}.json')
+        if not osp.isfile(json_path):
+            return
+        try:
+            with open(json_path) as f:
+                saved = json.load(f)
+            for key in self.metric_keys:
+                if key in saved and saved[key]:
+                    self.history[key] = [tuple(pt) for pt in saved[key]]
+            runner.logger.info(
+                f'ValidationCurveHook: restored {len(self.history[self.metric_keys[0]])} '
+                f'epoch(s) of history from {json_path}')
+        except Exception as exc:
+            runner.logger.warning(
+                f'ValidationCurveHook: could not restore history from '
+                f'{json_path}: {exc}')
+
     def after_val_epoch(self, runner, metrics=None) -> None:
         if metrics is None:
             return
@@ -52,6 +77,11 @@ class ValidationCurveHook(Hook):
         updated = False
         for key in self.metric_keys:
             if key in metrics:
+                # Replace any existing entry for this epoch so that resumed
+                # runs that re-run an epoch don't create duplicate points.
+                self.history[key] = [
+                    (e, v) for e, v in self.history[key] if e != epoch
+                ]
                 self.history[key].append((epoch, float(metrics[key])))
                 updated = True
 

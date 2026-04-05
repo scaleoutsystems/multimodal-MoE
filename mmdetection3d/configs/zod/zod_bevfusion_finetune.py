@@ -35,7 +35,7 @@ custom_imports = dict(
 # mismatch).  Camera/fusion layers are absent in the checkpoint and start
 # from scratch; Swin-T loads ImageNet via init_cfg.
 # ---------------------------------------------------------------------------
-load_from = '/home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4440636/best_mAP_1.0m_epoch_14.pth'
+load_from = '/home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4450659/best_mAP_0.50_epoch_20.pth'
 
 # ===== geometry =====
 voxel_size = [0.075, 0.075, 0.2]
@@ -411,18 +411,10 @@ param_scheduler = [
         convert_to_iter_based=True),
     dict(
         type='CosineAnnealingLR',
-        T_max=6,
+        T_max=8,
         eta_min=lr * 1e-4,
         begin=4,
-        end=10,
-        by_epoch=True,
-        convert_to_iter_based=True),
-    dict(
-        type='CosineAnnealingLR',
-        T_max=4,
-        eta_min=lr * 1e-4,
-        begin=10,
-        end=14,
+        end=12,
         by_epoch=True,
         convert_to_iter_based=True),
     dict(
@@ -435,23 +427,15 @@ param_scheduler = [
         convert_to_iter_based=True),
     dict(
         type='CosineAnnealingMomentum',
-        T_max=6,
+        T_max=8,
         eta_min=1,
         begin=4,
-        end=10,
-        by_epoch=True,
-        convert_to_iter_based=True),
-    dict(
-        type='CosineAnnealingMomentum',
-        T_max=4,
-        eta_min=1,
-        begin=10,
-        end=14,
+        end=12,
         by_epoch=True,
         convert_to_iter_based=True),
 ]
 
-train_cfg = dict(by_epoch=True, max_epochs=14, val_interval=1)
+train_cfg = dict(by_epoch=True, max_epochs=12, val_interval=1)
 val_cfg = dict()
 test_cfg = dict()
 
@@ -473,7 +457,7 @@ default_hooks = dict(
         save_best='mAP_0.50',
         rule='greater'))
 
-_VIS_EPOCHS = (1, 3, 5, 7, 10, 12, 14)
+_VIS_EPOCHS = (1, 3, 5, 7, 10, 12)
 
 custom_hooks = [
     dict(type='BEVFeatureVisualizationHook',

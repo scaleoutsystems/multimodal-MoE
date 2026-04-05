@@ -33,7 +33,7 @@
 
 #SBATCH --job-name=zod-bevfusion
 #SBATCH --account=p201222
-#SBATCH --qos=default
+#SBATCH --qos=long
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=4
