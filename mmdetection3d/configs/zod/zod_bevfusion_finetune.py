@@ -35,7 +35,7 @@ custom_imports = dict(
 # mismatch).  Camera/fusion layers are absent in the checkpoint and start
 # from scratch; Swin-T loads ImageNet via init_cfg.
 # ---------------------------------------------------------------------------
-load_from = '/home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4450659/best_mAP_0.50_epoch_20.pth'
+load_from = '/home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4452913/best_mAP_0.50_epoch_18.pth'
 
 # ===== geometry =====
 voxel_size = [0.075, 0.075, 0.2]
@@ -47,7 +47,7 @@ out_size_factor = 8
 # ===== dataset =====
 class_names = ['pedestrian']
 metainfo = dict(classes=class_names, box_type_3d='LiDAR')
-dataset_type = 'NuScenesDataset'
+dataset_type = 'ZODDataset'
 data_root = '/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/'
 data_prefix = dict(pts='', CAM_FRONT='')
 input_modality = dict(use_lidar=True, use_camera=True)

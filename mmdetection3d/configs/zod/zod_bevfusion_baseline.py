@@ -59,7 +59,7 @@ out_size_factor = 8
 # ===== dataset =====
 class_names = ['pedestrian']
 metainfo = dict(classes=class_names, box_type_3d='LiDAR')
-dataset_type = 'NuScenesDataset'
+dataset_type = 'ZODDataset'
 data_root = '/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/'
 data_prefix = dict(pts='', CAM_FRONT='')
 input_modality = dict(use_lidar=True, use_camera=True)
