@@ -1,0 +1,73 @@
+Using PYTHON=/home/users/u103958/miniconda3/envs/multimodal-moe/bin/python
+python /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python
+=== Slurm job 4454701 on mel2133 ===
+NVIDIA A100-SXM4-40GB
+/home/users/u103958/miniconda3/envs/multimodal-moe/lib/python3.10/site-packages/mmengine/optim/optimizer/zero_optimizer.py:11: DeprecationWarning: `TorchScript` support for functional optimizers is deprecated and will be removed in a future PyTorch release. Consider using the `torch.compile` optimizer instead.
+  from torch.distributed.optim import \
+04/06 14:36:12 - mmengine - WARNING - LiDAR is not a meta file, simply parsed as meta information
+04/06 14:36:15 - mmengine - INFO - ------------------------------
+04/06 14:36:15 - mmengine - INFO - The length of test dataset: 10000
+04/06 14:36:15 - mmengine - INFO - The number of instances per category in the dataset:
++------------+--------+
+| category   | number |
++------------+--------+
+| pedestrian | 23478  |
++------------+--------+
+/home/users/u103958/miniconda3/envs/multimodal-moe/lib/python3.10/site-packages/mmdet/models/task_modules/builder.py:17: UserWarning: ``build_sampler`` would be deprecated soon, please use ``mmdet.registry.TASK_UTILS.build()`` 
+  warnings.warn('``build_sampler`` would be deprecated soon, please use '
+/home/users/u103958/miniconda3/envs/multimodal-moe/lib/python3.10/site-packages/mmdet/models/task_modules/builder.py:39: UserWarning: ``build_assigner`` would be deprecated soon, please use ``mmdet.registry.TASK_UTILS.build()`` 
+  warnings.warn('``build_assigner`` would be deprecated soon, please use '
+/home/users/u103958/miniconda3/envs/multimodal-moe/lib/python3.10/site-packages/mmengine/runner/checkpoint.py:347: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(filename, map_location=map_location)
+/home/users/u103958/miniconda3/envs/multimodal-moe/lib/python3.10/site-packages/torch/storage.py:414: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  return torch.load(io.BytesIO(b))
+/home/users/u103958/miniconda3/envs/multimodal-moe/lib/python3.10/site-packages/torch/storage.py:414: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  return torch.load(io.BytesIO(b))
+/mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/projects/BEVFusion/bevfusion/utils.py:120: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  self.post_center_range = torch.tensor(
+Dataset: 10000 samples (val)
+Loading model …
+Loads checkpoint by local backend from path: /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4452913/best_mAP_0.50_epoch_18.pth
+Scanning for annotated samples (need 8, score_thr=0.25)
+Found 8 annotated samples (scanned up to index 8)
+
+  sample 0: GT z_bottom  min=-1.292  mean=-0.692  max=-0.098  mean_dz=1.726
+  sample 0: Pred z       min=-1.702  mean=-1.415  max=-0.996  mean_dz=1.674
+  sample 0: mean(pred_z) - mean(gt_z) = -0.723  (~half dz = 0.863)
+  saved → /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4452913/vis3d/vis3d_0_0.png
+
+  sample 1: GT z_bottom  min=-0.381  mean=-0.214  max=0.056  mean_dz=1.514
+  sample 1: Pred z       min=-1.284  mean=-1.077  max=-0.881  mean_dz=1.718
+  sample 1: mean(pred_z) - mean(gt_z) = -0.863  (~half dz = 0.757)
+  saved → /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4452913/vis3d/vis3d_1_1.png
+
+  sample 2: GT z_bottom  min=-1.690  mean=-0.327  max=1.126  mean_dz=1.638
+  sample 2: Pred z       min=-2.371  mean=-1.359  max=-0.796  mean_dz=1.666
+  sample 2: mean(pred_z) - mean(gt_z) = -1.032  (~half dz = 0.819)
+  saved → /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4452913/vis3d/vis3d_2_2.png
+
+  sample 3: GT z_bottom  min=-0.271  mean=-0.153  max=-0.070  mean_dz=1.750
+  sample 3: Pred z       min=-1.222  mean=-1.046  max=-0.892  mean_dz=1.783
+  sample 3: mean(pred_z) - mean(gt_z) = -0.893  (~half dz = 0.875)
+  saved → /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4452913/vis3d/vis3d_3_3.png
+
+  sample 5: GT z_bottom  min=-0.780  mean=-0.298  max=-0.014  mean_dz=1.708
+  sample 5: Pred z       min=-1.517  mean=-1.211  max=-0.962  mean_dz=1.778
+  sample 5: mean(pred_z) - mean(gt_z) = -0.913  (~half dz = 0.854)
+  saved → /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4452913/vis3d/vis3d_5_5.png
+
+  sample 6: GT z_bottom  min=-1.892  mean=-1.596  max=-1.333  mean_dz=1.622
+  saved → /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4452913/vis3d/vis3d_6_6.png
+
+  sample 7: GT z_bottom  min=-1.241  mean=-0.279  max=0.289  mean_dz=1.486
+  sample 7: Pred z       min=-2.161  mean=-1.121  max=-0.512  mean_dz=1.550
+  sample 7: mean(pred_z) - mean(gt_z) = -0.842  (~half dz = 0.743)
+  saved → /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4452913/vis3d/vis3d_7_7.png
+
+  sample 8: GT z_bottom  min=-0.610  mean=-0.286  max=0.114  mean_dz=1.726
+  sample 8: Pred z       min=-1.330  mean=-1.086  max=-0.760  mean_dz=1.670
+  sample 8: mean(pred_z) - mean(gt_z) = -0.800  (~half dz = 0.863)
+  saved → /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4452913/vis3d/vis3d_8_8.png
+
+Done. Saved to /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4452913/vis3d
+Done. Output in /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4452913/vis3d

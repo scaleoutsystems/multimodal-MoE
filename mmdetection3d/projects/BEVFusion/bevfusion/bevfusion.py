@@ -278,15 +278,37 @@ class BEVFusion(Base3DDetector):
             # reorder in extract_pts_feat.  Transpose so both branches use
             # the same spatial convention before fusion.
             img_feature = img_feature.transpose(-1, -2)
+            # TODO [MoE Variant A – camera]: Apply BEVMoEBlock to
+            # img_feature (B, 80, 180, 180) here before appending.
+            # img_feature, cam_moe_info = self.cam_moe(
+            #     img_feature, batch_input_metas)
             features.append(img_feature)
         pts_feature = self.extract_pts_feat(batch_inputs_dict)
+        # TODO [MoE Variant A – LiDAR]: Apply BEVMoEBlock to
+        # pts_feature (B, 256, 180, 180) here before appending.
+        # pts_feature, lidar_moe_info = self.lidar_moe(
+        #     pts_feature, batch_input_metas)
         features.append(pts_feature)
 
         if self.fusion_layer is not None:
+            # TODO [MoE Variant B – joint-modality]: Replace
+            # self.fusion_layer with FusionMoEBlock.  FusionMoEBlock
+            # has the same interface: accepts [cam_bev, lidar_bev],
+            # returns (B, 256, 180, 180).  Configure via config:
+            #   fusion_layer=dict(type='FusionMoEBlock',
+            #       cam_channels=80, lidar_channels=256, out_channels=256,
+            #       num_experts=4, k=1, context_cfg=dict(...))
             x = self.fusion_layer(features)
         else:
             assert len(features) == 1, features
             x = features[0]
+
+        # TODO [MoE Variant C – post-fusion / Variant D – LiDAR-only]:
+        # Apply BEVMoEBlock to x (B, 256, 180, 180) here, before the
+        # backbone.  Works for both multimodal (after ConvFuser) and
+        # LiDAR-only (after the else branch) since both produce the
+        # same tensor shape.
+        # x, bev_moe_info = self.bev_moe(x, batch_input_metas)
 
         x = self.pts_backbone(x)
         x = self.pts_neck(x)
