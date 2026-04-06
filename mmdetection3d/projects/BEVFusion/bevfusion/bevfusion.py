@@ -18,6 +18,24 @@ from .ops import Voxelization
 
 @MODELS.register_module()
 class BEVFusion(Base3DDetector):
+    """BEVFusion multi-modal 3D detector with optional MoE routing.
+
+    The detector builds BEV features from camera and/or LiDAR inputs,
+    optionally fuses them, then passes the result through a backbone + neck
+    to produce the feature map consumed by the detection head.
+
+    **MoE integration** — three optional config dicts activate Mixture-of-
+    Experts blocks at different points in the pipeline.  Omit all three for
+    baseline (non-MoE) behavior.
+
+    - ``cam_moe_cfg``   → Variant A-cam:  BEVMoEBlock on camera BEV
+    - ``lidar_moe_cfg`` → Variant A-lid:  BEVMoEBlock on LiDAR BEV
+    - ``bev_moe_cfg``   → Variant C/D:    BEVMoEBlock after fusion / LiDAR-only
+
+    Variant B (joint-modality MoE) needs no extra arg: set
+    ``fusion_layer=dict(type='FusionMoEBlock', ...)`` in the config and
+    FusionMoEBlock replaces ConvFuser directly (same call interface).
+    """
 
     def __init__(
         self,
@@ -33,6 +51,10 @@ class BEVFusion(Base3DDetector):
         bbox_head: Optional[dict] = None,
         init_cfg: OptMultiConfig = None,
         seg_head: Optional[dict] = None,
+        # ── MoE configs (all optional — omit for baseline behavior) ───
+        cam_moe_cfg: Optional[dict] = None,
+        lidar_moe_cfg: Optional[dict] = None,
+        bev_moe_cfg: Optional[dict] = None,
         **kwargs,
     ) -> None:
         voxelize_cfg = data_preprocessor.pop('voxelize_cfg')
@@ -52,6 +74,9 @@ class BEVFusion(Base3DDetector):
             view_transform) if view_transform is not None else None
         self.pts_middle_encoder = MODELS.build(pts_middle_encoder)
 
+        # fusion_layer can be either ConvFuser (baseline) or FusionMoEBlock
+        # (Variant B).  Both accept a list of BEV tensors and return a
+        # single fused tensor, so the call site stays the same.
         self.fusion_layer = MODELS.build(
             fusion_layer) if fusion_layer is not None else None
 
@@ -59,6 +84,19 @@ class BEVFusion(Base3DDetector):
         self.pts_neck = MODELS.build(pts_neck)
 
         self.bbox_head = MODELS.build(bbox_head)
+
+        # ── MoE blocks (only built when config is provided) ──────────
+        # Variant A – camera-branch MoE: applied to cam BEV (B, 80, 180, 180)
+        self.cam_moe = MODELS.build(cam_moe_cfg) if cam_moe_cfg else None
+        # Variant A – LiDAR-branch MoE: applied to lidar BEV (B, 256, 180, 180)
+        self.lidar_moe = MODELS.build(lidar_moe_cfg) if lidar_moe_cfg else None
+        # Variant C/D – post-fusion or LiDAR-only MoE: applied to fused BEV
+        # (B, 256, 180, 180) before the backbone
+        self.bev_moe = MODELS.build(bev_moe_cfg) if bev_moe_cfg else None
+
+        # Accumulator for MoE auxiliary losses; populated in extract_feat(),
+        # consumed in loss(), then reset on the next forward.
+        self._moe_aux_loss: Optional[Tensor] = None
 
         self.init_weights()
 
@@ -248,9 +286,42 @@ class BEVFusion(Base3DDetector):
         batch_input_metas,
         **kwargs,
     ):
+        """Build the BEV representation and (optionally) apply MoE routing.
+
+        This is the central feature-extraction pipeline that every forward
+        path (loss, predict) runs through.  It is the natural place for MoE
+        insertion because *all four variant insertion points* correspond to
+        stages within this single method:
+
+        1. Camera branch  → cam_bev   (B, 80, 180, 180)
+        2. LiDAR  branch  → lidar_bev (B, 256, 180, 180)
+        3. Fusion          → fused_bev (B, 256, 180, 180)
+        4. Backbone + Neck → head features (B, 512, 180, 180)
+
+        MoE blocks are guarded by ``if self.*_moe is not None`` checks, so
+        when no MoE configs are provided (baseline), the method collapses to
+        the original BEVFusion logic with zero overhead.
+
+        Variant mapping:
+            A-cam:   self.cam_moe    on cam_bev  (before fusion)
+            A-lidar: self.lidar_moe  on lidar_bev (before fusion)
+            B:       self.fusion_layer is a FusionMoEBlock (replaces ConvFuser)
+            C:       self.bev_moe    on fused_bev  (after ConvFuser)
+            D:       self.bev_moe    on lidar_bev  (LiDAR-only, no fusion_layer)
+
+        Variants C and D share the same self.bev_moe at the same code
+        location — the difference is purely a config choice (whether
+        fusion_layer is present or not).
+        """
+        # Reset the MoE aux-loss accumulator for this forward pass.
+        self._moe_aux_loss = None
+        moe_aux_parts: List[Tensor] = []
+
         imgs = batch_inputs_dict.get('imgs', None)
         points = batch_inputs_dict.get('points', None)
         features = []
+
+        # ── 1. Camera branch ─────────────────────────────────────────
         if imgs is not None:
             imgs = imgs.contiguous()
             lidar2image, camera_intrinsics, camera2lidar = [], [], []
@@ -278,40 +349,60 @@ class BEVFusion(Base3DDetector):
             # reorder in extract_pts_feat.  Transpose so both branches use
             # the same spatial convention before fusion.
             img_feature = img_feature.transpose(-1, -2)
-            # TODO [MoE Variant A – camera]: Apply BEVMoEBlock to
-            # img_feature (B, 80, 180, 180) here before appending.
-            # img_feature, cam_moe_info = self.cam_moe(
-            #     img_feature, batch_input_metas)
+
+            # Variant A – camera-branch MoE: route cam_bev through
+            # BEVMoEBlock (channels=80) before it enters fusion.
+            if self.cam_moe is not None:
+                img_feature, cam_info = self.cam_moe(
+                    img_feature, batch_input_metas)
+                moe_aux_parts.append(cam_info['aux_loss'])
+
             features.append(img_feature)
+
+        # ── 2. LiDAR branch ──────────────────────────────────────────
         pts_feature = self.extract_pts_feat(batch_inputs_dict)
-        # TODO [MoE Variant A – LiDAR]: Apply BEVMoEBlock to
-        # pts_feature (B, 256, 180, 180) here before appending.
-        # pts_feature, lidar_moe_info = self.lidar_moe(
-        #     pts_feature, batch_input_metas)
+
+        # Variant A – LiDAR-branch MoE: route lidar_bev through
+        # BEVMoEBlock (channels=256) before it enters fusion.
+        if self.lidar_moe is not None:
+            pts_feature, lidar_info = self.lidar_moe(
+                pts_feature, batch_input_metas)
+            moe_aux_parts.append(lidar_info['aux_loss'])
+
         features.append(pts_feature)
 
+        # ── 3. Fusion ─────────────────────────────────────────────────
         if self.fusion_layer is not None:
-            # TODO [MoE Variant B – joint-modality]: Replace
-            # self.fusion_layer with FusionMoEBlock.  FusionMoEBlock
-            # has the same interface: accepts [cam_bev, lidar_bev],
-            # returns (B, 256, 180, 180).  Configure via config:
-            #   fusion_layer=dict(type='FusionMoEBlock',
-            #       cam_channels=80, lidar_channels=256, out_channels=256,
-            #       num_experts=4, k=1, context_cfg=dict(...))
-            x = self.fusion_layer(features)
+            # Variant B: when fusion_layer is a FusionMoEBlock (detected
+            # by the presence of _moe_aux_loss attr), pass batch_input_metas
+            # so the block can do context-infused routing.  When it's a
+            # plain ConvFuser, just pass the feature list as normal.
+            if hasattr(self.fusion_layer, '_moe_aux_loss'):
+                x = self.fusion_layer(features, batch_input_metas)
+                if self.fusion_layer._moe_aux_loss is not None:
+                    moe_aux_parts.append(self.fusion_layer._moe_aux_loss)
+            else:
+                x = self.fusion_layer(features)
         else:
+            # LiDAR-only: no camera branch, single-element feature list.
             assert len(features) == 1, features
             x = features[0]
 
-        # TODO [MoE Variant C – post-fusion / Variant D – LiDAR-only]:
-        # Apply BEVMoEBlock to x (B, 256, 180, 180) here, before the
-        # backbone.  Works for both multimodal (after ConvFuser) and
-        # LiDAR-only (after the else branch) since both produce the
-        # same tensor shape.
-        # x, bev_moe_info = self.bev_moe(x, batch_input_metas)
+        # Variant C (post-fusion) / Variant D (LiDAR-only): both land
+        # here with x of shape (B, 256, 180, 180).  A single bev_moe
+        # block handles both cases — the distinction is purely which
+        # config scenario is active (multimodal vs. LiDAR-only).
+        if self.bev_moe is not None:
+            x, bev_info = self.bev_moe(x, batch_input_metas)
+            moe_aux_parts.append(bev_info['aux_loss'])
 
+        # ── 4. Backbone + Neck ────────────────────────────────────────
         x = self.pts_backbone(x)
         x = self.pts_neck(x)
+
+        # Sum all MoE aux losses so loss() can pick them up.
+        if moe_aux_parts:
+            self._moe_aux_loss = sum(moe_aux_parts)
 
         return x
 
@@ -319,6 +410,9 @@ class BEVFusion(Base3DDetector):
              batch_data_samples: List[Det3DDataSample],
              **kwargs) -> List[Det3DDataSample]:
         batch_input_metas = [item.metainfo for item in batch_data_samples]
+        # extract_feat runs the full pipeline (including any MoE blocks)
+        # and stores auxiliary losses on self._moe_aux_loss for us to
+        # collect here.
         feats = self.extract_feat(batch_inputs_dict, batch_input_metas)
 
         losses = dict()
@@ -327,9 +421,15 @@ class BEVFusion(Base3DDetector):
 
         losses.update(bbox_loss)
 
+        # Depth supervision auxiliary loss (from DepthLSSTransform).
         vt = getattr(self, 'view_transform', None)
         aux = getattr(vt, '_aux_depth_loss', None) if vt else None
         if aux is not None and aux.numel() > 0 and aux.item() > 0:
             losses['aux_depth_loss'] = aux
+
+        # MoE auxiliary losses (importance + load balancing).  Populated
+        # during extract_feat when any MoE block is active.
+        if self._moe_aux_loss is not None:
+            losses['moe_aux_loss'] = self._moe_aux_loss
 
         return losses

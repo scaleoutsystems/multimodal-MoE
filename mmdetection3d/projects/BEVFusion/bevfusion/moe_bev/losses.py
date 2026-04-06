@@ -20,6 +20,10 @@ def importance_loss(gate_probs: Tensor, coef: float,
     Returns:
         Scalar loss tensor (differentiable through gate_probs).
     """
+    # Sum each expert's probability across the batch → "importance" of
+    # each expert.  If the gate always picks one expert, that expert's
+    # importance dominates and CV^2 is high → loss pushes the gate to
+    # spread probability mass more evenly.
     importance = gate_probs.sum(dim=0)  # (E,)
     mean = importance.mean()
     cv_sq = importance.var() / (mean ** 2 + eps)
@@ -42,6 +46,11 @@ def load_loss(expert_counts: Tensor, coef: float,
         Scalar loss tensor (not differentiable -- use importance_loss
         for gradient-based balancing).
     """
+    # Unlike importance_loss, this operates on discrete counts (how many
+    # samples were actually routed to each expert) which are not
+    # differentiable.  .detach() ensures no gradient flows — this loss
+    # serves purely as a logged monitoring signal alongside the
+    # differentiable importance_loss.
     counts = expert_counts.float()
     mean = counts.mean()
     cv_sq = counts.var() / (mean ** 2 + eps)

@@ -16,13 +16,20 @@ try:
     from .utils import (BBoxBEVL1Cost, HeuristicAssigner3D, HungarianAssigner3D,
                         IoU3DCost)
 
+    # MoE modules — importing the sub-package triggers @MODELS.register_module()
+    # for BEVMoEBlock, FusionMoEBlock, BEVResidualExpert, and FusionExpert,
+    # making them available to MODELS.build() in configs.
+    from .moe_bev import (BEVMoEBlock, BEVResidualExpert, FusionExpert,
+                          FusionMoEBlock)
+
     __all__ += [
         'BEVFusion', 'TransFusionHead', 'ConvFuser', 'ImageAug3D', 'GridMask',
         'GeneralizedLSSFPN', 'HungarianAssigner3D', 'BBoxBEVL1Cost',
         'IoU3DCost', 'HeuristicAssigner3D', 'DepthLSSTransform',
         'LSSTransform', 'BEVLoadMultiViewImageFromFiles',
         'TransformerDecoderLayer', 'BEVFusionRandomFlip3D',
-        'BEVFusionGlobalRotScaleTrans'
+        'BEVFusionGlobalRotScaleTrans',
+        'BEVMoEBlock', 'FusionMoEBlock', 'BEVResidualExpert', 'FusionExpert',
     ]
 except Exception:
     pass

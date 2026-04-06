@@ -54,8 +54,14 @@ class BEVMoEBlock(nn.Module):
         self.importance_coef = importance_coef
         self.load_coef = load_coef
 
+        # Each expert is an independent residual conv block with its own
+        # weights.  With top-1 routing and B=2-4, at most one expert runs
+        # per sample — compute cost ≈ one ConvFuser forward.
         self.experts = make_bev_experts(num_experts, channels, num_convs)
 
+        # Context encoder (optional): converts per-sample metadata
+        # (weather, road type, etc.) into a vector appended to the gate
+        # input so routing decisions can depend on driving conditions.
         ctx_dim = 0
         if context_cfg is not None:
             self.context_encoder = ContextEncoder(**context_cfg)
@@ -63,6 +69,8 @@ class BEVMoEBlock(nn.Module):
         else:
             self.context_encoder = None
 
+        # Gate input = global-avg-pooled BEV (channels dim) + optional
+        # context vector.  Output = top-k expert selections per sample.
         self.gate = TopkGate(
             feat_dim=channels,
             num_experts=num_experts,
@@ -70,6 +78,7 @@ class BEVMoEBlock(nn.Module):
             context_dim=ctx_dim,
         )
 
+        # Collapse spatial dims to get a per-sample routing signal.
         self.pool = nn.AdaptiveAvgPool2d(1)
 
     def forward(
@@ -91,18 +100,24 @@ class BEVMoEBlock(nn.Module):
         """
         B = x_bev.shape[0]
 
-        # Pool BEV to per-sample feature vector
+        # ── Step 1: Compute routing signal ────────────────────────────
+        # Global average pool collapses (B,C,H,W) → (B,C), giving a
+        # per-sample summary that the gate uses for expert selection.
         feat = self.pool(x_bev).flatten(1)  # (B, C)
 
-        # Optional context encoding
+        # If context_encoder is configured, encode per-sample metadata
+        # (e.g. weather, road type) into a vector that supplements the
+        # BEV-derived routing signal.
         ctx = None
         if self.context_encoder is not None and batch_input_metas is not None:
             ctx = self.context_encoder(batch_input_metas)  # (B, ctx_dim)
 
-        # Gating
+        # ── Step 2: Gate → select top-k experts per sample ────────────
         gate_out = self.gate(feat, ctx)
 
-        # Dispatch: run selected experts per sample
+        # ── Step 3: Dispatch to selected experts ──────────────────────
+        # Simple loop over the batch.  With B=2-4 and k=1, this is at
+        # most 4 expert forwards — no need for sparse batched dispatch.
         x_out = torch.zeros_like(x_bev)
         expert_counts = torch.zeros(self.num_experts, device=x_bev.device)
 
@@ -112,17 +127,21 @@ class BEVMoEBlock(nn.Module):
                 eidx = gate_out.topk_idx[b, j].item()
                 weight = gate_out.topk_weights[b, j]
                 expert_out = self.experts[eidx](x_bev[b:b + 1])
+                # Weighted sum when k > 1; identity weighting when k = 1.
                 sample_out = sample_out + weight * expert_out
                 expert_counts[eidx] += 1
             x_out[b] = sample_out[0]
 
-        # Auxiliary losses
+        # ── Step 4: Auxiliary losses for expert balancing ─────────────
+        # importance_loss is differentiable through gate_probs → trains
+        # the gate to distribute probability mass evenly.
+        # load_loss is detached — a monitoring signal only.
         aux = importance_loss(gate_out.probs, self.importance_coef)
         aux = aux + load_loss(expert_counts, self.load_coef)
 
         moe_info = {
             'probs': gate_out.probs.detach(),
             'topk_idx': gate_out.topk_idx.detach(),
-            'aux_loss': aux,
+            'aux_loss': aux,  # Collected by BEVFusion.loss() via extract_feat
         }
         return x_out, moe_info

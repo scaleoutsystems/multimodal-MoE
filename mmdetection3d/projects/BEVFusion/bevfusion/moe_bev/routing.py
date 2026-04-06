@@ -3,6 +3,22 @@
 ContextEncoder converts per-sample metadata dicts (weather, road type, etc.)
 into a fixed-size context vector.  TopkGate selects the top-k experts from
 a pooled BEV feature vector optionally concatenated with context.
+
+Selecting context fields per run
+---------------------------------
+Pass a ``fields`` list to ``ContextEncoder`` with just the field names you
+want active.  Vocabs are looked up from ``ZOD_FIELD_REGISTRY`` so you never
+need to repeat them in configs.  All registered fields are categorical.
+
+Example config snippet::
+
+    context_cfg = dict(
+        fields=['weather_group', 'road_type', 'complexity_bin'],
+        embed_dim=16,
+        out_dim=64,
+    )
+
+To use ALL available fields, omit ``fields`` (or pass ``fields=None``).
 """
 from __future__ import annotations
 
@@ -18,129 +34,121 @@ from torch import Tensor
 
 @dataclass
 class GateOutput:
-    probs: Tensor       # (B, E) full softmax distribution
-    topk_idx: Tensor    # (B, k) selected expert indices
+    probs: Tensor         # (B, E) full softmax distribution
+    topk_idx: Tensor      # (B, k) selected expert indices
     topk_weights: Tensor  # (B, k) softmax weights for selected experts
+
+
+# ── ZOD field registry ────────────────────────────────────────────────────
+# Single source of truth for field types and categorical vocabularies.
+# Vocabs contain exactly the values present in the ZOD parquet — no padding
+# or unknown tokens.  Add new fields here; never duplicate specs in configs.
+
+ZOD_FIELD_REGISTRY: Dict[str, List[str]] = {
+    'complexity_bin':    ['empty', 'low', 'medium', 'high'],
+    'road_condition':    ['normal', 'wet', 'snow'],
+    'road_type':         ['arterial-rural', 'arterial-urban', 'city',
+                          'highway', 'smaller-rural'],
+    'scraped_weather':   ['clear-day', 'clear-night', 'cloudy', 'fog',
+                          'partly-cloudy-day', 'partly-cloudy-night',
+                          'rain', 'snow', 'wind'],
+    'solar_context_bin': ['day', 'night', 'twilight'],
+    'weather_group':     ['clear_like', 'cloud_like', 'fog',
+                          'precipitation', 'wind'],
+}
+
+# Ordered list of all field names, preserved for deterministic default order.
+ALL_FIELDS: List[str] = list(ZOD_FIELD_REGISTRY.keys())
 
 
 # ── ContextEncoder ────────────────────────────────────────────────────────
 
-# Default vocabulary for ZOD context fields.  Index 0 is reserved for
-# unknown / missing values ("" or unseen strings).
-DEFAULT_CONTEXT_FIELDS = {
-    'weather_group': {
-        'type': 'categorical',
-        'vocab': ['', 'clear_like', 'cloud_like', 'precipitation',
-                  'fog', 'wind', 'unknown'],
-    },
-    'road_type': {
-        'type': 'categorical',
-        'vocab': ['', 'highway', 'city', 'arterial-urban',
-                  'arterial-rural', 'smaller-rural'],
-    },
-    'time_of_day': {
-        'type': 'categorical',
-        'vocab': ['', 'day', 'night', 'twilight'],
-    },
-    'solar_context_bin': {
-        'type': 'categorical',
-        'vocab': ['', 'night', 'day', 'missing'],
-    },
-    'complexity_bin': {
-        'type': 'categorical',
-        'vocab': ['', 'empty', 'low', 'medium', 'high'],
-    },
-    'solar_angle_elevation': {'type': 'scalar'},
-    'complexity_score': {'type': 'scalar'},
-    'num_pedestrians_final': {'type': 'scalar'},
-}
-
-
 class ContextEncoder(nn.Module):
-    """Encode per-sample context metadata into a fixed-size vector.
+    """Encode per-sample ZOD context metadata into a fixed-size vector.
 
-    Categorical fields are embedded; scalar fields are normalised and
-    passed through a small linear layer.  All embeddings / projections
-    are concatenated and projected to ``out_dim``.
+    Field types and vocabularies are looked up from ``ZOD_FIELD_REGISTRY``,
+    so you only need to name the fields you want — no vocab duplication in
+    configs.
 
     Args:
-        context_fields: Mapping from field name to field spec.  Each spec
-            is a dict with ``'type'`` (``'categorical'`` or ``'scalar'``)
-            and, for categoricals, a ``'vocab'`` list where index 0 is the
-            unknown token.  Defaults to ``DEFAULT_CONTEXT_FIELDS``.
-        embed_dim: Embedding dimension per categorical field.
-        out_dim: Output context vector dimension.
+        fields: List of field names to encode.  Must all exist in
+            ``ZOD_FIELD_REGISTRY``.  Pass ``None`` to use all registered
+            fields.  Order determines the concatenation order (no effect on
+            semantics, but keep it stable across runs for reproducibility).
+        embed_dim: Embedding dimension for each categorical field.
+        out_dim: Dimension of the output context vector.
+
+    Example config::
+
+        context_cfg = dict(
+            fields=['weather_group', 'road_type'],
+            embed_dim=16,
+            out_dim=64,
+        )
     """
 
     def __init__(self,
-                 context_fields: Optional[Dict] = None,
+                 fields: Optional[List[str]] = None,
                  embed_dim: int = 16,
                  out_dim: int = 64):
         super().__init__()
-        if context_fields is None:
-            context_fields = DEFAULT_CONTEXT_FIELDS
 
-        self.field_names: List[str] = []
-        self.field_types: List[str] = []
+        active_fields = fields if fields is not None else ALL_FIELDS
+        unknown = [f for f in active_fields if f not in ZOD_FIELD_REGISTRY]
+        if unknown:
+            raise ValueError(
+                f'ContextEncoder: unknown field(s) {unknown}. '
+                f'Available: {ALL_FIELDS}')
+
+        self.field_names: List[str] = list(active_fields)
         self.embeddings = nn.ModuleDict()
         self.vocab_maps: Dict[str, Dict[str, int]] = {}
 
-        raw_dim = 0
-        for name, spec in context_fields.items():
-            self.field_names.append(name)
-            self.field_types.append(spec['type'])
-            if spec['type'] == 'categorical':
-                vocab = spec['vocab']
-                self.vocab_maps[name] = {v: i for i, v in enumerate(vocab)}
-                self.embeddings[name] = nn.Embedding(len(vocab), embed_dim,
-                                                     padding_idx=0)
-                raw_dim += embed_dim
-            else:
-                raw_dim += 1
+        for name in active_fields:
+            vocab = ZOD_FIELD_REGISTRY[name]
+            self.vocab_maps[name] = {v: i for i, v in enumerate(vocab)}
+            self.embeddings[name] = nn.Embedding(len(vocab), embed_dim)
 
+        # All fields are categorical, each contributing embed_dim floats.
+        raw_dim = len(active_fields) * embed_dim
         self.proj = nn.Sequential(
             nn.Linear(raw_dim, out_dim),
             nn.ReLU(inplace=True),
         )
         self.out_dim = out_dim
 
-    def _encode_field(self, batch_ctx: List[dict], name: str,
-                      ftype: str, device: torch.device) -> Tensor:
-        B = len(batch_ctx)
-        if ftype == 'categorical':
-            vmap = self.vocab_maps[name]
-            indices = []
-            for ctx in batch_ctx:
-                val = ctx.get(name, '')
-                if val is None:
-                    val = ''
-                indices.append(vmap.get(str(val), 0))
-            idx_t = torch.tensor(indices, dtype=torch.long, device=device)
-            return self.embeddings[name](idx_t)  # (B, embed_dim)
-        else:
-            vals = []
-            for ctx in batch_ctx:
-                v = ctx.get(name, None)
-                vals.append(float(v) if v is not None else 0.0)
-            return torch.tensor(vals, dtype=torch.float32,
-                                device=device).unsqueeze(1)  # (B, 1)
+    def _embed_field(self, batch_ctx: List[dict], name: str,
+                     device: torch.device) -> Tensor:
+        """Look up the embedding for one categorical field across the batch."""
+        vmap = self.vocab_maps[name]
+        indices = []
+        for ctx in batch_ctx:
+            val = str(ctx.get(name, ''))
+            if val not in vmap:
+                raise KeyError(
+                    f"ContextEncoder: unexpected value '{val}' for field "
+                    f"'{name}'. Known values: {list(vmap)}")
+            indices.append(vmap[val])
+        idx_t = torch.tensor(indices, dtype=torch.long, device=device)
+        return self.embeddings[name](idx_t)  # (B, embed_dim)
 
     def forward(self, batch_input_metas: List[dict]) -> Tensor:
-        """Encode context from a list of per-sample metadata dicts.
+        """Encode context for a batch.
 
         Args:
-            batch_input_metas: List of length B, each containing a
-                ``'context'`` key with the metadata dict.
+            batch_input_metas: List of length B.  Each dict must contain
+                a ``'context'`` key mapping to the per-sample metadata dict
+                (added via ``Pack3DDetInputs`` ``meta_keys``).
 
         Returns:
-            Context vector of shape ``(B, out_dim)``.
+            ``(B, out_dim)`` context vector.
         """
         batch_ctx = [m.get('context', {}) for m in batch_input_metas]
         device = next(self.parameters()).device
 
-        parts = []
-        for name, ftype in zip(self.field_names, self.field_types):
-            parts.append(self._encode_field(batch_ctx, name, ftype, device))
+        # Embed each categorical field → (B, embed_dim), concat all, project.
+        parts = [self._embed_field(batch_ctx, name, device)
+                 for name in self.field_names]
 
         return self.proj(torch.cat(parts, dim=1))
 
@@ -170,16 +178,17 @@ class TopkGate(nn.Module):
         """Route based on feature (+ optional context) vector.
 
         Args:
-            feat: (B, feat_dim) pooled BEV features.
-            ctx: (B, context_dim) optional context vector.
+            feat: ``(B, feat_dim)`` pooled BEV features.
+            ctx:  ``(B, context_dim)`` optional context vector.
 
         Returns:
-            GateOutput with probs, topk_idx, topk_weights.
+            :class:`GateOutput` with ``probs``, ``topk_idx``,
+            ``topk_weights``.
         """
         if ctx is not None:
             feat = torch.cat([feat, ctx], dim=1)
-        logits = self.gate(feat)                     # (B, E)
-        probs = torch.softmax(logits, dim=1)         # (B, E)
+        logits = self.gate(feat)                      # (B, E)
+        probs = torch.softmax(logits, dim=1)          # (B, E)
         topk_weights, topk_idx = probs.topk(self.k, dim=1)  # (B, k) each
         # Re-normalise selected weights so they sum to 1 per sample.
         topk_weights = topk_weights / (topk_weights.sum(dim=1, keepdim=True)

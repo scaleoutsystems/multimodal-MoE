@@ -35,6 +35,9 @@ class FusionExpert(nn.Module):
     def __init__(self, cam_channels: int, lidar_channels: int,
                  out_channels: int):
         super().__init__()
+        # Concat along channel dim, then 3x3 conv to fuse.
+        # Each expert has its own conv weights, so different experts
+        # can learn different fusion strategies.
         self.fuse = nn.Sequential(
             nn.Conv2d(cam_channels + lidar_channels, out_channels, 3,
                       padding=1, bias=False),
@@ -43,6 +46,7 @@ class FusionExpert(nn.Module):
         )
 
     def forward(self, cam_bev: Tensor, lidar_bev: Tensor) -> Tensor:
+        # (B, Cc, H, W) + (B, Cl, H, W) → cat → (B, Cc+Cl, H, W) → conv
         return self.fuse(torch.cat([cam_bev, lidar_bev], dim=1))
 
 
@@ -85,11 +89,13 @@ class FusionMoEBlock(nn.Module):
         self.importance_coef = importance_coef
         self.load_coef = load_coef
 
+        # Each expert is a full FusionExpert with independent weights.
         self.experts = nn.ModuleList([
             FusionExpert(cam_channels, lidar_channels, out_channels)
             for _ in range(num_experts)
         ])
 
+        # Optional context encoder for condition-aware routing.
         ctx_dim = 0
         if context_cfg is not None:
             self.context_encoder = ContextEncoder(**context_cfg)
@@ -97,6 +103,7 @@ class FusionMoEBlock(nn.Module):
         else:
             self.context_encoder = None
 
+        # Gate operates on pooled cam + lidar features + optional context.
         self.gate = TopkGate(
             feat_dim=cam_channels + lidar_channels,
             num_experts=num_experts,
@@ -104,10 +111,13 @@ class FusionMoEBlock(nn.Module):
             context_dim=ctx_dim,
         )
 
+        # Separate pools for each modality before concatenation.
         self.cam_pool = nn.AdaptiveAvgPool2d(1)
         self.lidar_pool = nn.AdaptiveAvgPool2d(1)
 
-        # Store aux info for loss collection (same pattern as depth_lss.py)
+        # _moe_aux_loss is written during forward() and read by
+        # BEVFusion.extract_feat() for loss collection — same pattern
+        # the depth aux loss uses in DepthLSSTransform.
         self._moe_aux_loss: Optional[Tensor] = None
         self._moe_info: Optional[Dict[str, Any]] = None
 
@@ -128,6 +138,7 @@ class FusionMoEBlock(nn.Module):
         cam_bev, lidar_bev = inputs[0], inputs[1]
         B = cam_bev.shape[0]
 
+        # ── Routing signal: pool both modalities independently, concat ──
         cam_feat = self.cam_pool(cam_bev).flatten(1)       # (B, Cc)
         lidar_feat = self.lidar_pool(lidar_bev).flatten(1)  # (B, Cl)
         feat = torch.cat([cam_feat, lidar_feat], dim=1)     # (B, Cc+Cl)
@@ -138,6 +149,7 @@ class FusionMoEBlock(nn.Module):
 
         gate_out = self.gate(feat, ctx)
 
+        # ── Dispatch: each sample's selected expert fuses both BEVs ───
         out = cam_bev.new_zeros(B, self.out_channels,
                                 cam_bev.shape[2], cam_bev.shape[3])
         expert_counts = torch.zeros(self.num_experts, device=cam_bev.device)
@@ -147,15 +159,21 @@ class FusionMoEBlock(nn.Module):
             for j in range(self.k):
                 eidx = gate_out.topk_idx[b, j].item()
                 weight = gate_out.topk_weights[b, j]
+                # Each FusionExpert receives BOTH modalities and produces
+                # a single fused output — this is what makes Variant B
+                # different from Variant A (which processes modalities
+                # independently).
                 expert_out = self.experts[eidx](cam_bev[b:b + 1],
                                                 lidar_bev[b:b + 1])
                 sample_out = sample_out + weight * expert_out
                 expert_counts[eidx] += 1
             out[b] = sample_out[0]
 
+        # ── Aux losses ────────────────────────────────────────────────
         aux = importance_loss(gate_out.probs, self.importance_coef)
         aux = aux + load_loss(expert_counts, self.load_coef)
 
+        # Store on self for BEVFusion.extract_feat() to pick up.
         self._moe_aux_loss = aux
         self._moe_info = {
             'probs': gate_out.probs.detach(),
