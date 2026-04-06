@@ -124,6 +124,24 @@ Added a `custom_zod` branch in the `predict_by_feat` method that defines a singl
 
 ---
 
+## New files — datasets
+
+### 7b. `mmdet3d/datasets/zod_dataset.py`
+
+**New file**: `ZODDataset`, a subclass of `NuScenesDataset` that overrides only `parse_ann_info`.
+
+**Change**: The single difference is `origin=(0.5, 0.5, 0)` instead of `origin=(0.5, 0.5, 0.5)` when constructing `LiDARInstance3DBoxes`.
+
+**Why**: The ZOD build pipeline (`build_zod_moe_dataset.py`) stores `box_3d` with z as **bottom-center** (`z_bottom = z_center - dz/2`), matching MMDet3D's internal LiDAR box convention `(0.5, 0.5, 0)`. The vanilla `NuScenesDataset` declares `origin=(0.5, 0.5, 0.5)`, which tells the `LiDARInstance3DBoxes` constructor that the input z is a **geometric center** and subtracts `dz/2` to convert to bottom-center. Applied to already-bottom-center ZOD boxes, this double-subtracts `dz/2`, shifting all GT boxes half a box height below their true position. The model then learns corrupted z-targets, producing predictions that are systematically ~half a box too low.
+
+`ZODDataset` inherits everything else from `NuScenesDataset` unchanged — the nuScenes-format pickle, `parse_data_info`, filtering logic, velocity handling — since the ZOD data is stored in nuScenes layout. Only the z-origin declaration differs.
+
+Registered in `mmdet3d/datasets/__init__.py` via `from .zod_dataset import ZODDataset` and added to `__all__`.
+
+**Config impact**: All four ZOD configs (`zod_lidar_only.py`, `zod_bevfusion_baseline.py`, `zod_bevfusion_finetune.py`, `zod_bevfusion_finetune_fixedLidar.py`) now use `dataset_type = 'ZODDataset'` instead of `'NuScenesDataset'`.
+
+---
+
 ## New files — configs
 
 ### 8. `configs/zod/zod_lidar_only.py`

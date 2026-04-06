@@ -348,6 +348,46 @@ by type name in the config.
 
 ---
 
+## 11. GT Bounding Box z-Coordinate Convention Mismatch (`mmdet3d/datasets/zod_dataset.py`)
+
+**Problem**: Predicted bounding boxes were systematically ~half a bounding box height below GT boxes in the vertical (z) direction. Matched z-shifts confirmed the offset scaled with pedestrian height (`dz`), ruling out a constant offset.
+
+The root cause was a coordinate convention mismatch between the ZOD data builder and the `NuScenesDataset` loader:
+
+1. `build_zod_moe_dataset.py` stores `box_3d` with `z = z_bottom` (bottom-center), documented as `"z_definition": "bottom_center"`.
+2. `build_infos.py` passes `box_3d` into the pickle unchanged — still `z_bottom`.
+3. `NuScenesDataset.parse_ann_info` wraps boxes with `LiDARInstance3DBoxes(..., origin=(0.5, 0.5, 0.5))`, which declares "the input z is a geometric center." The constructor then converts to internal bottom-center storage: `z_stored = z_input - dz/2`.
+4. Since `z_input` was already `z_bottom`, the result was `z_stored = z_bottom - dz/2` — one `dz/2` too low.
+
+This corrupted the GT boxes used for training. `TransFusionBBoxCoder.encode` received wrong bottom-z, computed wrong gravity-center targets, and the model learned to predict z values that were systematically `dz/2` too low. At inference, `decode` converted these back to bottom-center, producing predictions shifted down by `dz/2` relative to true GT.
+
+The mismatch was invisible in BEV evaluation (`CenterDistanceMetric`) which only uses x, y. It was also invisible in BEV visualization hooks which only draw x, y, dx, dy, yaw. It only became apparent in 3D visualization (`visualize_3d_predictions.py`) and 3D IoU evaluation (`IndoorMetric`).
+
+**Evidence**: The `visualize_3d_predictions.py` script reads GT from raw `data_info['instances'][*]['bbox_3d']` (correct z_bottom from pickle) but reads predictions from the model output (shifted down by dz/2). The z-diagnostic section of the script confirmed matched z-shifts of approximately `-dz/2` per pedestrian.
+
+**Fix**: Created `ZODDataset` (`mmdet3d/datasets/zod_dataset.py`), a minimal subclass of `NuScenesDataset` that overrides `parse_ann_info` with `origin=(0.5, 0.5, 0)` instead of `origin=(0.5, 0.5, 0.5)`. This tells the `LiDARInstance3DBoxes` constructor that the input z is already bottom-center, so no shift is applied. All four ZOD configs updated to `dataset_type = 'ZODDataset'`.
+
+Full pipeline trace with the fix:
+
+| Stage | z value (example: z_center=-0.3, dz=1.7) | Correct? |
+|-------|------------------------------------------|----------|
+| ZOD builder `box_3d` | z_bottom = -1.15 | Yes |
+| Pickle `bbox_3d` | z_bottom = -1.15 | Yes |
+| `ZODDataset.parse_ann_info` (origin 0.5,0.5,**0**) | z_bottom = -1.15 (no shift) | Yes |
+| `gravity_center` property | -1.15 + 1.7×0.5 = -0.30 | Yes |
+| `bbox_coder.encode` target (gravity) | -1.15 + 1.7×0.5 = -0.30 | Yes |
+| `bbox_coder.decode` output (bottom) | -0.30 - 1.7×0.5 = -1.15 | Yes |
+| Eval GT (`eval_ann_info`) | z_bottom = -1.15 | Yes |
+| Eval pred | z_bottom = -1.15 | Yes |
+| Vis GT (raw pickle) | z_bottom = -1.15 | Yes |
+| Vis pred (model output) | z_bottom = -1.15 | Yes |
+
+**Alternative fix considered**: Changing the ZOD builder to store `z_center` (geometric center) instead of `z_bottom` would also have been correct — `NuScenesDataset` with `origin=(0.5, 0.5, 0.5)` expects geometric center input. The `ZODDataset` approach was chosen to avoid rebuilding the dataset.
+
+**Impact**: All existing checkpoints were trained with corrupted z-targets and must be retrained.
+
+---
+
 ## Summary of All Changes
 
 | # | File | Change | Category |
@@ -364,12 +404,14 @@ by type name in the config.
 | 8 | `transfusion_head.py` | Add test-time circle NMS for custom_zod | Evaluation |
 | 9 | `zod_lidar_only.py` | Remove flips, disable rotation | Augmentation |
 | 10 | `bev_visualization_hook.py` | Add BEV feature + train/val prediction viz hooks | Diagnostics |
+| 11 | `zod_dataset.py` + all ZOD configs | Fix GT z-coordinate double-subtraction via `ZODDataset` with `origin=(0.5,0.5,0)` | Geometry bug |
 
 ---
 
 ## Key Config Parameters (Final State)
 
 ```
+dataset_type         = 'ZODDataset'  (origin=(0.5,0.5,0) for bottom-center z)
 voxel_size           = [0.075, 0.075, 0.2]
 point_cloud_range    = [0.0, -54.0, -5.0, 108.0, 54.0, 3.0]
 grid_size            = [1440, 1440, 40]
