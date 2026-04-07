@@ -17,8 +17,8 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --gpus-per-task=1
 #SBATCH --time=00:30:00
-#SBATCH --output=%x_%j.out
-#SBATCH --error=%x_%j.out
+#SBATCH --output=/home/users/u103958/projects/multimodal-MoE/outputs/runs/slurm_logs/%x_%j.out
+#SBATCH --error=/home/users/u103958/projects/multimodal-MoE/outputs/runs/slurm_logs/%x_%j.out
 
 set -euo pipefail
 
@@ -28,7 +28,7 @@ PYTHON=${PYTHON:-$HOME/miniconda3/envs/multimodal-moe/bin/python}
 
 CONFIG=${CONFIG:-$MOE_ROOT/mmdetection3d/configs/zod/zod_lidar_only.py}
 CKPT=${CKPT:-$MOE_ROOT/outputs/runs/zod_lidar_only/zod-lidar-only_4452913/best_mAP_0.50_epoch_18.pth}
-OUT_DIR=${OUT_DIR:-$MOE_ROOT/outputs/runs/zod_lidar_only/zod-lidar-only_4452913/vis3d}
+OUT_DIR=${OUT_DIR:-$(dirname "$CKPT")/vis3d}
 NUM_SAMPLES=${NUM_SAMPLES:-8}
 SCORE_THR=${SCORE_THR:-0.25}
 SPLIT=${SPLIT:-val}
@@ -44,7 +44,7 @@ nvidia-smi --query-gpu=name --format=csv,noheader | head -1
 
 cd "$MOE_ROOT"
 
-$PYTHON scripts/visualize_3d_predictions.py \
+$PYTHON scripts/bev_scripts/visualize_3d_predictions.py \
     --config     "$CONFIG" \
     --ckpt       "$CKPT" \
     --out-dir    "$OUT_DIR" \

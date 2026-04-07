@@ -184,7 +184,7 @@ def main():
     args = parse_args()
     os.makedirs(args.out_dir, exist_ok=True)
 
-    repo_root = Path(__file__).resolve().parents[1] / 'mmdetection3d'
+    repo_root = Path(__file__).resolve().parents[2] / 'mmdetection3d'
     setup_mmdet3d(repo_root)
 
     from mmengine.config import Config

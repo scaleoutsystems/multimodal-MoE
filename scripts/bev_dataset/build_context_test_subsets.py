@@ -53,6 +53,15 @@ SUBSET_SPECS: Tuple[SubsetSpec, ...] = (
         allowed_values=('night',),
         output_suffix='lighting_test_night',
     ),
+    SubsetSpec(
+        name='lighting_test_twilight',
+        source_field='solar_context_bin',
+        condition_text='solar_context_bin == "twilight"',
+        allowed_values=('twilight',),
+        output_suffix='lighting_test_twilight',
+    ),
+
+    
     # ── 2) Scraped weather (scraped_weather) ──
     SubsetSpec(
         name='weather_test_clear_day',

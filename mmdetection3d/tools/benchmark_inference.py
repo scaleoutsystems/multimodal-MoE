@@ -1,5 +1,7 @@
 #!/usr/bin/env python
-"""Offline inference benchmarking for trained MMDetection3D checkpoints.
+"""
+Customized script for MoE Thesis
+Offline inference benchmarking for trained MMDetection3D checkpoints.
 
 Measures pure model-forward latency (no loss computation, no metric eval)
 using the test pipeline.  Includes warm-up, CUDA synchronization, and
