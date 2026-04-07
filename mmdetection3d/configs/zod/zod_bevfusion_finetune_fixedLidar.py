@@ -63,7 +63,13 @@ custom_imports = dict(
 env_cfg = dict(
     cudnn_benchmark=False,
     mp_cfg=dict(mp_start_method='fork', opencv_num_threads=0),
-    dist_cfg=dict(backend='nccl', find_unused_parameters=True),
+    dist_cfg=dict(backend='nccl'),
+)
+
+# find_unused_parameters belongs to the DDP wrapper, not init_process_group
+model_wrapper_cfg = dict(
+    type='MMDistributedDataParallel',
+    find_unused_parameters=True,
 )
 
 # ---------------------------------------------------------------------------
@@ -71,7 +77,7 @@ env_cfg = dict(
 # mismatch).  Camera/fusion layers are absent in the checkpoint and start
 # from scratch; Swin-T loads ImageNet via init_cfg.
 # ---------------------------------------------------------------------------
-load_from = '/home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4452913/best_mAP_0.50_epoch_18.pth'
+load_from = '/home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4454825/best_mAP_0.50_epoch_18.pth'
 
 # ===== geometry =====
 voxel_size = [0.075, 0.075, 0.2]
