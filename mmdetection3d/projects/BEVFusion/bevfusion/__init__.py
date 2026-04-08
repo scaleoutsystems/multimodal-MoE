@@ -6,6 +6,8 @@ __all__ = ['BEVFusionSparseEncoder']
 # Keep sparse encoder importable even if those optional ops are unavailable.
 try:
     from .bevfusion import BEVFusion
+    from .bevfusion_camera_zero import BEVFusionCameraZero
+    from .camera_only_bevfusion import CameraOnlyBEVFusion
     from .bevfusion_necks import GeneralizedLSSFPN
     from .depth_lss import DepthLSSTransform, LSSTransform
     from .loading import BEVLoadMultiViewImageFromFiles
@@ -23,7 +25,8 @@ try:
                           FusionMoEBlock)
 
     __all__ += [
-        'BEVFusion', 'TransFusionHead', 'ConvFuser', 'ImageAug3D', 'GridMask',
+        'BEVFusion', 'BEVFusionCameraZero', 'CameraOnlyBEVFusion',
+        'TransFusionHead', 'ConvFuser', 'ImageAug3D', 'GridMask',
         'GeneralizedLSSFPN', 'HungarianAssigner3D', 'BBoxBEVL1Cost',
         'IoU3DCost', 'HeuristicAssigner3D', 'DepthLSSTransform',
         'LSSTransform', 'BEVLoadMultiViewImageFromFiles',
