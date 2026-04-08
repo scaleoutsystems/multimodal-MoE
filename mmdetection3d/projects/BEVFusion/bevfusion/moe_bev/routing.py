@@ -206,6 +206,8 @@ class ContextEncoder(nn.Module):
         #[-0.4, 1.0, 0.1,  0.6, -0.2, 0.3], "fog" + "highway"
         #[ 0.2,-0.1, 0.5, -0.5,  0.7,-0.1], "city" + "arterial-rural"
         #] 
+        # --> (B, 6) representation of the context for each sample
+        # --> project (linear + relu) --> (B, out_dim) final context vectors
 
         return self.proj(torch.cat(parts, dim=1))
 
