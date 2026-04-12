@@ -11,6 +11,10 @@
 | test | success | 0.7630 | 0.7630 | 0.9378 | 0.9378 | 0.5468 | 0.5468 | 0.7153 | 0.7153 | 0.7829 | 0.9642 | 0.7895 | 0.9703 | 0.7947 | 0.9746 | 0.7829 | 0.9642 | 0.7895 | 0.9703 | 0.7947 | 0.9746 | 0.0055 | 0.1549 |
 
 ## Complexity
+Count 
+high: 869 
+medium: 1493
+low: 2681
 
 | label | status | pedestrian_AP_0.25 | mAP_0.25 | pedestrian_rec_0.25 | mAR_0.25 | pedestrian_AP_0.50 | mAP_0.50 | pedestrian_rec_0.50 | mAR_0.50 | pedestrian_AP_0.5m | pedestrian_rec_0.5m | pedestrian_AP_1.0m | pedestrian_rec_1.0m | pedestrian_AP_2.0m | pedestrian_rec_2.0m | mAP_0.5m | mAR_0.5m | mAP_1.0m | mAR_1.0m | mAP_2.0m | mAR_2.0m | data_time | time |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -19,14 +23,22 @@
 | medium | success | 0.7909 | 0.7909 | 0.9352 | 0.9352 | 0.5694 | 0.5694 | 0.7167 | 0.7167 | 0.8123 | 0.9643 | 0.8200 | 0.9694 | 0.8257 | 0.9751 | 0.8123 | 0.9643 | 0.8200 | 0.9694 | 0.8257 | 0.9751 | 0.0077 | 0.1892 |
 
 ## Lighting
+Count 
+day: 7743 
+night: 1875
 
 | label | status | pedestrian_AP_0.25 | mAP_0.25 | pedestrian_rec_0.25 | mAR_0.25 | pedestrian_AP_0.50 | mAP_0.50 | pedestrian_rec_0.50 | mAR_0.50 | pedestrian_AP_0.5m | pedestrian_rec_0.5m | pedestrian_AP_1.0m | pedestrian_rec_1.0m | pedestrian_AP_2.0m | pedestrian_rec_2.0m | mAP_0.5m | mAR_0.5m | mAP_1.0m | mAR_1.0m | mAP_2.0m | mAR_2.0m | data_time | time |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | day | success | 0.7723 | 0.7723 | 0.9360 | 0.9360 | 0.5483 | 0.5483 | 0.7104 | 0.7104 | 0.7936 | 0.9632 | 0.8003 | 0.9694 | 0.8056 | 0.9739 | 0.7936 | 0.9632 | 0.8003 | 0.9694 | 0.8056 | 0.9739 | 0.0044 | 0.1496 |
 | night | success | 0.7044 | 0.7044 | 0.9628 | 0.9628 | 0.5611 | 0.5611 | 0.7983 | 0.7983 | 0.7117 | 0.9768 | 0.7183 | 0.9833 | 0.7227 | 0.9851 | 0.7117 | 0.9768 | 0.7183 | 0.9833 | 0.7227 | 0.9851 | 0.0045 | 0.1690 |
-| twilight | success | 0.7586 | 0.7586 | 0.9541 | 0.9541 | 0.5675 | 0.5675 | 0.7322 | 0.7322 | 0.7723 | 0.9734 | 0.7753 | 0.9763 | 0.7811 | 0.9793 | 0.7723 | 0.9734 | 0.7753 | 0.9763 | 0.7811 | 0.9793 | 0.0067 | 0.2751 |
 
 ## Road type
+count 
+arterial_rural: 993
+arterial_urban: 2402
+city: 5022
+highway: 1070
+smaller_rural: 513
 
 | label | status | pedestrian_AP_0.25 | mAP_0.25 | pedestrian_rec_0.25 | mAR_0.25 | pedestrian_AP_0.50 | mAP_0.50 | pedestrian_rec_0.50 | mAR_0.50 | pedestrian_AP_0.5m | pedestrian_rec_0.5m | pedestrian_AP_1.0m | pedestrian_rec_1.0m | pedestrian_AP_2.0m | pedestrian_rec_2.0m | mAP_0.5m | mAR_0.5m | mAP_1.0m | mAR_1.0m | mAP_2.0m | mAR_2.0m | data_time | time |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -37,6 +49,13 @@
 | smaller_rural | success | 0.5923 | 0.5923 | 0.9028 | 0.9028 | 0.3653 | 0.3653 | 0.6181 | 0.6181 | 0.6472 | 0.9514 | 0.6497 | 0.9722 | 0.6505 | 0.9792 | 0.6472 | 0.9514 | 0.6497 | 0.9722 | 0.6505 | 0.9792 | 0.0074 | 0.2583 |
 
 ## Scraped weather
+count
+clear_day: 1643
+clear_night: 400
+partly_cloudy_day: 2915
+partly_cloudy_night:  1113
+cloudy: 1900
+precipitation: 1768
 
 | label | status | pedestrian_AP_0.25 | mAP_0.25 | pedestrian_rec_0.25 | mAR_0.25 | pedestrian_AP_0.50 | mAP_0.50 | pedestrian_rec_0.50 | mAR_0.50 | pedestrian_AP_0.5m | pedestrian_rec_0.5m | pedestrian_AP_1.0m | pedestrian_rec_1.0m | pedestrian_AP_2.0m | pedestrian_rec_2.0m | mAP_0.5m | mAR_0.5m | mAP_1.0m | mAR_1.0m | mAP_2.0m | mAR_2.0m | data_time | time |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -49,6 +68,9 @@
 | precipitation | success | 0.7306 | 0.7306 | 0.9371 | 0.9371 | 0.5035 | 0.5035 | 0.6962 | 0.6962 | 0.7462 | 0.9636 | 0.7564 | 0.9698 | 0.7616 | 0.9751 | 0.7462 | 0.9636 | 0.7564 | 0.9698 | 0.7616 | 0.9751 | 0.0040 | 0.1576 |
 
 ## Weather group
+count 
+clear_like: 2043
+cloud_like: 5928
 
 | label | status | pedestrian_AP_0.25 | mAP_0.25 | pedestrian_rec_0.25 | mAR_0.25 | pedestrian_AP_0.50 | mAP_0.50 | pedestrian_rec_0.50 | mAR_0.50 | pedestrian_AP_0.5m | pedestrian_rec_0.5m | pedestrian_AP_1.0m | pedestrian_rec_1.0m | pedestrian_AP_2.0m | pedestrian_rec_2.0m | mAP_0.5m | mAR_0.5m | mAP_1.0m | mAR_1.0m | mAP_2.0m | mAR_2.0m | data_time | time |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |

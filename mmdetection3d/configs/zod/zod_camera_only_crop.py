@@ -1,37 +1,58 @@
-"""Camera-only BEVFusion for ZOD pedestrian detection.
+"""Camera-only BEVFusion for ZOD pedestrian detection — sky-crop variant.
 
-Derived from zod_bevfusion_finetune.py with the LiDAR feature-extraction
-branch and ConvFuser removed.  Every camera-side component is IDENTICAL
-to the finetune config:
+Identical to zod_camera_only.py in EVERY respect except one:
 
-  - Backbone:       Swin-Tiny (same init_cfg → ImageNet pretrained)
-  - Neck:           GeneralizedLSSFPN (same in/out channels)
-  - View transform: DepthLSSTransform with LiDAR-assisted depth
-                    (same bounds, downsample, splat_radius, aux_depth_loss_weight)
-  - LiDAR data:     STILL LOADED in the pipeline — forwarded to
-                    DepthLSSTransform for sparse-depth projection and
-                    auxiliary depth supervision.  No LiDAR BEV feature
-                    tensor is produced.
+  SKY CROP: The top 192 rows (≈27.3% of 704) of each input image are removed
+  before the backbone sees the frame.  This is implemented by reducing
+  final_dim from [704, 1248] → [512, 1248] in ImageAug3D.
 
-What is removed:
-  - pts_voxel_encoder, pts_middle_encoder  (no voxelisation / sparse encoder)
-  - fusion_layer  (ConvFuser)              (no LiDAR BEV to fuse)
+  With resize_lim=[1.0, 1.0] and bot_pct_lim=[0.0, 0.0], ImageAug3D computes:
+      crop_h = H - final_dim[0] = 704 - 512 = 192  (top of crop window)
+      crop   = (0, 192, 1248, 704)                  (PIL left/top/right/bottom)
 
-What changes in the BEV backbone:
-  - pts_backbone.in_channels: 256 → 80
-    (camera BEV has 80 channels; LiDAR BEV used to have 256)
-  - pts_neck and bbox_head are unchanged (output shapes stay the same)
+  This discards sky (rows 0–191) and keeps the road/horizon region (rows
+  192–703).  The img_aug_matrix is updated by ImageAug3D.img_transform with
+  translation = [0, -192], so DepthLSSTransform.get_geometry correctly undoes
+  the crop when lifting pixels back to 3-D camera space — no calibration
+  mismatch.
 
-Initialisation:
-  - load_from points to the best BEVFusion-finetune checkpoint so that
-    the already-trained camera weights (img_backbone, img_neck,
-    view_transform, bbox_head) are warm-started.  Keys that do not match
-    (pts_backbone layer-0, pts_middle_encoder, fusion_layer) are skipped
-    automatically by MMEngine with a logged warning.
-  - To train fully from scratch, set ``load_from = None``; Swin-T then
-    initialises via img_backbone.init_cfg (ImageNet weights).
+  Downstream view-transform parameters are updated to match the new image
+  height:
+      image_size  : [704, 1248] → [512, 1248]
+      feature_size: [ 88,  156] → [ 64,  156]   (512/8 = 64)
 
-Schedule: identical to zod_bevfusion_finetune (12 epochs, cosine+warmup).
+  512 is divisible by 32 (= 4×2×2×2), so every SwinT PatchMerging stage
+  produces even-sized maps: 128 → 64 → 32 → 16.  No padding artefacts.
+
+What is NOT changed:
+  - LR schedule (updated cosine+warmup from zod_camera_only.py)
+  - dbound = [1.0, 90.0, 0.5]
+  - splat_radius = 1  (3×3 neighbourhood)
+  - All model components (backbone, neck, BEV backbone, head)
+  - Training schedule (12 epochs)
+  - Data loaders, evaluators, hooks
+
+Purpose:
+  Isolate the effect of removing sky pixels while keeping the improved LR
+  schedule and all other design decisions identical.
+
+
+How the crop works geometrically
+ZOD front-camera images are exactly 704×1248 (H×W). With resize_lim=[1.0, 1.0] and bot_pct_lim=[0.0, 0.0], ImageAug3D.sample_augmentation computes:
+
+crop_h = H - final_dim[0] = 704 - 512 = 192
+crop   = (0, 192, 1248, 704)   ← PIL (left, top, right, bottom)
+This discards rows 0–191 (sky) and keeps rows 192–703 (horizon + road). The img_transform method stores translation = [0, −192] in img_aug_matrix, which DepthLSSTransform.get_geometry undoes via:
+
+points = self.frustum - post_trans   # maps frustum y=[0..511] → y=[192..703]
+So all camera rays are traced back to the correct original-image coordinates — no calibration mismatch.
+
+Why 512 specifically
+512 is the largest height ≤ 704 that:
+
+Removes ~25–30% sky (removes exactly 192/704 = 27.3%)
+Is divisible by 32 = 4×2×2×2, so every SwinT PatchMerging stage yields even dimensions: 128 → 64 → 32 → 16 — no padding artefacts
+Gives a clean feature_size = [64, 156] (512/8=64), and the dtransform conv chain (÷4 then ÷2 = ÷8) maps exactly to that size  
 """
 
 _base_ = ['../_base_/default_runtime.py']
@@ -39,9 +60,7 @@ custom_imports = dict(
     imports=['projects.BEVFusion.bevfusion'], allow_failed_imports=False)
 
 # ---------------------------------------------------------------------------
-# Warm-start: load camera branch weights from the best BEVFusion-finetune
-# checkpoint.  Mismatched keys (LiDAR branch / fusion layer) are silently
-# skipped.  Set to None to train from scratch with ImageNet Swin-T init only.
+# Warm-start: same checkpoint as zod_camera_only.py.
 # ---------------------------------------------------------------------------
 load_from = (
     '/home/users/u103958/projects/multimodal-MoE/outputs/runs/'
@@ -61,7 +80,6 @@ metainfo = dict(classes=class_names, box_type_3d='LiDAR')
 dataset_type = 'ZODDataset'
 data_root = '/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/'
 data_prefix = dict(pts='', CAM_FRONT='')
-# LiDAR is still needed for DepthLSSTransform depth supervision.
 input_modality = dict(use_lidar=True, use_camera=True)
 backend_args = None
 
@@ -74,10 +92,8 @@ model = dict(
         std=[58.395, 57.12, 57.375],
         bgr_to_rgb=False,
         pad_size_divisor=32),
-    # No voxelize_cfg: CameraOnlyBEVFusion does not voxelise LiDAR.
-    # Points are passed as a raw list to DepthLSSTransform.
 
-    # ── camera encoder (IDENTICAL to zod_bevfusion_finetune) ──────────────
+    # ── camera encoder (IDENTICAL to zod_camera_only) ─────────────────────
     img_backbone=dict(
         type='mmdet.SwinTransformer',
         embed_dims=96,
@@ -108,14 +124,17 @@ model = dict(
         act_cfg=dict(type='ReLU', inplace=True),
         upsample_cfg=dict(mode='bilinear', align_corners=False)),
 
-    # ── camera → BEV (IDENTICAL to zod_bevfusion_finetune) ───────────────
-    # LiDAR points are still forwarded here for depth projection / aux loss.
+    # ── camera → BEV ──────────────────────────────────────────────────────
+    # SKY CROP: image_size and feature_size updated to match 512-row input.
+    #   image_size  : [704, 1248] → [512, 1248]
+    #   feature_size: [ 88,  156] → [ 64,  156]   (512 / 8 = 64)
+    # dbound, splat_radius, aux_depth_loss_weight are UNCHANGED.
     view_transform=dict(
         type='DepthLSSTransform',
         in_channels=256,
         out_channels=80,
-        image_size=[704, 1248],
-        feature_size=[88, 156],
+        image_size=[512, 1248],    # ← sky crop: was [704, 1248]
+        feature_size=[64, 156],    # ← sky crop: was [ 88,  156]
         xbound=[0.0, 108.0, 0.3],
         ybound=[-54.0, 54.0, 0.3],
         zbound=[-10.0, 10.0, 20.0],
@@ -124,10 +143,7 @@ model = dict(
         splat_radius=1,
         aux_depth_loss_weight=0.5),
 
-    # ── NO fusion_layer: camera BEV feeds directly into pts_backbone ──────
-
-    # ── BEV backbone (in_channels: 256 → 80 to match camera BEV) ─────────
-    # All other hyperparameters are identical to zod_bevfusion_finetune.
+    # ── BEV backbone (IDENTICAL to zod_camera_only) ───────────────────────
     pts_backbone=dict(
         type='SECOND',
         in_channels=80,
@@ -145,8 +161,7 @@ model = dict(
         upsample_cfg=dict(type='deconv', bias=False),
         use_conv_for_no_stride=True),
 
-    # ── detection head (IDENTICAL to zod_bevfusion_finetune) ─────────────
-    # Input is still 512-ch (SECONDFPN concatenates two 256-ch maps).
+    # ── detection head (IDENTICAL to zod_camera_only) ─────────────────────
     bbox_head=dict(
         type='TransFusionHead',
         num_proposals=500,
@@ -218,10 +233,14 @@ model = dict(
             reduction='mean', loss_weight=0.25)))
 
 # ===== pipelines =====
-# LiDAR points are loaded in BOTH train and test pipelines because
-# DepthLSSTransform needs them for depth projection at all times
-# (not just during training).  The aux_depth_loss is only computed
-# in training mode (guarded by self.training in DepthLSSTransform).
+# SKY CROP: final_dim changed from [704, 1248] → [512, 1248] in both
+# train and test ImageAug3D steps.  With resize_lim=[1.0, 1.0] and
+# bot_pct_lim=[0.0, 0.0] this sets:
+#   crop_h = 704 - 512 = 192  →  top 192 rows (sky) are discarded
+#   crop   = (0, 192, 1248, 704)
+# img_aug_matrix translation = [0, -192] is stored automatically and
+# consumed by DepthLSSTransform to keep projection geometry consistent.
+# Everything else in the pipeline is IDENTICAL to zod_camera_only.py.
 
 train_pipeline = [
     dict(
@@ -241,9 +260,11 @@ train_pipeline = [
         with_bbox_3d=True,
         with_label_3d=True,
         with_attr_label=False),
+    # SKY CROP: final_dim=[512, 1248] crops the top 192 rows of the 704-row
+    # ZOD image, removing the sky-heavy region (~27% of frame height).
     dict(
         type='ImageAug3D',
-        final_dim=[704, 1248],
+        final_dim=[512, 1248],    # ← sky crop: was [704, 1248]
         resize_lim=[1.0, 1.0],
         bot_pct_lim=[0.0, 0.0],
         rot_lim=[0.0, 0.0],
@@ -294,9 +315,10 @@ test_pipeline = [
         load_dim=4,
         use_dim=4,
         backend_args=backend_args),
+    # SKY CROP: final_dim=[512, 1248] — same crop as training (deterministic).
     dict(
         type='ImageAug3D',
-        final_dim=[704, 1248],
+        final_dim=[512, 1248],    # ← sky crop: was [704, 1248]
         resize_lim=[1.0, 1.0],
         bot_pct_lim=[0.0, 0.0],
         rot_lim=[0.0, 0.0],
@@ -313,7 +335,7 @@ test_pipeline = [
         ])
 ]
 
-# ===== dataloaders =====
+# ===== dataloaders (IDENTICAL to zod_camera_only) =====
 
 train_dataloader = dict(
     batch_size=4,
@@ -373,7 +395,7 @@ test_dataloader = dict(
         box_type_3d='LiDAR',
         backend_args=backend_args))
 
-# ===== evaluators =====
+# ===== evaluators (IDENTICAL to zod_camera_only) =====
 val_evaluator = [
     dict(type='IndoorMetric', iou_thr=[0.25, 0.5]),
     dict(type='CenterDistanceMetric', dist_thr=[0.5, 1.0, 2.0, 4.0]),
@@ -388,50 +410,8 @@ vis_backends = [dict(type='LocalVisBackend')]
 visualizer = dict(
     type='Det3DLocalVisualizer', vis_backends=vis_backends, name='visualizer')
 
-# ===== optimizer / scheduler (IDENTICAL to zod_bevfusion_finetune) =========
+# ===== optimizer / scheduler (IDENTICAL to zod_camera_only) ===============
 
-"""lr = 5e-5
-param_scheduler = [
-    dict(
-        type='LinearLR',
-        start_factor=0.33333333,
-        by_epoch=False,
-        begin=0,
-        end=500),
-    dict(
-        type='CosineAnnealingLR',
-        T_max=4,
-        eta_min=lr * 10,
-        begin=0,
-        end=4,
-        by_epoch=True,
-        convert_to_iter_based=True),
-    dict(
-        type='CosineAnnealingLR',
-        T_max=8,
-        eta_min=lr * 1e-4,
-        begin=4,
-        end=12,
-        by_epoch=True,
-        convert_to_iter_based=True),
-    dict(
-        type='CosineAnnealingMomentum',
-        T_max=4,
-        eta_min=0.85 / 0.95,
-        begin=0,
-        end=4,
-        by_epoch=True,
-        convert_to_iter_based=True),
-    dict(
-        type='CosineAnnealingMomentum',
-        T_max=8,
-        eta_min=1,
-        begin=4,
-        end=12,
-        by_epoch=True,
-        convert_to_iter_based=True),
-]
-"""
 lr = 5e-5
 
 param_scheduler = [
@@ -447,7 +427,7 @@ param_scheduler = [
     dict(
         type='CosineAnnealingLR',
         T_max=4,
-        eta_min=lr * 2,   # ↓ from 10x → 2x (peak ≈ 1e-4)
+        eta_min=lr * 2,
         begin=0,
         end=4,
         by_epoch=True,
@@ -457,13 +437,13 @@ param_scheduler = [
     dict(
         type='CosineAnnealingLR',
         T_max=8,
-        eta_min=lr * 1e-5,   # ↓ much smaller floor for refinement
+        eta_min=lr * 1e-5,
         begin=4,
         end=12,
         by_epoch=True,
         convert_to_iter_based=True),
 
-    # --- Momentum  ---
+    # --- Momentum ---
     dict(
         type='CosineAnnealingMomentum',
         T_max=4,
@@ -496,7 +476,7 @@ optim_wrapper = dict(
 auto_scale_lr = dict(enable=False)
 log_processor = dict(window_size=50)
 
-# ===== hooks =====
+# ===== hooks (IDENTICAL to zod_camera_only) =====
 default_hooks = dict(
     logger=dict(type='LoggerHook', interval=50),
     checkpoint=dict(
@@ -508,9 +488,6 @@ default_hooks = dict(
 _VIS_EPOCHS = (1, 3, 5, 7, 10, 12)
 
 custom_hooks = [
-    # BEVFeatureVisualizationHook is intentionally omitted: it registers a
-    # forward hook on model.pts_middle_encoder which does not exist in this
-    # camera-only model.
     dict(type='BEVPredictionVisualizationHook', score_thr=0.15,
          vis_epochs=_VIS_EPOCHS),
     dict(type='BEVValPredictionVisualizationHook', score_thr=0.15,

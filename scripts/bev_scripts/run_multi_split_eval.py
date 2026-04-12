@@ -23,26 +23,20 @@ HOW THE SPLIT OVERRIDE WORKS
 The intended common case for ZOD is overriding:
     test_dataloader.dataset.ann_file
 with the absolute path to the per-subset .pkl file
-(e.g. zod_nuscenes_infos_lighting_test_twilight.pkl).
+(e.g. zod_nuscenes_infos_lighting_test_dat.pkl).
 
 That is the only config change needed to switch the evaluation split; all
 other config stays the same.  This is passed to test.py via --cfg-options.
 
 USAGE EXAMPLES
 --------------
-Evaluate the default split list (all splits defined in DEFAULT_SPLITS):
-
-  python scripts/bev_scripts/run_multi_split_eval.py \\
-      mmdetection3d/configs/zod/zod_lidar_only.py \\
-      outputs/runs/zod_lidar_only/zod-lidar-only_4454825/best_mAP_0.50_epoch_18.pth \\
-      --splits-root /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/splits
 
 Evaluate only the lighting splits:
 
   python scripts/bev_scripts/run_multi_split_eval.py \\
       mmdetection3d/configs/zod/zod_lidar_only.py \\
       outputs/runs/zod_lidar_only/zod-lidar-only_4454825/best_mAP_0.50_epoch_18.pth \\
-      --splits lighting_test_day.txt lighting_test_night.txt lighting_test_twilight.txt \\
+      --splits lighting_test_day.txt lighting_test_night.txt lighting_test_day.txt \\
       --splits-root /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/splits
 
 Dry-run (print commands without executing):
@@ -84,7 +78,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ANN_KEY = "test_dataloader.dataset.ann_file"
 
 # Prefix prepended to a split stem to form the pkl filename.
-# e.g. "lighting_test_twilight" → "zod_nuscenes_infos_lighting_test_twilight.pkl"
+# e.g. "lighting_test_day" → "zod_nuscenes_infos_lighting_test_day.pkl"
 DEFAULT_ANN_PREFIX = "zod_nuscenes_infos"
 
 # Stable ordering of groups for all outputs.
@@ -117,7 +111,6 @@ DEFAULT_SPLITS: List[str] = [
     "complexity_test_high.txt",
     "lighting_test_day.txt",
     "lighting_test_night.txt",
-    "lighting_test_twilight.txt",
     "road_type_test_highway.txt",
     "road_type_test_smaller_rural.txt",
     "road_type_test_arterial_rural.txt",
@@ -129,9 +122,10 @@ DEFAULT_SPLITS: List[str] = [
     "weather_test_partly_cloudy_day.txt",
     "weather_test_partly_cloudy_night.txt",
     "weather_test_fog.txt",
-    "weather_test_precipitation.txt",
+    "weather_test_precipitation.txt", # snow + rain
     "weather_group_test_clear_like.txt",
     "weather_group_test_cloud_like.txt",
+    #"weather_group_test_precipitation.txt",
 ]
 
 
@@ -244,8 +238,8 @@ def derive_ann_file(split_stem: str, infos_dir: Path, prefix: str) -> Path:
     """Build the absolute path to the annotation pkl for a split stem.
 
     Example:
-      stem="lighting_test_twilight", prefix="zod_nuscenes_infos"
-      → {infos_dir}/zod_nuscenes_infos_lighting_test_twilight.pkl
+      stem="lighting_test_day", prefix="zod_nuscenes_infos"
+      → {infos_dir}/zod_nuscenes_infos_lighting_test_day.pkl
     """
     return infos_dir / f"{prefix}_{split_stem}.pkl"
 
@@ -731,7 +725,7 @@ def main() -> None:
                 continue
             raise FileNotFoundError(msg)
 
-        split_stem = split_file.stem  # e.g. "lighting_test_twilight"
+        split_stem = split_file.stem  # e.g. "lighting_test_day"
 
         if infos_dir is None:
             raise ValueError(
