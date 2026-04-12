@@ -12,8 +12,8 @@
 
 ## Complexity
 Count 
-high: 869 
-medium: 1493
+high: 869 \
+medium: 1493 \ 
 low: 2681
 
 | label | status | pedestrian_AP_0.25 | mAP_0.25 | pedestrian_rec_0.25 | mAR_0.25 | pedestrian_AP_0.50 | mAP_0.50 | pedestrian_rec_0.50 | mAR_0.50 | pedestrian_AP_0.5m | pedestrian_rec_0.5m | pedestrian_AP_1.0m | pedestrian_rec_1.0m | pedestrian_AP_2.0m | pedestrian_rec_2.0m | mAP_0.5m | mAR_0.5m | mAP_1.0m | mAR_1.0m | mAP_2.0m | mAR_2.0m | data_time | time |
@@ -24,7 +24,7 @@ low: 2681
 
 ## Lighting
 Count 
-day: 7743 
+day: 7743 \
 night: 1875
 
 | label | status | pedestrian_AP_0.25 | mAP_0.25 | pedestrian_rec_0.25 | mAR_0.25 | pedestrian_AP_0.50 | mAP_0.50 | pedestrian_rec_0.50 | mAR_0.50 | pedestrian_AP_0.5m | pedestrian_rec_0.5m | pedestrian_AP_1.0m | pedestrian_rec_1.0m | pedestrian_AP_2.0m | pedestrian_rec_2.0m | mAP_0.5m | mAR_0.5m | mAP_1.0m | mAR_1.0m | mAP_2.0m | mAR_2.0m | data_time | time |
@@ -34,10 +34,10 @@ night: 1875
 
 ## Road type
 count 
-arterial_rural: 993
-arterial_urban: 2402
-city: 5022
-highway: 1070
+arterial_rural: 993 \
+arterial_urban: 2402 \ 
+city: 5022 \ 
+highway: 1070 \
 smaller_rural: 513
 
 | label | status | pedestrian_AP_0.25 | mAP_0.25 | pedestrian_rec_0.25 | mAR_0.25 | pedestrian_AP_0.50 | mAP_0.50 | pedestrian_rec_0.50 | mAR_0.50 | pedestrian_AP_0.5m | pedestrian_rec_0.5m | pedestrian_AP_1.0m | pedestrian_rec_1.0m | pedestrian_AP_2.0m | pedestrian_rec_2.0m | mAP_0.5m | mAR_0.5m | mAP_1.0m | mAR_1.0m | mAP_2.0m | mAR_2.0m | data_time | time |
@@ -50,11 +50,11 @@ smaller_rural: 513
 
 ## Scraped weather
 count
-clear_day: 1643
-clear_night: 400
-partly_cloudy_day: 2915
-partly_cloudy_night:  1113
-cloudy: 1900
+clear_day: 1643 \ 
+clear_night: 400 \ 
+partly_cloudy_day: 2915 \ 
+partly_cloudy_night:  1113 \ 
+cloudy: 1900 \ 
 precipitation: 1768
 
 | label | status | pedestrian_AP_0.25 | mAP_0.25 | pedestrian_rec_0.25 | mAR_0.25 | pedestrian_AP_0.50 | mAP_0.50 | pedestrian_rec_0.50 | mAR_0.50 | pedestrian_AP_0.5m | pedestrian_rec_0.5m | pedestrian_AP_1.0m | pedestrian_rec_1.0m | pedestrian_AP_2.0m | pedestrian_rec_2.0m | mAP_0.5m | mAR_0.5m | mAP_1.0m | mAR_1.0m | mAP_2.0m | mAR_2.0m | data_time | time |
@@ -69,7 +69,7 @@ precipitation: 1768
 
 ## Weather group
 count 
-clear_like: 2043
+clear_like: 2043 \ 
 cloud_like: 5928
 
 | label | status | pedestrian_AP_0.25 | mAP_0.25 | pedestrian_rec_0.25 | mAR_0.25 | pedestrian_AP_0.50 | mAP_0.50 | pedestrian_rec_0.50 | mAR_0.50 | pedestrian_AP_0.5m | pedestrian_rec_0.5m | pedestrian_AP_1.0m | pedestrian_rec_1.0m | pedestrian_AP_2.0m | pedestrian_rec_2.0m | mAP_0.5m | mAR_0.5m | mAP_1.0m | mAR_1.0m | mAP_2.0m | mAR_2.0m | data_time | time |
