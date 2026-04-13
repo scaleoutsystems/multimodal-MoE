@@ -1,4 +1,4 @@
-"""Routing modules: ContextEncoder and TopkGate.
+"""Routing modules: BEVSummaryHead, ContextEncoder, and TopkGate.
 
 ContextEncoder converts per-sample metadata dicts (weather, road type, etc.)
 into a fixed-size context vector.  
@@ -21,6 +21,7 @@ Example config snippet::
 
 To use ALL available fields, omit ``fields`` (or pass ``fields=None``).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -30,6 +31,82 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
+
+
+# ── BEVSummaryHead ────────────────────────────────────────────────────────
+
+class BEVSummaryHead(nn.Module):
+    """Lightweight spatial summary head that feeds the router gate.
+
+    Motivation
+    ----------
+    Plain global average pooling (GAP) collapses all spatial information
+    to a single C-dimensional vector.  For routing, this loses whether the
+    scene has interesting objects in the front/back/left/right quadrants —
+    information that is directly relevant to which expert should process
+    the BEV map.
+
+    This head retains a coarse (P×P) spatial structure by computing both
+    average-pool and max-pool at that resolution (preserving both the
+    "typical" and "peak" activation per region), concatenating them, and
+    projecting through a tiny MLP to a compact routing descriptor.
+
+    Shape trace (default: pool_size=2, hidden_dim=128, out_dim=64)
+    --------------------------------------------------------------
+    Input   : (B, C, H, W)
+    avg_pool: (B, C, 2, 2)   — average activation per 2×2 quadrant
+    max_pool: (B, C, 2, 2)   — peak activation per 2×2 quadrant
+    cat     : (B, 2C, 2, 2)  — avg and max side-by-side per channel
+    flatten : (B, 8C)        — 8C when pool_size=2: 2 * C * 2 * 2
+    Linear  : (B, 128)       — ReLU
+    Linear  : (B, 64)        — ReLU → routing descriptor
+
+    Args:
+        channels:   Number of input BEV feature channels.
+        pool_size:  Spatial resolution of the pooled grid (default 2 → 2×2).
+        hidden_dim: Width of the intermediate MLP layer (default 128).
+        out_dim:    Dimension of the output routing descriptor (default 64).
+    """
+
+    def __init__(
+        self,
+        channels: int,
+        pool_size: int = 2,
+        hidden_dim: int = 128,
+        out_dim: int = 64,
+    ) -> None:
+        super().__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(pool_size)  # (B, C, P, P)
+        self.max_pool = nn.AdaptiveMaxPool2d(pool_size)  # (B, C, P, P)
+
+        # After concat(avg, max) and flattening: 2 * C * pool_size^2 dims.
+        flat_dim = 2 * channels * pool_size * pool_size
+
+        # Two-layer MLP: flat_dim → hidden_dim → out_dim.
+        # Kept small intentionally — the summary head should be easy to
+        # explain in a thesis, not a heavy learnable module in its own right.
+        self.mlp = nn.Sequential(
+            nn.Linear(flat_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, out_dim),
+            nn.ReLU(inplace=True),
+        )
+        self.out_dim = out_dim
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Summarise a BEV feature map into a compact routing descriptor.
+
+        Args:
+            x: BEV feature map (B, C, H, W).
+
+        Returns:
+            Routing descriptor (B, out_dim).
+        """
+        avg = self.avg_pool(x)              # (B, C, P, P)
+        mx  = self.max_pool(x)              # (B, C, P, P)
+        feat = torch.cat([avg, mx], dim=1)  # (B, 2C, P, P)
+        feat = feat.flatten(1)              # (B, 2C·P²) = (B, 8C) when P=2
+        return self.mlp(feat)               # (B, out_dim)
 
 
 # ── Gate output container ─────────────────────────────────────────────────
@@ -80,7 +157,7 @@ class ContextEncoder(nn.Module):
         embed_dim: Embedding dimension for each categorical field.
         out_dim: Dimension of the output context vector.
 
-    Example config::
+    Example config:
 
         context_cfg = dict(
             fields=['weather_group', 'road_type'],
@@ -161,7 +238,7 @@ class ContextEncoder(nn.Module):
                     f"ContextEncoder: unexpected value '{val}' for field "
                     f"'{name}'. Known values: {list(vmap)}")
             indices.append(vmap[val])
-        idx_t = torch.tensor(indices, dtype=torch.long, device=device)
+        idx_t = torch.tensor(indices, dtype=torch.long, device=device) # (B, 1) indices of the embedding for each sample
         return self.embeddings[name](idx_t)  # (B, embed_dim)
 
     def forward(self, batch_input_metas: List[dict]) -> Tensor:
@@ -191,13 +268,13 @@ class ContextEncoder(nn.Module):
                  for name in self.field_names]
         #example for fields = ['weather_group', 'road_type'], B: 2, embed_dim: 3
         #parts = [
-        #  [-0.4, 1.0, 0.1], "fog"
-        #  [ 0.2,-0.1, 0.5], "city"
+        #  [-0.4, 1.0, 0.1],      "fog"
+        #  [ 0.2,-0.1, 0.5],      "city"
         #],
 
         #[
-        #  [ 0.6,-0.2, 0.3], "highway"
-        #   [-0.5, 0.7,-0.1], "arterial-rural"
+        #  [ 0.6,-0.2, 0.3],     "highway"
+        #   [-0.5, 0.7,-0.1],    "arterial-rural"
         #  ]
         #]
 
@@ -245,10 +322,10 @@ class TopkGate(nn.Module):
             ``topk_weights``.
         """
         if ctx is not None:
-            feat = torch.cat([feat, ctx], dim=1)
-        logits = self.gate(feat)                      # (B, E)
-        probs = torch.softmax(logits, dim=1)          # (B, E)
-        topk_weights, topk_idx = probs.topk(self.k, dim=1)  # (B, k) each
+            feat = torch.cat([feat, ctx], dim=1) # ctx dimention is 16 and feat dimention is 512, so feat becomes (B, 528)
+        logits = self.gate(feat)                      # (B, E) router logits
+        probs = torch.softmax(logits, dim=1)          # (B, E) router probabilities
+        topk_weights, topk_idx = probs.topk(self.k, dim=1)  # (B, k) each sample's top k expert indices
         # Re-normalise selected weights so they sum to 1 per sample.
         topk_weights = topk_weights / (topk_weights.sum(dim=1, keepdim=True)
                                        + 1e-8)

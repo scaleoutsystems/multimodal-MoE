@@ -51,9 +51,14 @@ class BEVFusion(Base3DDetector):
         bbox_head: Optional[dict] = None,
         init_cfg: OptMultiConfig = None,
         seg_head: Optional[dict] = None,
-        # ── MoE configs (all optional — omit for baseline behavior) ───
+        # ── MoE configs (all optional — omit for baseline behavior) ───────
+        # Variant A – independent per-modality BEVMoEBlocks:
         cam_moe_cfg: Optional[dict] = None,
         lidar_moe_cfg: Optional[dict] = None,
+        # Variant A-joint – joint-gate modality-specific MoEBlock:
+        # (use instead of cam_moe_cfg + lidar_moe_cfg, not together with them)
+        modality_specific_moe_cfg: Optional[dict] = None,
+        # Variant C/D – post-fusion / LiDAR-only MoE:
         bev_moe_cfg: Optional[dict] = None,
         **kwargs,
     ) -> None:
@@ -85,13 +90,23 @@ class BEVFusion(Base3DDetector):
 
         self.bbox_head = MODELS.build(bbox_head)
 
-        # ── MoE blocks (only built when config is provided) ──────────
-        # Variant A – camera-branch MoE: applied to cam BEV (B, 80, 180, 180)
+        # ── MoE blocks (only built when config is provided) ──────────────
+        # Variant A – independent per-modality BEVMoEBlocks.
+        # cam_moe applied to cam BEV (B, 80, H, W); gate sees only cam summary.
         self.cam_moe = MODELS.build(cam_moe_cfg) if cam_moe_cfg else None
-        # Variant A – LiDAR-branch MoE: applied to lidar BEV (B, 256, 180, 180)
+        # lidar_moe applied to lidar BEV (B, 256, H, W); gate sees only lidar.
         self.lidar_moe = MODELS.build(lidar_moe_cfg) if lidar_moe_cfg else None
-        # Variant C/D – post-fusion or LiDAR-only MoE: applied to fused BEV
-        # (B, 256, 180, 180) before the backbone
+
+        # Variant A-joint – ModalitySpecificMoEBlock: one gate that sees BOTH
+        # cam and lidar summaries, routes to separate cam/lidar expert pools.
+        # Applied to (cam_bev, lidar_bev) before fusion.  Mutually exclusive
+        # with cam_moe + lidar_moe (use one or the other, not both).
+        self.modality_specific_moe = (
+            MODELS.build(modality_specific_moe_cfg)
+            if modality_specific_moe_cfg else None
+        )
+
+        # Variant C/D – post-fusion or LiDAR-only BEVMoEBlock.
         self.bev_moe = MODELS.build(bev_moe_cfg) if bev_moe_cfg else None
 
         # Accumulator for MoE auxiliary losses; populated in extract_feat(),
@@ -370,6 +385,19 @@ class BEVFusion(Base3DDetector):
             moe_aux_parts.append(lidar_info['aux_loss'])
 
         features.append(pts_feature)
+
+        # ── 2b. Variant A-joint: ModalitySpecificMoEBlock ────────────
+        # Joint-gate modality-specific MoE: one gate sees both modality
+        # summaries and routes to separate cam/lidar expert pools.
+        # Applied here, after both modality BEVs are ready and before
+        # the fusion_layer combines them.
+        # Only active when both image and LiDAR inputs are present.
+        if self.modality_specific_moe is not None and imgs is not None and len(features) == 2:
+            cam_bev, lidar_bev = features[0], features[1]
+            cam_bev, lidar_bev, modal_info = self.modality_specific_moe(
+                cam_bev, lidar_bev, batch_input_metas)
+            features[0], features[1] = cam_bev, lidar_bev
+            moe_aux_parts.append(modal_info['aux_loss'])
 
         # ── 3. Fusion ─────────────────────────────────────────────────
         if self.fusion_layer is not None:

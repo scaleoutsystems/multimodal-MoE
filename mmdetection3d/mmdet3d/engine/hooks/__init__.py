@@ -7,9 +7,11 @@ from .bevfusion_visualization_hook import (BEVCameraFeatureVisualizationHook,
                                            DepthTransformDiagnosticHook)
 from .depth_projection_debug_hook import DepthProjectionDebugHook
 from .disable_object_sample_hook import DisableObjectSampleHook
+from .dual_checkpoint_init_hook import DualCheckpointInitHook
 from .efficiency_hooks import RunSummaryHook, TrainingEfficiencyHook
 from .freeze_lidar_hook import FreezeLidarBranchHook
 from .fusion_training_hook import FusionTrainingStrategyHook
+from .moe_routing_hook import MoERoutingHook
 from .validation_curve_hook import ValidationCurveHook
 from .visualization_hook import Det3DVisualizationHook
 
@@ -20,7 +22,9 @@ __all__ = [
     'BEVCameraFeatureVisualizationHook', 'DepthTransformDiagnosticHook',
     'DepthProjectionDebugHook',
     'TrainingEfficiencyHook', 'RunSummaryHook',
+    'DualCheckpointInitHook',
     'FusionTrainingStrategyHook',
     'FreezeLidarBranchHook',
+    'MoERoutingHook',
     'ValidationCurveHook',
 ]
