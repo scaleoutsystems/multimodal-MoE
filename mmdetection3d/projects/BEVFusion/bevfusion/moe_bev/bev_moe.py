@@ -1,11 +1,12 @@
 """Single-input BEV Mixture-of-Experts block.
 
-BEVMoEBlock is the workhorse module used for:
-  - Variant A: modality-specific experts (camera channels=80, LiDAR channels=256)
-    applied as *separate* independent blocks, each seeing only their own modality.
-    For joint-gate modality-specific routing, use ModalitySpecificMoEBlock instead.
-  - Variant C: post-fusion MoE on fused BEV (channels=256)
-  - Variant D: LiDAR-only MoE (channels=256)
+BEVMoEBlock is a single-input MoE block used for:
+  - Variant C: fusion-then-MoE — applied to the already-fused BEV (channels=256)
+               after ConvFuser, before pts_backbone.  This is the primary use case.
+  - Variant D: LiDAR-only MoE (channels=256), same insertion point.
+
+  For modality-specific experts (joint gate over cam + lidar expert pools),
+  use ModalitySpecificMoEBlock instead (modality_specific_moe_cfg in config).
 
 Router input
 ------------
@@ -64,7 +65,7 @@ class BEVMoEBlock(nn.Module):
         num_experts: int = 4,
         k: int = 1,
         num_convs: int = 2,
-        importance_coef: float = 0.01,    # moe_importance_loss_weight
+        importance_coef: float = 0.02,    # moe_importance_loss_weight
         load_coef: float = 0.01,
         router_pool_size: int = 2,
         router_hidden_dim: int = 128,
