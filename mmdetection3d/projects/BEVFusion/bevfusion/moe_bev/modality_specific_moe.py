@@ -7,7 +7,7 @@ refined modality outputs are fused via a simple concat + 1×1 conv projection.
 Required graph (no ConvFuser anywhere)::
 
     cam_bev   → camera experts  ─┐
-                                 ├─→ concat → 1×1 conv → fused_bev → pts_backbone
+                                 ├─→ concat → 1×1 proj → 3×3 align → fused_bev → pts_backbone
     lidar_bev → lidar experts   ─┘
 
 Architecture overview
@@ -76,7 +76,8 @@ class ModalitySpecificMoEBlock(nn.Module):
     """Modality-specific MoE block with built-in fusion — Variant B.
 
     Camera and LiDAR BEV maps are routed independently through separate
-    expert pools, then fused via concat + 1×1 conv.  No ConvFuser is used.
+    expert pools, then fused via a two-step projection: concat → 1×1 conv
+    (channel collapse) → 3×3 conv (spatial alignment).  No ConvFuser is used.
 
     Args:
         cam_channels:          Camera BEV channels (e.g. 80).
@@ -101,11 +102,11 @@ class ModalitySpecificMoEBlock(nn.Module):
         cam_channels: int = 80,
         lidar_channels: int = 256,
         out_channels: int = 256,
-        num_cam_experts: int = 2,
-        num_lidar_experts: int = 2,
-        k: int = 1,
+        num_cam_experts: int = 3,
+        num_lidar_experts: int = 3,
+        k: int = 2,
         num_convs: int = 1,
-        importance_coef: float = 0.01,
+        importance_coef: float = 0.02,
         load_coef: float = 0.01,
         group_balance_coef: float = 0.005,
         router_pool_size: int = 2,
@@ -239,7 +240,7 @@ class ModalitySpecificMoEBlock(nn.Module):
                     delta = exp_out - lidar_bev[b:b + 1]
                     lidar_out[b] = lidar_out[b] + weight * delta[0]
 
-        # ── Step 4: Fusion — concat + 1×1 conv projection ────────────
+        # ── Step 4: Fusion — concat → 1×1 proj → 3×3 align ──────────
         fused_bev = self.fusion_proj(
             torch.cat([cam_out, lidar_out], dim=1))
 

@@ -1,9 +1,10 @@
 """Single-input BEV Mixture-of-Experts block.
 
 BEVMoEBlock is a single-input MoE block used for:
-  - Variant C: fusion-then-MoE — applied to the already-fused BEV (channels=256)
-               after ConvFuser, before pts_backbone.  This is the primary use case.
-  - Variant D: LiDAR-only MoE (channels=256), same insertion point.
+  - Variant C: fusion-then-MoE — applied to the fused BEV after ConvFuser
+    and before pts_backbone.
+  - Variant D: LiDAR-only MoE — applied to the LiDAR BEV at the same
+    insertion point before pts_backbone (no convfuser though).
 
   For modality-specific experts (joint gate over cam + lidar expert pools),
   use ModalitySpecificMoEBlock instead (modality_specific_moe_cfg in config).
@@ -22,8 +23,8 @@ After every forward() call, self._moe_info is written with:
     topk_weights (B, k)  — re-normalised softmax weights for selected experts
     aux_loss     scalar  — combined importance + load auxiliary loss
 
-Hook A (routing mass accumulation) reads topk_idx and topk_weights from
-_moe_info after each training/val iteration.
+MoERoutingHook and ContextRoutingStatsHook read topk_idx and topk_weights
+from _moe_info after each training/val iteration.
 """
 from __future__ import annotations
 
@@ -62,9 +63,9 @@ class BEVMoEBlock(nn.Module):
     def __init__(
         self,
         channels: int,
-        num_experts: int = 4,
+        num_experts: int = 6,
         k: int = 1,
-        num_convs: int = 2,
+        num_convs: int = 1,
         importance_coef: float = 0.02,    # moe_importance_loss_weight
         load_coef: float = 0.01,
         router_pool_size: int = 2,
@@ -175,7 +176,7 @@ class BEVMoEBlock(nn.Module):
         moe_info = {
             'probs':        gate_out.probs.detach(),
             'topk_idx':     gate_out.topk_idx.detach(),
-            'topk_weights': gate_out.topk_weights.detach(),  # for Hook A (routing mass)
+            'topk_weights': gate_out.topk_weights.detach(),  # read by MoERoutingHook
             'aux_loss':     aux,
         }
         # Cache on self so MoERoutingHook can read it after each iter
