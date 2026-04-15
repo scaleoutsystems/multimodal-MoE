@@ -14,6 +14,7 @@
 - For **LiDAR-only**, the most useful primary metric is usually **mAP@0.50**, with **mAP@0.5m** as a strong secondary localization-oriented metric.
 - For **Camera-only**, **mAP@0.50 is near-zero almost everywhere**, so the more informative metrics are **mAP@0.5m**, **mAP@1.0m**, **mAP@2.0m**, and their recalls.
 - The tables below put both models side by side per context so you can directly compare how context affects each modality.
+- Count per category is provided since it's important to keep in mind that metrics from smaller test sets have higher variance than those from larger ones. 
 
 ---
 

@@ -10,7 +10,7 @@ fractional deviation, both of which are zero when balanced and grow smoothly
 with imbalance — making them easy to tune via a scalar coefficient.
 
 Variant usage:
-    joint-modality experts (FusionMoEBlock)   → importance_loss + load_loss
+    joint-modality experts (JointModalityMoEBlock) → importance_loss + load_loss
     modality-specific (ModalitySpecificMoEBlock) → importance_loss + load_loss
                                                    + group_balance_loss
     fusion-then-MoE (BEVMoEBlock on fused BEV) → importance_loss + load_loss

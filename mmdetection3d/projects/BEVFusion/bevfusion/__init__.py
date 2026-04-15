@@ -19,11 +19,11 @@ try:
                         IoU3DCost)
 
     # MoE modules — importing the sub-package triggers @MODELS.register_module()
-    # for BEVMoEBlock, FusionMoEBlock, ModalitySpecificMoEBlock,
-    # BEVResidualExpert, and FusionExpert, making them available to
-    # MODELS.build() in configs.
-    from .moe_bev import (BEVMoEBlock, BEVResidualExpert, FusionExpert,
-                          FusionMoEBlock, ModalitySpecificMoEBlock)
+    # for BEVMoEBlock, JointModalityMoEBlock, ModalitySpecificMoEBlock,
+    # BEVResidualExpert, and JointModalityExpert.
+    from .moe_bev import (BEVMoEBlock, BEVResidualExpert,
+                          JointModalityExpert, JointModalityMoEBlock,
+                          ModalitySpecificMoEBlock)
 
     __all__ += [
         'BEVFusion', 'BEVFusionCameraZero', 'CameraOnlyBEVFusion',
@@ -33,8 +33,8 @@ try:
         'LSSTransform', 'BEVLoadMultiViewImageFromFiles',
         'TransformerDecoderLayer', 'BEVFusionRandomFlip3D',
         'BEVFusionGlobalRotScaleTrans',
-        'BEVMoEBlock', 'FusionMoEBlock', 'BEVResidualExpert', 'FusionExpert',
-        'ModalitySpecificMoEBlock',
+        'BEVMoEBlock', 'JointModalityMoEBlock', 'BEVResidualExpert',
+        'JointModalityExpert', 'ModalitySpecificMoEBlock',
     ]
 except Exception:
     pass

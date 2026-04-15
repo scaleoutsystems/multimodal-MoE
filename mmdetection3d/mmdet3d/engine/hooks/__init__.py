@@ -5,6 +5,8 @@ from .bev_visualization_hook import (BEVFeatureVisualizationHook,
                                      BEVValPredictionVisualizationHook)
 from .bevfusion_visualization_hook import (BEVCameraFeatureVisualizationHook,
                                            DepthTransformDiagnosticHook)
+from .context_routing_hooks import (ContextExpertUsageVisualizationHook,
+                                    ContextRoutingStatsHook)
 from .depth_projection_debug_hook import DepthProjectionDebugHook
 from .disable_object_sample_hook import DisableObjectSampleHook
 from .dual_checkpoint_init_hook import DualCheckpointInitHook
@@ -20,6 +22,7 @@ __all__ = [
     'BEVFeatureVisualizationHook', 'BEVPredictionVisualizationHook',
     'BEVValPredictionVisualizationHook',
     'BEVCameraFeatureVisualizationHook', 'DepthTransformDiagnosticHook',
+    'ContextRoutingStatsHook', 'ContextExpertUsageVisualizationHook',
     'DepthProjectionDebugHook',
     'TrainingEfficiencyHook', 'RunSummaryHook',
     'DualCheckpointInitHook',

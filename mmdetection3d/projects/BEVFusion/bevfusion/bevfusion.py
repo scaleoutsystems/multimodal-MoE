@@ -24,17 +24,25 @@ class BEVFusion(Base3DDetector):
     optionally fuses them, then passes the result through a backbone + neck
     to produce the feature map consumed by the detection head.
 
-    **MoE integration** — three optional config dicts activate Mixture-of-
-    Experts blocks at different points in the pipeline.  Omit all three for
-    baseline (non-MoE) behavior.
+    **MoE variants** — exactly one fusion/MoE path is active per run.
+    Omit all MoE configs for baseline (ConvFuser) behavior.
 
-    - ``cam_moe_cfg``   → Variant A-cam:  BEVMoEBlock on camera BEV
-    - ``lidar_moe_cfg`` → Variant A-lid:  BEVMoEBlock on LiDAR BEV
-    - ``bev_moe_cfg``   → Variant C/D:    BEVMoEBlock after fusion / LiDAR-only
+    Variant A ``joint_modality_moe_cfg``
+        JointModalityMoEBlock — each expert receives both cam_bev and
+        lidar_bev and produces a single fused output.  No ConvFuser.
 
-    Variant B (joint-modality MoE) needs no extra arg: set
-    ``fusion_layer=dict(type='FusionMoEBlock', ...)`` in the config and
-    FusionMoEBlock replaces ConvFuser directly (same call interface).
+    Variant B ``modality_specific_moe_cfg``
+        ModalitySpecificMoEBlock — separate cam/lidar expert pools with
+        a joint gate, followed by concat + 1×1 conv fusion inside the
+        block.  No ConvFuser.
+
+    Variant C ``fusion_layer`` + ``bev_moe_cfg``
+        ConvFuser first, then BEVMoEBlock on the fused BEV.
+        This is the ONLY variant that uses ConvFuser.
+
+    Variant D ``bev_moe_cfg`` (no camera branch)
+        LiDAR-only — BEVMoEBlock directly on the LiDAR BEV.
+        No fusion of any kind.
     """
 
     def __init__(
@@ -52,11 +60,9 @@ class BEVFusion(Base3DDetector):
         init_cfg: OptMultiConfig = None,
         seg_head: Optional[dict] = None,
         # ── MoE configs (all optional — omit for baseline behavior) ───────
-        # Variant A – independent per-modality BEVMoEBlocks:
-        cam_moe_cfg: Optional[dict] = None,
-        lidar_moe_cfg: Optional[dict] = None,
-        # Variant A-joint – joint-gate modality-specific MoEBlock:
-        # (use instead of cam_moe_cfg + lidar_moe_cfg, not together with them)
+        # Variant A – joint-modality experts (replaces ConvFuser):
+        joint_modality_moe_cfg: Optional[dict] = None,
+        # Variant B – modality-specific experts (replaces ConvFuser):
         modality_specific_moe_cfg: Optional[dict] = None,
         # Variant C/D – post-fusion / LiDAR-only MoE:
         bev_moe_cfg: Optional[dict] = None,
@@ -79,9 +85,7 @@ class BEVFusion(Base3DDetector):
             view_transform) if view_transform is not None else None
         self.pts_middle_encoder = MODELS.build(pts_middle_encoder)
 
-        # fusion_layer can be either ConvFuser (baseline) or FusionMoEBlock
-        # (Variant B).  Both accept a list of BEV tensors and return a
-        # single fused tensor, so the call site stays the same.
+        # fusion_layer is ConvFuser — used ONLY in Variant C (and baseline).
         self.fusion_layer = MODELS.build(
             fusion_layer) if fusion_layer is not None else None
 
@@ -91,16 +95,15 @@ class BEVFusion(Base3DDetector):
         self.bbox_head = MODELS.build(bbox_head)
 
         # ── MoE blocks (only built when config is provided) ──────────────
-        # Variant A – independent per-modality BEVMoEBlocks.
-        # cam_moe applied to cam BEV (B, 80, H, W); gate sees only cam summary.
-        self.cam_moe = MODELS.build(cam_moe_cfg) if cam_moe_cfg else None
-        # lidar_moe applied to lidar BEV (B, 256, H, W); gate sees only lidar.
-        self.lidar_moe = MODELS.build(lidar_moe_cfg) if lidar_moe_cfg else None
+        # Variant A – JointModalityMoEBlock: each expert receives both
+        # cam_bev and lidar_bev and produces a single fused output.
+        self.joint_modality_moe = (
+            MODELS.build(joint_modality_moe_cfg)
+            if joint_modality_moe_cfg else None
+        )
 
-        # Variant A-joint – ModalitySpecificMoEBlock: one gate that sees BOTH
-        # cam and lidar summaries, routes to separate cam/lidar expert pools.
-        # Applied to (cam_bev, lidar_bev) before fusion.  Mutually exclusive
-        # with cam_moe + lidar_moe (use one or the other, not both).
+        # Variant B – ModalitySpecificMoEBlock: separate cam/lidar expert
+        # pools with a joint gate, fused via concat + 1×1 conv inside.
         self.modality_specific_moe = (
             MODELS.build(modality_specific_moe_cfg)
             if modality_specific_moe_cfg else None
@@ -303,32 +306,28 @@ class BEVFusion(Base3DDetector):
     ):
         """Build the BEV representation and (optionally) apply MoE routing.
 
-        This is the central feature-extraction pipeline that every forward
-        path (loss, predict) runs through.  It is the natural place for MoE
-        insertion because *all four variant insertion points* correspond to
-        stages within this single method:
+        Exactly one fusion / MoE path is active per run:
 
-        1. Camera branch  → cam_bev   (B, 80, 180, 180)
-        2. LiDAR  branch  → lidar_bev (B, 256, 180, 180)
-        3. Fusion          → fused_bev (B, 256, 180, 180)
-        4. Backbone + Neck → head features (B, 512, 180, 180)
+        Variant A  ``self.joint_modality_moe``
+            (cam_bev, lidar_bev) → JointModalityMoEBlock → fused_bev.
+            No ConvFuser.
 
-        MoE blocks are guarded by ``if self.*_moe is not None`` checks, so
-        when no MoE configs are provided (baseline), the method collapses to
-        the original BEVFusion logic with zero overhead.
+        Variant B  ``self.modality_specific_moe``
+            cam_bev → cam experts, lidar_bev → lidar experts,
+            then concat + 1×1 conv inside the block → fused_bev.
+            No ConvFuser.
 
-        Variant mapping:
-            A-cam:   self.cam_moe    on cam_bev  (before fusion)
-            A-lidar: self.lidar_moe  on lidar_bev (before fusion)
-            B:       self.fusion_layer is a FusionMoEBlock (replaces ConvFuser)
-            C:       self.bev_moe    on fused_bev  (after ConvFuser)
-            D:       self.bev_moe    on lidar_bev  (LiDAR-only, no fusion_layer)
+        Variant C  ``self.fusion_layer`` + ``self.bev_moe``
+            (cam_bev, lidar_bev) → ConvFuser → BEVMoEBlock → fused_bev.
+            This is the ONLY variant that uses ConvFuser.
 
-        Variants C and D share the same self.bev_moe at the same code
-        location — the difference is purely a config choice (whether
-        fusion_layer is present or not).
+        Variant D  ``self.bev_moe`` (no camera branch)
+            lidar_bev → BEVMoEBlock → fused_bev.
+            No fusion of any kind.
+
+        Baseline  ``self.fusion_layer`` only (no MoE)
+            (cam_bev, lidar_bev) → ConvFuser → fused_bev.
         """
-        # Reset the MoE aux-loss accumulator for this forward pass.
         self._moe_aux_loss = None
         moe_aux_parts: List[Tensor] = []
 
@@ -364,71 +363,55 @@ class BEVFusion(Base3DDetector):
             # reorder in extract_pts_feat.  Transpose so both branches use
             # the same spatial convention before fusion.
             img_feature = img_feature.transpose(-1, -2)
-
-            # Variant A – camera-branch MoE: route cam_bev through
-            # BEVMoEBlock (channels=80) before it enters fusion.
-            if self.cam_moe is not None:
-                img_feature, cam_info = self.cam_moe(
-                    img_feature, batch_input_metas)
-                moe_aux_parts.append(cam_info['aux_loss'])
-
             features.append(img_feature)
 
         # ── 2. LiDAR branch ──────────────────────────────────────────
         pts_feature = self.extract_pts_feat(batch_inputs_dict)
-
-        # Variant A – LiDAR-branch MoE: route lidar_bev through
-        # BEVMoEBlock (channels=256) before it enters fusion.
-        if self.lidar_moe is not None:
-            pts_feature, lidar_info = self.lidar_moe(
-                pts_feature, batch_input_metas)
-            moe_aux_parts.append(lidar_info['aux_loss'])
-
         features.append(pts_feature)
 
-        # ── 2b. Variant A-joint: ModalitySpecificMoEBlock ────────────
-        # Joint-gate modality-specific MoE: one gate sees both modality
-        # summaries and routes to separate cam/lidar expert pools.
-        # Applied here, after both modality BEVs are ready and before
-        # the fusion_layer combines them.
-        # Only active when both image and LiDAR inputs are present.
-        if self.modality_specific_moe is not None and imgs is not None and len(features) == 2:
+        # ── 3. Fusion / MoE dispatch ─────────────────────────────────
+        # Exactly one of these paths fires per run.
+        if self.joint_modality_moe is not None:
+            # Variant A: both BEVs → JointModalityMoEBlock → fused_bev
+            assert len(features) == 2, (
+                'Variant A (joint_modality_moe) requires both camera '
+                'and LiDAR inputs')
             cam_bev, lidar_bev = features[0], features[1]
-            cam_bev, lidar_bev, modal_info = self.modality_specific_moe(
+            x, jm_info = self.joint_modality_moe(
                 cam_bev, lidar_bev, batch_input_metas)
-            features[0], features[1] = cam_bev, lidar_bev
-            moe_aux_parts.append(modal_info['aux_loss'])
+            moe_aux_parts.append(jm_info['aux_loss'])
 
-        # ── 3. Fusion ─────────────────────────────────────────────────
-        if self.fusion_layer is not None:
-            # Variant B: when fusion_layer is a FusionMoEBlock (detected
-            # by the presence of _moe_aux_loss attr), pass batch_input_metas
-            # so the block can do context-infused routing.  When it's a
-            # plain ConvFuser, just pass the feature list as normal.
-            if hasattr(self.fusion_layer, '_moe_aux_loss'):
-                x = self.fusion_layer(features, batch_input_metas)
-                if self.fusion_layer._moe_aux_loss is not None:
-                    moe_aux_parts.append(self.fusion_layer._moe_aux_loss)
-            else:
-                x = self.fusion_layer(features)
+        elif self.modality_specific_moe is not None:
+            # Variant B: separate expert pools → concat + 1×1 → fused_bev
+            assert len(features) == 2, (
+                'Variant B (modality_specific_moe) requires both camera '
+                'and LiDAR inputs')
+            cam_bev, lidar_bev = features[0], features[1]
+            x, ms_info = self.modality_specific_moe(
+                cam_bev, lidar_bev, batch_input_metas)
+            moe_aux_parts.append(ms_info['aux_loss'])
+
+        elif self.fusion_layer is not None:
+            # Variant C (with bev_moe) or baseline (without bev_moe):
+            # ConvFuser fuses the feature list.
+            x = self.fusion_layer(features)
+
         else:
-            # LiDAR-only: no camera branch, single-element feature list.
-            assert len(features) == 1, features
+            # Variant D / LiDAR-only: no fusion at all.
+            assert len(features) == 1, (
+                'No fusion layer configured but got multiple feature '
+                f'maps ({len(features)})')
             x = features[0]
 
-        # Variant C (post-fusion) / Variant D (LiDAR-only): both land
-        # here with x of shape (B, 256, 180, 180).  A single bev_moe
-        # block handles both cases — the distinction is purely which
-        # config scenario is active (multimodal vs. LiDAR-only).
+        # ── 4. Post-fusion MoE (Variant C / D only) ──────────────────
         if self.bev_moe is not None:
             x, bev_info = self.bev_moe(x, batch_input_metas)
             moe_aux_parts.append(bev_info['aux_loss'])
 
-        # ── 4. Backbone + Neck ────────────────────────────────────────
+        # ── 5. Backbone + Neck ────────────────────────────────────────
         x = self.pts_backbone(x)
         x = self.pts_neck(x)
 
-        # Sum all MoE aux losses so loss() can pick them up.
         if moe_aux_parts:
             self._moe_aux_loss = sum(moe_aux_parts)
 

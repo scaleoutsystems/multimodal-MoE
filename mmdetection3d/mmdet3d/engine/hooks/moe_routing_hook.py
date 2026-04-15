@@ -44,9 +44,9 @@ Hook C — Modality-group routing mass over epochs (modality_specific only)
 
 Which variant uses which hooks
 -------------------------------
-    joint_modality (FusionMoEBlock as fusion_layer):   A, B
-    modality_specific (ModalitySpecificMoEBlock):       A, B, C
-    fusion_then_moe (BEVMoEBlock on bev_moe):          A, B
+    joint_modality (JointModalityMoEBlock):              A, B
+    modality_specific (ModalitySpecificMoEBlock):        A, B, C
+    fusion_then_moe (BEVMoEBlock on bev_moe):           A, B
 
 Output location
 ---------------
@@ -100,13 +100,12 @@ def _get_moe_modules(model) -> Dict[str, Any]:
     """Return a dict of {attr_name: module} for all MoE blocks on the model.
 
     Auto-detects by looking for attributes that have a ``_moe_info`` field.
-    Covers: cam_moe, lidar_moe, bev_moe, modality_specific_moe, and
-    fusion_layer (when it is a FusionMoEBlock).
+    Covers: bev_moe (Variant C/D), modality_specific_moe (Variant B),
+    and joint_modality_moe (Variant A).
     """
     m = _unwrap(model)
     result = {}
-    for name in ('cam_moe', 'lidar_moe', 'bev_moe',
-                 'modality_specific_moe', 'fusion_layer'):
+    for name in ('bev_moe', 'modality_specific_moe', 'joint_modality_moe'):
         attr = getattr(m, name, None)
         if attr is not None and hasattr(attr, '_moe_info'):
             result[name] = attr

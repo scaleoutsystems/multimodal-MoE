@@ -102,6 +102,7 @@ print('python', sys.executable)
 import torch
 print('torch', torch.__version__)
 import projects.BEVFusion.bevfusion  # noqa: F401
+import mmdet3d.engine.hooks  # ensure all custom hooks are registered  # noqa: F401
 from mmdet3d.registry import MODELS, HOOKS
 assert 'BEVFusion' in MODELS.module_dict, (
     'BEVFusion not in mmdet3d registry (custom import chain failed — often bev_pool_ext missing; '
