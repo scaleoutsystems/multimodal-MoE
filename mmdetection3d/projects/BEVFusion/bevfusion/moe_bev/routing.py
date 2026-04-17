@@ -113,9 +113,10 @@ class BEVSummaryHead(nn.Module):
 
 @dataclass
 class GateOutput:
-    probs: Tensor         # (B, E) full softmax distribution
-    topk_idx: Tensor      # (B, k) selected expert indices
-    topk_weights: Tensor  # (B, k) softmax weights for selected experts
+    full_softmax_probs:   Tensor  # (B, E) pre-top-k softmax — router belief over all experts
+    sparse_softmax_probs: Tensor  # (B, E) post-top-k masked softmax — zero on non-selected experts
+    topk_idx:             Tensor  # (B, k) selected expert indices
+    topk_weights:         Tensor  # (B, k) re-normalised dispatch weights for selected experts
 
 
 # ── ZOD field registry ────────────────────────────────────────────────────
@@ -294,6 +295,19 @@ class ContextEncoder(nn.Module):
 class TopkGate(nn.Module):
     """Deterministic top-k gate over experts.
 
+    Routing procedure:
+      1. Compute logits from the gate linear layer.
+      2. full_softmax_probs = softmax(logits) — pre-top-k router belief over all experts.
+      3. Select top-k expert indices from logits.
+      4. Mask all non-top-k logits to −∞.
+      5. sparse_softmax_probs = softmax(masked_logits) — post-top-k, zero on non-selected.
+      6. topk_weights = sparse_softmax_probs gathered at top-k indices, re-normalised.
+
+    ``full_softmax_probs`` reflects the continuous router preference before
+    selection; ``sparse_softmax_probs`` reflects the actual dispatch mass
+    after top-k masking.  Both come from the same logits, so they are
+    directly comparable.
+
     Args:
         feat_dim: Dimension of the pooled BEV feature vector.
         num_experts: Number of experts to route over.
@@ -318,19 +332,37 @@ class TopkGate(nn.Module):
             ctx:  ``(B, context_dim)`` optional context vector.
 
         Returns:
-            :class:`GateOutput` with ``probs``, ``topk_idx``,
-            ``topk_weights``.
+            :class:`GateOutput` with ``full_softmax_probs``,
+            ``sparse_softmax_probs``, ``topk_idx``, ``topk_weights``.
         """
         if ctx is not None:
-            feat = torch.cat([feat, ctx], dim=1) # ctx dimention is 16 and feat dimention is 512, so feat becomes (B, 528)
-        logits = self.gate(feat)                      # (B, E) router logits
-        probs = torch.softmax(logits, dim=1)          # (B, E) router probabilities
-        topk_weights, topk_idx = probs.topk(self.k, dim=1)  # (B, k) each sample's top k expert indices
-        # Re-normalise selected weights so they sum to 1 per sample.
-        topk_weights = topk_weights / (topk_weights.sum(dim=1, keepdim=True)
-                                       + 1e-8)
-        return GateOutput(probs=probs, topk_idx=topk_idx,
-                          topk_weights=topk_weights)
+            feat = torch.cat([feat, ctx], dim=1)
+
+        logits = self.gate(feat)                               # (B, E)
+
+        # Pre-top-k: router belief over all experts (unmasked).
+        full_softmax_probs = torch.softmax(logits, dim=-1)     # (B, E)
+
+        # Select top-k indices from logits.
+        topk_vals, topk_idx = torch.topk(logits, self.k, dim=-1)  # (B, k)
+
+        # Mask non-top-k logits to −∞ so post-top-k softmax mass is zero on them.
+        threshold = topk_vals[:, -1:]                          # (B, 1) smallest kept logit
+        masked = torch.where(
+            logits >= threshold,
+            logits,
+            torch.full_like(logits, float('-inf')),
+        )
+
+        # Post-top-k: actual dispatch mass — zero on non-selected experts.
+        sparse_softmax_probs = torch.softmax(masked, dim=-1)   # (B, E)
+
+        topk_weights = sparse_softmax_probs.gather(dim=1, index=topk_idx)  # (B, k)
+        topk_weights = topk_weights / (topk_weights.sum(dim=1, keepdim=True) + 1e-8)
+
+        return GateOutput(full_softmax_probs=full_softmax_probs,
+                          sparse_softmax_probs=sparse_softmax_probs,
+                          topk_idx=topk_idx, topk_weights=topk_weights)
 
 
 # ── NoisyTopkGate ─────────────────────────────────────────────────────────
@@ -350,12 +382,13 @@ class NoisyTopkGate(nn.Module):
     Routing procedure:
       1. ``logits = W_gate(x)`` then z-score normalise per sample.
       2. Training: add ``ε · softplus(W_noise(x)) + noise_floor``.
-      3. Keep only the top-k logits; set all others to ``−∞``.
-      4. ``probs = softmax(masked_logits / temperature)``
+      3. ``full_softmax_probs = softmax(logits)`` — pre-top-k router belief.
+      4. Keep only the top-k logits; set all others to ``−∞``.
+      5. ``sparse_softmax_probs = softmax(masked_logits / temperature)``
 
-    This is in contrast to :class:`TopkGate` which applies softmax first and
-    then takes topk — the noisy gate applies topk *before* softmax so that the
-    softmax distribution is concentrated on the k selected experts.
+    ``full_softmax_probs`` is the router's belief over all experts given the
+    (noisy at train-time) logits, before any masking.
+    ``sparse_softmax_probs`` is zero on non-selected experts.
 
     Args:
         feat_dim: Dimension of the pooled BEV feature vector.
@@ -407,10 +440,9 @@ class NoisyTopkGate(nn.Module):
             ctx:  ``(B, context_dim)`` optional context vector.
 
         Returns:
-            :class:`GateOutput` with ``probs`` ``(B, E)``, ``topk_idx``
-            ``(B, k)``, and ``topk_weights`` ``(B, k)``.
-            ``probs`` is zero on non-selected experts; ``topk_weights`` are
-            the re-normalised softmax weights for the k selected experts.
+            :class:`GateOutput` with ``full_softmax_probs`` ``(B, E)``,
+            ``sparse_softmax_probs`` ``(B, E)``, ``topk_idx`` ``(B, k)``,
+            and ``topk_weights`` ``(B, k)``.
         """
         if ctx is not None:
             feat = torch.cat([feat, ctx], dim=1)  # (B, feat_dim + context_dim)
@@ -434,21 +466,25 @@ class NoisyTopkGate(nn.Module):
         if self.log_drop is not None:
             logits = self.log_drop(logits)
 
-        # Mask all non-top-k logits to −∞ BEFORE softmax so that softmax
-        # probability mass is concentrated entirely on the k selected experts.
-        topk_vals, topk_idx = torch.topk(logits, k=self.k, dim=-1)  # (B, k)
-        threshold = topk_vals[:, -1:]                                 # (B, 1) smallest kept logit
+        # Pre-top-k: router belief over all experts given (noisy) logits.
+        full_softmax_probs = F.softmax(logits, dim=-1)                # (B, E)
+
+        # Mask all non-top-k logits to −∞ so post-top-k softmax mass is
+        # concentrated entirely on the k selected experts.
+        topk_vals, topk_idx = torch.topk(logits, k=self.k, dim=-1)   # (B, k)
+        threshold = topk_vals[:, -1:]                                  # (B, 1)
         masked = torch.where(
             logits >= threshold,
             logits,
             torch.full_like(logits, float('-inf')),
         )  # (B, E)
 
-        probs = F.softmax(masked / self.temperature, dim=-1)  # (B, E), 0 on non-topk
+        # Post-top-k: actual dispatch mass — zero on non-selected experts.
+        sparse_softmax_probs = F.softmax(masked / self.temperature, dim=-1)  # (B, E)
 
-        topk_weights = probs.gather(dim=1, index=topk_idx)    # (B, k)
-        # Re-normalise so selected weights sum to 1 (guards against fp edge cases).
+        topk_weights = sparse_softmax_probs.gather(dim=1, index=topk_idx)    # (B, k)
         topk_weights = topk_weights / (topk_weights.sum(dim=1, keepdim=True) + 1e-8)
 
-        return GateOutput(probs=probs, topk_idx=topk_idx,
-                          topk_weights=topk_weights)
+        return GateOutput(full_softmax_probs=full_softmax_probs,
+                          sparse_softmax_probs=sparse_softmax_probs,
+                          topk_idx=topk_idx, topk_weights=topk_weights)

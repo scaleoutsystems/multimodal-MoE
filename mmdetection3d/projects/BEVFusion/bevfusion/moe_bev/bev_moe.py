@@ -18,13 +18,16 @@ docstring for the full shape trace and design rationale.
 moe_info contract
 -----------------
 After every forward() call, self._moe_info is written with:
-    probs        (B, E)  — full softmax distribution over all experts
-    topk_idx     (B, k)  — indices of the k selected experts per sample
-    topk_weights (B, k)  — re-normalised softmax weights for selected experts
-    aux_loss     scalar  — combined importance + load auxiliary loss
+    full_softmax_probs   (B, E)  — pre-top-k softmax (router belief over all experts)
+    sparse_softmax_probs (B, E)  — post-top-k masked softmax (zero on non-selected)
+    topk_idx             (B, k)  — indices of the k selected experts per sample
+    topk_weights         (B, k)  — re-normalised dispatch weights for selected experts
+    aux_loss             scalar  — combined importance + load loss (for extract_feat)
+    importance_loss      scalar  — importance balancing loss component (logged separately)
+    load_loss            scalar  — load balancing loss component (logged separately)
 
-MoERoutingHook and ContextRoutingStatsHook read topk_idx and topk_weights
-from _moe_info after each training/val iteration.
+MoERoutingHook reads full_softmax_probs, topk_idx, and topk_weights from
+_moe_info after each training/val iteration.
 """
 from __future__ import annotations
 
@@ -80,12 +83,11 @@ class BEVMoEBlock(nn.Module):
         self.importance_coef = importance_coef
         self.load_coef = load_coef
 
-        # Independent residual-conv experts; with top-1 routing and B=2-4,
-        # at most one expert runs per sample — cost ≈ one ConvFuser forward.
+        # Independent residual-conv experts; with top-1 routing
+        # at most one expert runs per sample — cost ≈ one ConvFuser forward
         self.experts = make_bev_experts(num_experts, channels, num_convs)
 
-        # BEVSummaryHead replaces plain AdaptiveAvgPool2d(1).
-        # It pools to a (pool_size × pool_size) grid with both avg and max,
+        # BEVSummaryHead pools to a (pool_size × pool_size) grid with both avg and max,
         # then projects through a small MLP to router_out_dim features.
         # Shape: (B, C, H, W) → (B, router_out_dim)
         self.summary = BEVSummaryHead(
@@ -131,8 +133,9 @@ class BEVMoEBlock(nn.Module):
 
         Returns:
             x_out:    BEV feature map (B, C, H, W) after expert processing.
-            moe_info: Dict with 'probs', 'topk_idx', 'topk_weights',
-                      'aux_loss'. Used for loss collection and Hook A.
+            moe_info: Dict with 'full_softmax_probs', 'sparse_softmax_probs',
+                      'topk_idx', 'topk_weights', 'aux_loss',
+                      'importance_loss', 'load_loss'.
         """
         B = x_bev.shape[0]
 
@@ -147,37 +150,45 @@ class BEVMoEBlock(nn.Module):
 
         # ── Step 2: Gate → top-k expert selection ─────────────────────
         gate_out = self.gate(feat, ctx)
-        # gate_out.probs        : (B, E)  full softmax distribution
-        # gate_out.topk_idx     : (B, k)  selected expert indices
-        # gate_out.topk_weights : (B, k)  re-normalised weights
+        # gate_out.full_softmax_probs   : (B, E)  pre-top-k router belief
+        # gate_out.sparse_softmax_probs : (B, E)  post-top-k masked softmax
+        # gate_out.topk_idx             : (B, k)  selected expert indices
+        # gate_out.topk_weights         : (B, k)  re-normalised dispatch weights
 
         # ── Step 3: Dispatch to selected experts ──────────────────────
         # Start from zero; residual experts output (x + delta), so the
         # weighted sum reconstructs x + (weighted mean of expert deltas).
+        # For each sample in the batch, run the selected experts on that sample,
+        # weight their outputs, and add them together.
         x_out = torch.zeros_like(x_bev)
         expert_counts = torch.zeros(self.num_experts, device=x_bev.device)
 
         for b in range(B):
             sample_out = torch.zeros_like(x_bev[b:b + 1])  # (1, C, H, W)
-            for j in range(self.k):
-                eidx   = gate_out.topk_idx[b, j].item()
-                weight = gate_out.topk_weights[b, j]
-                expert_out = self.experts[eidx](x_bev[b:b + 1])
-                sample_out = sample_out + weight * expert_out
-                expert_counts[eidx] += 1
-            x_out[b] = sample_out[0]
+            for j in range(self.k): # if k=2, j= 0, 1
+                eidx   = gate_out.topk_idx[b, j].item() # expert index for this sample
+                weight = gate_out.topk_weights[b, j] # weight for this expert
+                expert_out = self.experts[eidx](x_bev[b:b + 1]) # run the expert on the sample
+                sample_out = sample_out + weight * expert_out # weighted sum of expert outputs
+                expert_counts[eidx] += 1 # count how many times each expert was used
+            x_out[b] = sample_out[0]  # x_out[b].shape = (C, H, W), sample_out[0].shape = (C, H, W)
 
         # ── Step 4: Auxiliary losses ───────────────────────────────────
-        # importance_loss is differentiable (trains the gate toward balance).
-        # load_loss is detached (monitoring signal only, no gradient).
-        aux = importance_loss(gate_out.probs, self.importance_coef)
-        aux = aux + load_loss(expert_counts, self.load_coef)
+        # importance_loss uses full_softmax_probs (pre-top-k) so all experts
+        # receive gradient signal, not just the selected ones.
+        # load_loss is detached — monitoring signal only, no gradient.
+        imp_loss = importance_loss(gate_out.full_softmax_probs, self.importance_coef)
+        ld_loss  = load_loss(expert_counts, self.load_coef)
+        aux      = imp_loss + ld_loss
 
         moe_info = {
-            'probs':        gate_out.probs.detach(),
-            'topk_idx':     gate_out.topk_idx.detach(),
-            'topk_weights': gate_out.topk_weights.detach(),  # read by MoERoutingHook
-            'aux_loss':     aux,
+            'full_softmax_probs':   gate_out.full_softmax_probs.detach(),
+            'sparse_softmax_probs': gate_out.sparse_softmax_probs.detach(),
+            'topk_idx':             gate_out.topk_idx.detach(),
+            'topk_weights':         gate_out.topk_weights.detach(),
+            'aux_loss':             aux,
+            'importance_loss':      imp_loss,   # WITH grad — added to losses by bevfusion
+            'load_loss':            ld_loss,    # already detached — added for log visibility
         }
         # Cache on self so MoERoutingHook can read it after each iter
         # without requiring the caller to pass it up the call stack.

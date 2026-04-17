@@ -4,10 +4,10 @@ ModalitySpecificMoEBlock replaces ConvFuser entirely.  Camera and LiDAR
 BEV maps are processed independently by dedicated expert pools, then the
 refined modality outputs are fused via a simple concat + 1×1 conv projection.
 
-Required graph (no ConvFuser anywhere)::
+Required graph (no ConvFuser anywhere):
 
     cam_bev   → camera experts  ─┐
-                                 ├─→ concat → 1×1 proj → 3×3 align → fused_bev → pts_backbone
+                                 ├─→ concat → 1×1 proj → 3×3 conv (spatial alignment) → fused_bev → pts_backbone
     lidar_bev → lidar experts   ─┘
 
 Architecture overview
@@ -245,28 +245,32 @@ class ModalitySpecificMoEBlock(nn.Module):
             torch.cat([cam_out, lidar_out], dim=1))
 
         # ── Step 5: Auxiliary losses ──────────────────────────────────
-        aux = importance_loss(gate_out.probs, self.importance_coef)
-        aux = aux + load_loss(expert_counts, self.load_coef)
-        aux = aux + group_balance_loss(
-            gate_out.probs,
+        imp_loss = importance_loss(gate_out.full_softmax_probs, self.importance_coef)
+        ld_loss  = load_loss(expert_counts, self.load_coef)
+        gb_loss  = group_balance_loss(
+            gate_out.full_softmax_probs,
             self.cam_expert_ids,
             self.lidar_expert_ids,
             self.group_balance_coef,
         )
+        aux = imp_loss + ld_loss + gb_loss
 
         with torch.no_grad():
-            cam_mass = gate_out.probs[:, self.cam_expert_ids].sum().item()
-            lidar_mass = gate_out.probs[:, self.lidar_expert_ids].sum().item()
+            cam_mass   = gate_out.full_softmax_probs[:, self.cam_expert_ids].sum().item()
+            lidar_mass = gate_out.full_softmax_probs[:, self.lidar_expert_ids].sum().item()
 
         moe_info = {
-            'probs':            gate_out.probs.detach(),
-            'topk_idx':         gate_out.topk_idx.detach(),
-            'topk_weights':     gate_out.topk_weights.detach(),
-            'cam_expert_ids':   self.cam_expert_ids,
-            'lidar_expert_ids': self.lidar_expert_ids,
-            'cam_group_mass':   cam_mass,
-            'lidar_group_mass': lidar_mass,
-            'aux_loss':         aux,
+            'full_softmax_probs':   gate_out.full_softmax_probs.detach(),
+            'sparse_softmax_probs': gate_out.sparse_softmax_probs.detach(),
+            'topk_idx':             gate_out.topk_idx.detach(),
+            'topk_weights':         gate_out.topk_weights.detach(),
+            'cam_expert_ids':       self.cam_expert_ids,
+            'lidar_expert_ids':     self.lidar_expert_ids,
+            'cam_group_mass':       cam_mass,
+            'lidar_group_mass':     lidar_mass,
+            'aux_loss':             aux,
+            'importance_loss':      imp_loss,
+            'load_loss':            ld_loss,
         }
         self._moe_info = moe_info
         return fused_bev, moe_info

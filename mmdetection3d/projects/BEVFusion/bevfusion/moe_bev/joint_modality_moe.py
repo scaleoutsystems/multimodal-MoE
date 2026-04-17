@@ -96,9 +96,9 @@ class JointModalityMoEBlock(nn.Module):
         cam_channels: int = 80,
         lidar_channels: int = 256,
         out_channels: int = 256,
-        num_experts: int = 4,
+        num_experts: int = 6,
         k: int = 1,
-        importance_coef: float = 0.01,
+        importance_coef: float = 0.02,
         load_coef: float = 0.01,
         router_pool_size: int = 2,
         router_hidden_dim: int = 128,
@@ -184,14 +184,18 @@ class JointModalityMoEBlock(nn.Module):
                 expert_counts[eidx] += 1
             out[b] = sample_out[0]
 
-        aux = importance_loss(gate_out.probs, self.importance_coef)
-        aux = aux + load_loss(expert_counts, self.load_coef)
+        imp_loss = importance_loss(gate_out.full_softmax_probs, self.importance_coef)
+        ld_loss  = load_loss(expert_counts, self.load_coef)
+        aux      = imp_loss + ld_loss
 
         moe_info = {
-            'probs':        gate_out.probs.detach(),
-            'topk_idx':     gate_out.topk_idx.detach(),
-            'topk_weights': gate_out.topk_weights.detach(),
-            'aux_loss':     aux,
+            'full_softmax_probs':   gate_out.full_softmax_probs.detach(),
+            'sparse_softmax_probs': gate_out.sparse_softmax_probs.detach(),
+            'topk_idx':             gate_out.topk_idx.detach(),
+            'topk_weights':         gate_out.topk_weights.detach(),
+            'aux_loss':             aux,
+            'importance_loss':      imp_loss,
+            'load_loss':            ld_loss,
         }
         self._moe_info = moe_info
         return out, moe_info
