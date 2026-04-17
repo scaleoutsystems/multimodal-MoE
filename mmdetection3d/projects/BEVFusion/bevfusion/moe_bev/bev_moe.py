@@ -11,20 +11,59 @@ BEVMoEBlock is a single-input MoE block used for:
 
 Router input
 ------------
-Replaced plain global average pooling with BEVSummaryHead (avg+max pool to
-2×2 grid, flatten, MLP) to preserve coarse spatial structure.  See BEVSummaryHead
-docstring for the full shape trace and design rationale.
+BEVSummaryHead (avg+max pool to a 2×2 grid, flatten, MLP with final LayerNorm)
+is used instead of plain global average pooling to preserve coarse spatial
+structure.  The final LayerNorm (replacing a previous ReLU) ensures the routing
+descriptor is signed and unit-variance so gate logits can grow and carry
+meaningful preference signals.  See BEVSummaryHead docstring for the full shape
+trace and design rationale.
+
+Dispatch strategy: residual-delta
+----------------------------------
+BEVResidualExperts output  x + delta  (the input feature plus a residual).
+Dispatch is therefore implemented as:
+
+    x_out = x_bev + Σ_j  w_j · (expert_j(x_bev) − x_bev)
+
+where w_j are Switch-style dispatch weights (see routing.py for definition).
+
+Why this matters
+~~~~~~~~~~~~~~~~
+Gate weights from TopkGate are Switch-style: they are gathered from the
+pre-top-k softmax and NOT renormalised to sum to 1.  At initialisation each
+weight is approximately 1/E (≈ 0.17 for 6 experts).
+
+If instead the naive dispatch   x_out = Σ_j w_j · expert_j(x_bev)   were used
+with w_j ≈ 0.17, the output BEV feature map would be scaled down 6×.  That
+scaling propagates through pts_backbone and collapses detection performance
+(empirically: loss_heatmap rises 2×, matched_ious drops 10×, moe_balance_loss
+stays near zero because the gate receives a corrupt gradient signal).
+
+The residual-delta form isolates the expert contribution in the delta term so
+the backbone always sees an x-scale feature regardless of w_j magnitude:
+    k=1, w=1    → x_out = expert_out          (exactly the old behaviour)
+    k=1, w<<1   → x_out ≈ x_bev + small delta (soft gating, scale preserved)
+    k>1, any w  → weighted mixture of deltas added to x_bev
 
 moe_info contract
 -----------------
 After every forward() call, self._moe_info is written with:
-    full_softmax_probs   (B, E)  — pre-top-k softmax (router belief over all experts)
-    sparse_softmax_probs (B, E)  — post-top-k masked softmax (zero on non-selected)
-    topk_idx             (B, k)  — indices of the k selected experts per sample
-    topk_weights         (B, k)  — re-normalised dispatch weights for selected experts
-    aux_loss             scalar  — combined balance + load loss (for extract_feat)
-    balance_loss         scalar  — Switch balance loss component (logged separately)
-    load_loss            scalar  — load balancing loss component (logged separately)
+    full_softmax_probs   (B, E)  — pre-top-k softmax (router belief over all experts).
+                                   Used by switch_balance_loss (P_e term) and
+                                   dense_mean_prob_per_expert diagnostics.
+    sparse_softmax_probs (B, E)  — post-top-k masked softmax (zero on non-selected).
+                                   Returned for analysis; NOT used for dispatch.
+    topk_idx             (B, k)  — indices of the k selected experts per sample.
+                                   Used by selection-frequency diagnostics and
+                                   switch_balance_loss (f_e term).
+    topk_weights         (B, k)  — Switch-style dispatch weights (NOT renormalised).
+                                   Used in the residual-delta dispatch above and
+                                   for dispatch_mass_per_expert diagnostics.
+    aux_loss             scalar  — combined balance + load loss (returned by
+                                   extract_feat for the backbone loss sum).
+    balance_loss         scalar  — Switch balance loss only (logged as moe_balance_loss).
+    load_loss            scalar  — CV²-of-counts load loss only (logged as moe_load_loss;
+                                   detached — monitoring signal, no gradient).
 
 MoERoutingHook reads full_softmax_probs, topk_idx, and topk_weights from
 _moe_info after each training/val iteration.
@@ -153,25 +192,33 @@ class BEVMoEBlock(nn.Module):
         # gate_out.full_softmax_probs   : (B, E)  pre-top-k router belief
         # gate_out.sparse_softmax_probs : (B, E)  post-top-k masked softmax
         # gate_out.topk_idx             : (B, k)  selected expert indices
-        # gate_out.topk_weights         : (B, k)  re-normalised dispatch weights
+        # gate_out.topk_weights         : (B, k)  Switch-style router confidence
+        #                                        (NOT renormalised to sum to 1)
 
         # ── Step 3: Dispatch to selected experts ──────────────────────
-        # Start from zero; residual experts output (x + delta), so the
-        # weighted sum reconstructs x + (weighted mean of expert deltas).
-        # For each sample in the batch, run the selected experts on that sample,
-        # weight their outputs, and add them together.
-        x_out = torch.zeros_like(x_bev)
+        # Residual-delta dispatch:
+        #   x_out = x_bev + Σ_j w_j · (expert_j(x_bev) − x_bev)
+        # Experts are residual (output x + delta), so (expert_out − x_bev)
+        # extracts the delta.  Adding router-confidence-weighted deltas back
+        # to x_bev preserves the input scale regardless of w_j magnitude:
+        #   k=1, w=1   → x_out = expert_out
+        #   k=1, w<<1  → x_out ≈ x_bev + small expert contribution
+        # This is what makes Switch-style (non-sum-to-1) weights safe here —
+        # without it, w<1 would down-scale the BEV feature map 1/w× and
+        # break the backbone.
+        x_out = x_bev.clone()
         expert_counts = torch.zeros(self.num_experts, device=x_bev.device)
 
         for b in range(B):
-            sample_out = torch.zeros_like(x_bev[b:b + 1])  # (1, C, H, W)
-            for j in range(self.k): # if k=2, j= 0, 1
-                eidx   = gate_out.topk_idx[b, j].item() # expert index for this sample
-                weight = gate_out.topk_weights[b, j] # weight for this expert
-                expert_out = self.experts[eidx](x_bev[b:b + 1]) # run the expert on the sample
-                sample_out = sample_out + weight * expert_out # weighted sum of expert outputs
-                expert_counts[eidx] += 1 # count how many times each expert was used
-            x_out[b] = sample_out[0]  # x_out[b].shape = (C, H, W), sample_out[0].shape = (C, H, W)
+            xb = x_bev[b:b + 1]                           # (1, C, H, W)
+            delta_sum = torch.zeros_like(xb)
+            for j in range(self.k):
+                eidx   = gate_out.topk_idx[b, j].item()
+                weight = gate_out.topk_weights[b, j]
+                expert_out = self.experts[eidx](xb)
+                delta_sum = delta_sum + weight * (expert_out - xb)
+                expert_counts[eidx] += 1
+            x_out[b] = (xb + delta_sum)[0]
 
         # ── Step 4: Auxiliary losses ───────────────────────────────────
         # switch_balance_loss: multiplies detached dispatch frequency (f_e)

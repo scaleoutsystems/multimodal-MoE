@@ -13,18 +13,53 @@ Required graph (no ConvFuser anywhere)::
 
 Router input
 ------------
-    cam_bev   → BEVSummaryHead(cam_channels)   → (B, 64)
+    cam_bev   → BEVSummaryHead(cam_channels)    → (B, 64)
     lidar_bev → BEVSummaryHead(lidar_channels)  → (B, 64)
     cat                                          → (B, 128)  [+ ctx]
-    TopkGate                                     → (B, E) logits
+    TopkGate                                     → GateOutput
+
+Dispatch strategy: locally renormalised weights
+-----------------------------------------------
+TopkGate now returns Switch-style topk_weights (gathered from the pre-top-k
+softmax, NOT renormalised — see routing.py for rationale).
+
+Unlike BEVMoEBlock, joint experts produce a fresh fused BEV map (not a residual
+correction on an existing feature map), so there is no natural way to preserve
+input scale via a delta formulation.  The dispatch output must therefore be
+a proper weighted mixture that sums to 1, otherwise the backbone sees a
+scale-corrupted feature.
+
+This block therefore renormalises topk_weights locally before dispatch:
+
+    dispatch_w = topk_weights / (topk_weights.sum(dim=1, keepdim=True) + 1e-8)
+    out[b] = Σ_j  dispatch_w[b, j] · expert_j(cam_bev[b], lidar_bev[b])
+
+IMPORTANT — gradient flow limitation with k=1:
+    When k=1, renormalisation forces dispatch_w = 1.0 (a constant), so the
+    detection-loss gradient cannot flow back to the gate through the dispatch
+    weight for this block.  If gate training is desired for JointModalityMoEBlock,
+    use k ≥ 2.  The GateOutput.topk_weights field (un-renormalised) is still
+    passed to switch_balance_loss so gradient flows through the probability
+    average P_e regardless of k.
 
 moe_info contract
 -----------------
 self._moe_info is written after every forward() with:
-    probs        (B, E)  — full softmax distribution
-    topk_idx     (B, k)  — selected expert indices per sample
-    topk_weights (B, k)  — re-normalised softmax weights
-    aux_loss     scalar  — importance + load auxiliary loss
+    full_softmax_probs   (B, E)  — pre-top-k softmax (router belief over all experts).
+                                   Used by switch_balance_loss (P_e term) and
+                                   dense_mean_prob_per_expert diagnostics.
+    sparse_softmax_probs (B, E)  — post-top-k masked softmax (zero on non-selected).
+                                   Returned for analysis; NOT used for dispatch.
+    topk_idx             (B, k)  — selected expert indices per sample.
+    topk_weights         (B, k)  — Switch-style weights (un-renormalised) from
+                                   GateOutput.  Hooks use these for
+                                   dispatch_mass_per_expert diagnostics.
+                                   NOTE: actual dispatch uses locally renormalised
+                                   dispatch_w (see above), NOT these raw values.
+    aux_loss             scalar  — combined balance + load loss.
+    balance_loss         scalar  — Switch balance loss (logged as moe_balance_loss).
+    load_loss            scalar  — CV²-of-counts load loss (logged as moe_load_loss;
+                                   detached — monitoring only, no gradient).
 """
 from __future__ import annotations
 
@@ -173,11 +208,23 @@ class JointModalityMoEBlock(nn.Module):
                                 cam_bev.shape[2], cam_bev.shape[3])
         expert_counts = torch.zeros(self.num_experts, device=cam_bev.device)
 
+        # Joint-modality experts produce fresh fused BEV maps (no natural
+        # residual reference), so the dispatch weights used here must sum to 1
+        # per sample or the fused output is scale-corrupted.  We renormalise
+        # the Switch-style gate weights locally for dispatch ONLY (the gate
+        # still exposes the un-renormalised topk_weights in GateOutput for
+        # consistent diagnostics and gradient flow in downstream losses).
+        # Note: with k=1 this renormalisation forces w=1, which collapses the
+        # detection-loss gradient to the gate for this block.  Use k≥2 for
+        # joint-modality routing if gate training is desired.
+        dispatch_w = gate_out.topk_weights / (
+            gate_out.topk_weights.sum(dim=1, keepdim=True) + 1e-8)  # (B, k)
+
         for b in range(B):
             sample_out = torch.zeros_like(out[b:b + 1])
             for j in range(self.k):
                 eidx = gate_out.topk_idx[b, j].item()
-                weight = gate_out.topk_weights[b, j]
+                weight = dispatch_w[b, j]
                 expert_out = self.experts[eidx](cam_bev[b:b + 1],
                                                 lidar_bev[b:b + 1])
                 sample_out = sample_out + weight * expert_out
