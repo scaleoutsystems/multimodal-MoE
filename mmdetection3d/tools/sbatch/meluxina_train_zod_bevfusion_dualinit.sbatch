@@ -1,23 +1,20 @@
 #!/bin/bash
 # =============================================================================
-# Meluxina Slurm: BEVFusion dual-init 16-epoch run / ZOD (4× A100, single node)
+# Meluxina Slurm: BEVFusion dual-init controlled baseline / ZOD (4× A100, single node)
 # =============================================================================
-# Dual unimodal initialisation — key differences from meluxina_train_bev_fusion_finetune.sbatch:
-#   - DualCheckpointInitHook loads modality-specific weights before training:
-#       LiDAR branch (pts_voxel_encoder, pts_middle_encoder) from the best
-#         ZOD LiDAR-only checkpoint (best_mAP_0.50_epoch_18.pth).
-#       Camera branch (img_backbone, img_neck, view_transform) from the best
-#         ZOD camera-only checkpoint (best_mAP_0.50_epoch_11.pth).
-#   - Post-fusion modules (fusion_layer, pts_backbone, pts_neck, bbox_head)
-#     start from default / random init (no unimodal source available /
-#     appropriate).
+# Controlled dual-init baseline — differs from meluxina_train_bev_fusion_finetune.sbatch
+# only in the initialisation strategy (no load_from; DualCheckpointInitHook instead):
+#   - LiDAR branch (pts_middle_encoder, pts_backbone, pts_neck, bbox_head)
+#       loaded from best ZOD LiDAR-only checkpoint (best_mAP_0.50_epoch_18.pth).
+#   - Camera branch (img_backbone, img_neck, view_transform)
+#       loaded from best ZOD camera-only checkpoint (best_mAP_0.50_epoch_11.pth).
+#   - fusion_layer (ConvFuser) randomly initialised — same as finetune.
 #   - No load_from in config (intentional; see config docstring).
-#   - 16 epochs with gentle single-phase cosine schedule (no momentum schedulers,
-#     no aggressive early LR amplification).
+#   - Schedule, epochs (12), and all other hyperparameters identical to finetune.
 #   - LiDAR and camera remain fully trainable throughout (no branch freezing).
 #
 # Submit:
-#   sbatch ~/projects/multimodal-MoE/mmdetection3d/tools/sbatch/meluxina_train_zod_bevfusion_dualinit_16e.sbatch
+#   sbatch ~/projects/multimodal-MoE/mmdetection3d/tools/sbatch/meluxina_train_zod_bevfusion_dualinit.sbatch
 #
 # Watch progress:
 #   tail -f ~/projects/multimodal-MoE/outputs/runs/slurm_logs/bevfusion-dualinit-<JOBID>.out
@@ -120,8 +117,8 @@ print('DualCheckpointInitHook registered OK')
   exit 1
 }
 
-CONFIG="${CONFIG:-configs/zod/zod_bevfusion_dualinit_16e.py}"
-DEFAULT_WORK_PARENT="${MOE_ROOT}/outputs/runs/zod_bevfusion_dualinit_16e"
+CONFIG="${CONFIG:-configs/zod/zod_bevfusion_dualinit.py}"
+DEFAULT_WORK_PARENT="${MOE_ROOT}/outputs/runs/zod_bevfusion_dualinit"
 WORK_DIR="${WORK_DIR:-${DEFAULT_WORK_PARENT}/${SLURM_JOB_NAME}_${SLURM_JOB_ID}}"
 mkdir -p "${WORK_DIR}"
 

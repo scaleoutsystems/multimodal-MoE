@@ -330,6 +330,11 @@ optim_wrapper = dict(
 auto_scale_lr = dict(enable=False)
 log_processor = dict(window_size=50)
 
+# Sparse top-k routing means only the selected expert(s) run each forward
+# pass, leaving idle experts with no gradient.  Tell DDP to tolerate unused
+# parameters rather than crashing on the second iteration.
+model_wrapper_cfg = dict(find_unused_parameters=True)
+
 # ── Hooks ─────────────────────────────────────────────────────────────────
 default_hooks = dict(
     logger=dict(type='LoggerHook', interval=50),

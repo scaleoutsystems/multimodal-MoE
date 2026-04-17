@@ -1,23 +1,39 @@
-"""Camera + LiDAR BEVFusion — dual unimodal init, 16-epoch stable schedule.
+"""Camera + LiDAR BEVFusion — controlled dual-init baseline, finetune-matched schedule.
 
 Derived from zod_bevfusion_finetune.py.  Only the settings listed below
 differ from the base finetune config; everything else (model architecture,
 data pipelines, dataloaders, evaluators, hooks, optimizer, AMP wrapper) is
 kept identical.
 
+Purpose
+-------
+A controlled comparison against zod_bevfusion_finetune.py.  The only
+difference from finetune is the initialisation strategy: instead of a
+single load_from that loads the full LiDAR checkpoint, both modality
+branches are warm-started individually from their best unimodal checkpoints.
+Schedule, epochs, and all other hyperparameters are identical to finetune,
+so any performance difference is attributable solely to the init strategy.
+
+This config is also designed as the MoE-ready dual-init recipe: with both
+modality branches already trained, swapping in a MoE fusion block in place
+of ConvFuser requires only that module to learn from scratch.
+
 Initialisation — dual-checkpoint selective loading
 ---------------------------------------------------
 Both modality-specific branches are warm-started from their respective
 best unimodal checkpoints via ``DualCheckpointInitHook``.
 
-    LiDAR-side  (pts_middle_encoder, pts_backbone, pts_neck)
+    LiDAR-side  (pts_middle_encoder, pts_backbone, pts_neck, bbox_head)
         ← best_mAP_0.50_epoch_18.pth  from the ZOD LiDAR-only run
 
     Camera-side (img_backbone, img_neck, view_transform)
         ← best_mAP_0.50_epoch_11.pth  from the ZOD camera-only run
 
-    Fresh init  (fusion_layer, bbox_head)
+    Fresh init  (fusion_layer only)
         ← random / default initialisation
+
+No top-level ``load_from`` is used.  All initialisation is performed by
+``DualCheckpointInitHook`` (see Hook ordering note below).
 
 Module-loading rationale (verified against actual checkpoint keys)
 ------------------------------------------------------------------
@@ -36,12 +52,16 @@ pts_neck (LiDAR-only ← LiDAR ckpt, 12 keys)
     Load from LiDAR ckpt to keep pts_backbone + pts_neck consistent
     (they were trained together as a unit).
 
-fusion_layer (ConvFuser) ← fresh random init
-    No unimodal counterpart exists; randomly initialised.
+bbox_head (TransFusionHead ← LiDAR ckpt)
+    Detection head loaded from the LiDAR-only checkpoint.  The head
+    architecture is identical between the LiDAR-only and fusion configs
+    (both take 512-ch input from the neck), so all weights transfer
+    without shape mismatch.  Loading from the LiDAR ckpt gives a strong
+    detection prior that matches the finetune baseline init.
 
-bbox_head (TransFusionHead) ← fresh random init
-    Post-fusion detection head.  Leaving it at random init avoids
-    inheriting a LiDAR-biased query prior into the fused representation.
+fusion_layer (ConvFuser) ← fresh random init
+    No unimodal counterpart exists; randomly initialised in both this
+    config and zod_bevfusion_finetune.py.
 
 pts_voxel_encoder (HardSimpleVFE) — NOT listed
     Confirmed stateless: zero keys in the LiDAR checkpoint.
@@ -64,30 +84,20 @@ a ``load_from`` key).  Therefore ``load_from`` is intentionally absent from
 this config; setting it would cause ``resume_or_load`` to overwrite the
 selective dual-checkpoint init.
 
-Training schedule — 16-epoch gentle cosine
--------------------------------------------
-Both branches arrive with strong representations; we want stable joint
-fusion refinement rather than aggressive re-learning.
-
-  lr          = 5e-5  (same as base finetune config)
-  warmup      = LinearLR(start_factor=1/3, 500 iters)  — retained for
-                stability during the first few hundred steps while the
-                randomly-initialised fusion_layer is still producing noise
-  cosine      = single CosineAnnealingLR over the full 16 epochs,
-                eta_min = lr * 1e-2 = 5e-7
-  momentum    = schedulers removed (stable dual init doesn't need them)
-
-This schedule is also intended as a sensible default for future MoE runs
-that reuse the same dual-init recipe.
+Training schedule — matches zod_bevfusion_finetune.py exactly
+--------------------------------------------------------------
+  lr          = 5e-5
+  warmup      = LinearLR(start_factor=1/3, 500 iters)
+  cosine      = phase 1 (0→4 ep, eta_min=lr*10) + phase 2 (4→12 ep, eta_min=lr*1e-4)
+  momentum    = CosineAnnealingMomentum mirroring the LR phases
+  max_epochs  = 12
 
 Changes from zod_bevfusion_finetune.py
 ---------------------------------------
   1. No ``load_from`` (replaced by DualCheckpointInitHook in custom_hooks).
-  2. DualCheckpointInitHook added to custom_hooks with verified module lists.
-  3. max_epochs: 12 → 16.
-  4. param_scheduler: two-phase cosine + momentum → single gentle cosine.
-  5. GridMask max_epoch: 10 → 16 (kept proportional to training length).
-  6. _VIS_EPOCHS updated to cover the 16-epoch run evenly.
+  2. DualCheckpointInitHook added to custom_hooks loading:
+       lidar_ckpt  → pts_middle_encoder, pts_backbone, pts_neck, bbox_head
+       camera_ckpt → img_backbone, img_neck, view_transform
 """
 
 _base_ = ['../_base_/default_runtime.py']
@@ -223,10 +233,11 @@ model = dict(
         upsample_cfg=dict(type='deconv', bias=False),
         use_conv_for_no_stride=True),
 
-    # ── detection head — fresh init ──
-    # bbox_head is NOT loaded from either checkpoint; it starts from random
-    # init to avoid inheriting a modality-biased query prior into the fused
-    # feature space.
+    # ── detection head — loaded from LiDAR checkpoint ──
+    # bbox_head is loaded from the LiDAR-only checkpoint by DualCheckpointInitHook
+    # (see lidar_modules list in custom_hooks).  Architecture is identical between
+    # LiDAR-only and fusion configs (both take 512-ch neck output), so all weights
+    # transfer without shape mismatch.  This matches the finetune baseline init.
     bbox_head=dict(
         type='TransFusionHead',
         num_proposals=500,
@@ -337,7 +348,7 @@ train_pipeline = [
         type='GridMask',
         use_h=True,
         use_w=True,
-        max_epoch=16,   # updated to match max_epochs
+        max_epoch=10,   # matches finetune config
         rotate=1,
         offset=False,
         ratio=0.5,
@@ -465,15 +476,15 @@ visualizer = dict(
     type='Det3DLocalVisualizer', vis_backends=vis_backends, name='visualizer')
 
 # ===== optimizer / scheduler =====
-# Both modality-specific branches arrive with strong ZOD-trained weights.
-# A single gentle cosine decay (no aggressive early amplification, no momentum
-# schedulers) keeps adaptation stable and avoids disrupting strong priors.
-# The short LinearLR warmup is retained because fusion_layer starts from
-# random init and could produce noisy gradients in the first few hundred steps.
+# Identical to zod_bevfusion_finetune.py for a controlled comparison.
+# The short LinearLR warmup stabilises early training while fusion_layer
+# (the only randomly-initialised module) is still producing noisy gradients.
+# Two-phase cosine + mirrored momentum schedulers match the finetune recipe.
 #
 # Effective LR profile:
-#   iter 0 → 500 : warmup  lr * 0.333 → lr * 1.0  (overrides cosine start)
-#   epoch 0 → 16 : cosine  lr → eta_min = lr * 1e-2 = 5e-7
+#   iter 0 → 500   : warmup   lr * 0.333 → lr * 1.0
+#   epoch 0 → 4    : cosine   lr → eta_min = lr * 10 = 5e-4
+#   epoch 4 → 12   : cosine   lr → eta_min = lr * 1e-4 = 5e-9
 
 lr = 5e-5
 param_scheduler = [
@@ -485,15 +496,39 @@ param_scheduler = [
         end=500),
     dict(
         type='CosineAnnealingLR',
-        T_max=16,
-        eta_min=lr * 1e-2,  # 5e-7
+        T_max=4,
+        eta_min=lr * 10,
         begin=0,
-        end=16,
+        end=4,
+        by_epoch=True,
+        convert_to_iter_based=True),
+    dict(
+        type='CosineAnnealingLR',
+        T_max=8,
+        eta_min=lr * 1e-4,
+        begin=4,
+        end=12,
+        by_epoch=True,
+        convert_to_iter_based=True),
+    dict(
+        type='CosineAnnealingMomentum',
+        T_max=4,
+        eta_min=0.85 / 0.95,
+        begin=0,
+        end=4,
+        by_epoch=True,
+        convert_to_iter_based=True),
+    dict(
+        type='CosineAnnealingMomentum',
+        T_max=8,
+        eta_min=1,
+        begin=4,
+        end=12,
         by_epoch=True,
         convert_to_iter_based=True),
 ]
 
-train_cfg = dict(by_epoch=True, max_epochs=16, val_interval=1)
+train_cfg = dict(by_epoch=True, max_epochs=12, val_interval=1)
 val_cfg = dict()
 test_cfg = dict()
 
@@ -515,18 +550,18 @@ default_hooks = dict(
         save_best='mAP_0.50',
         rule='greater'))
 
-# Visualisation epochs spread evenly over the 16-epoch run.
-_VIS_EPOCHS = (1, 3, 6, 9, 12, 16)
+# Visualisation epochs matching the 12-epoch finetune run.
+_VIS_EPOCHS = (1, 3, 5, 7, 10, 12)
 
 custom_hooks = [
     # ── Dual-checkpoint init (runs before_run, priority=VERY_HIGH) ──────
     # LiDAR-side: pts_middle_encoder (126 keys), pts_backbone (72 keys),
-    #   pts_neck (12 keys) — all from LiDAR-only checkpoint.
+    #   pts_neck (12 keys), bbox_head — all from LiDAR-only checkpoint.
     #   pts_voxel_encoder (HardSimpleVFE) is intentionally NOT listed:
     #   verified stateless (0 keys in checkpoint).
     # Camera-side: img_backbone (187 keys), img_neck (24 keys),
     #   view_transform (59 keys, all shapes verified) — from camera-only ckpt.
-    # Fresh init: fusion_layer (ConvFuser), bbox_head (TransFusionHead).
+    # Fresh init: fusion_layer (ConvFuser) only.
     dict(
         type='DualCheckpointInitHook',
         lidar_ckpt=(
@@ -541,6 +576,7 @@ custom_hooks = [
             'pts_middle_encoder',   # 126 keys — sparse LiDAR encoder
             'pts_backbone',         # 72 keys  — SECOND, in_channels=256 (compat.)
             'pts_neck',             # 12 keys  — SECONDFPN, trained w/ pts_backbone
+            'bbox_head',            # TransFusionHead — identical arch to LiDAR-only
         ],
         camera_modules=[
             'img_backbone',         # 187 keys — Swin-T
