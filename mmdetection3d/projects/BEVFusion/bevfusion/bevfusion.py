@@ -450,15 +450,15 @@ class BEVFusion(Base3DDetector):
                 _block = getattr(self, _block_name, None)
                 _info  = getattr(_block, '_moe_info', None) if _block else None
                 if _info is not None:
-                    _imp = _info.get('importance_loss')
+                    _bal = _info.get('balance_loss')
                     _ld  = _info.get('load_loss')
-                    if _imp is not None:
-                        _imp_parts.append(_imp)
+                    if _bal is not None:
+                        _imp_parts.append(_bal)
                     if _ld is not None:
                         _ld_parts.append(_ld)
             if _imp_parts:
-                losses['moe_importance_loss'] = sum(_imp_parts)
-                losses['moe_load_loss']        = sum(_ld_parts) if _ld_parts else \
+                losses['moe_balance_loss'] = sum(_imp_parts)
+                losses['moe_load_loss']    = sum(_ld_parts) if _ld_parts else \
                     self._moe_aux_loss.detach() * 0
             else:
                 losses['moe_aux_loss'] = self._moe_aux_loss

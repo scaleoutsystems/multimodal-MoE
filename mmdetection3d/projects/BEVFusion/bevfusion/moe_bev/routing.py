@@ -59,7 +59,19 @@ class BEVSummaryHead(nn.Module):
     cat     : (B, 2C, 2, 2)  — avg and max side-by-side per channel
     flatten : (B, 8C)        — 8C when pool_size=2: 2 * C * 2 * 2
     Linear  : (B, 128)       — ReLU
-    Linear  : (B, 64)        — ReLU → routing descriptor
+    Linear  : (B, 64)
+    LayerNorm: (B, 64)       — signed, unit-variance routing descriptor
+
+    Final LayerNorm (no final ReLU) rationale
+    -----------------------------------------
+    A router descriptor fed into the gate must be **signed** so that the
+    gate's linear projection can produce expert logits of both signs, and
+    so that rich-get-richer dynamics can actually develop magnitude.
+    A final ReLU makes the descriptor non-negative, creates dead units
+    (gate input dims stuck at 0), and — combined with weight decay on the
+    gate — prevents logit magnitudes from growing, leaving the softmax
+    distribution near-uniform even when hard top-1 selections are skewed.
+    LayerNorm keeps the descriptor bounded (stable) while remaining signed.
 
     Args:
         channels:   Number of input BEV feature channels.
@@ -82,14 +94,15 @@ class BEVSummaryHead(nn.Module):
         # After concat(avg, max) and flattening: 2 * C * pool_size^2 dims.
         flat_dim = 2 * channels * pool_size * pool_size
 
-        # Two-layer MLP: flat_dim → hidden_dim → out_dim.
-        # Kept small intentionally — the summary head should be easy to
-        # explain in a thesis, not a heavy learnable module in its own right.
+        # Two-layer MLP: flat_dim → hidden_dim → out_dim, followed by
+        # LayerNorm (see class docstring).  Intentionally small — the
+        # summary head should be easy to explain, not a heavy learnable
+        # module in its own right.
         self.mlp = nn.Sequential(
             nn.Linear(flat_dim, hidden_dim),
             nn.ReLU(inplace=True),
             nn.Linear(hidden_dim, out_dim),
-            nn.ReLU(inplace=True),
+            nn.LayerNorm(out_dim),
         )
         self.out_dim = out_dim
 

@@ -22,8 +22,8 @@ After every forward() call, self._moe_info is written with:
     sparse_softmax_probs (B, E)  — post-top-k masked softmax (zero on non-selected)
     topk_idx             (B, k)  — indices of the k selected experts per sample
     topk_weights         (B, k)  — re-normalised dispatch weights for selected experts
-    aux_loss             scalar  — combined importance + load loss (for extract_feat)
-    importance_loss      scalar  — importance balancing loss component (logged separately)
+    aux_loss             scalar  — combined balance + load loss (for extract_feat)
+    balance_loss         scalar  — Switch balance loss component (logged separately)
     load_loss            scalar  — load balancing loss component (logged separately)
 
 MoERoutingHook reads full_softmax_probs, topk_idx, and topk_weights from
@@ -40,7 +40,7 @@ from torch import Tensor
 from mmdet3d.registry import MODELS
 
 from .bev_experts import make_bev_experts
-from .losses import importance_loss, load_loss
+from .losses import load_loss, switch_balance_loss
 from .routing import BEVSummaryHead, ContextEncoder, TopkGate
 
 
@@ -53,7 +53,7 @@ class BEVMoEBlock(nn.Module):
         num_experts:      Number of expert modules.
         k:                Top-k experts selected per sample.
         num_convs:        Conv layers inside each BEVResidualExpert.
-        importance_coef:  Weight for the importance balancing loss
+        importance_coef:  Weight for the Switch balance loss α
                           (config name: moe_importance_loss_weight). Default 1e-2.
         load_coef:        Weight for the load balancing loss. Default 1e-2.
         router_pool_size: Spatial size for BEVSummaryHead pooling grid. Default 2.
@@ -135,7 +135,7 @@ class BEVMoEBlock(nn.Module):
             x_out:    BEV feature map (B, C, H, W) after expert processing.
             moe_info: Dict with 'full_softmax_probs', 'sparse_softmax_probs',
                       'topk_idx', 'topk_weights', 'aux_loss',
-                      'importance_loss', 'load_loss'.
+                      'balance_loss', 'load_loss'.
         """
         B = x_bev.shape[0]
 
@@ -174,12 +174,18 @@ class BEVMoEBlock(nn.Module):
             x_out[b] = sample_out[0]  # x_out[b].shape = (C, H, W), sample_out[0].shape = (C, H, W)
 
         # ── Step 4: Auxiliary losses ───────────────────────────────────
-        # importance_loss uses full_softmax_probs (pre-top-k) so all experts
-        # receive gradient signal, not just the selected ones.
+        # switch_balance_loss: multiplies detached dispatch frequency (f_e)
+        # by differentiable mean router probability (P_e).  When an expert is
+        # overloaded, gradient through P_e pushes the router away from it.
         # load_loss is detached — monitoring signal only, no gradient.
-        imp_loss = importance_loss(gate_out.full_softmax_probs, self.importance_coef)
+        bal_loss = switch_balance_loss(
+            gate_out.full_softmax_probs,
+            gate_out.topk_idx,
+            self.num_experts,
+            self.importance_coef,
+        )
         ld_loss  = load_loss(expert_counts, self.load_coef)
-        aux      = imp_loss + ld_loss
+        aux      = bal_loss + ld_loss
 
         moe_info = {
             'full_softmax_probs':   gate_out.full_softmax_probs.detach(),
@@ -187,7 +193,7 @@ class BEVMoEBlock(nn.Module):
             'topk_idx':             gate_out.topk_idx.detach(),
             'topk_weights':         gate_out.topk_weights.detach(),
             'aux_loss':             aux,
-            'importance_loss':      imp_loss,   # WITH grad — added to losses by bevfusion
+            'balance_loss':         bal_loss,   # WITH grad — added to losses by bevfusion
             'load_loss':            ld_loss,    # already detached — added for log visibility
         }
         # Cache on self so MoERoutingHook can read it after each iter

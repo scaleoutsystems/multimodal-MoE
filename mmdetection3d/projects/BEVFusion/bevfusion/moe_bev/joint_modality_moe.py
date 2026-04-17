@@ -36,7 +36,7 @@ from torch import Tensor
 
 from mmdet3d.registry import MODELS
 
-from .losses import importance_loss, load_loss
+from .losses import load_loss, switch_balance_loss
 from .routing import BEVSummaryHead, ContextEncoder, TopkGate
 
 
@@ -184,9 +184,14 @@ class JointModalityMoEBlock(nn.Module):
                 expert_counts[eidx] += 1
             out[b] = sample_out[0]
 
-        imp_loss = importance_loss(gate_out.full_softmax_probs, self.importance_coef)
+        bal_loss = switch_balance_loss(
+            gate_out.full_softmax_probs,
+            gate_out.topk_idx,
+            self.num_experts,
+            self.importance_coef,
+        )
         ld_loss  = load_loss(expert_counts, self.load_coef)
-        aux      = imp_loss + ld_loss
+        aux      = bal_loss + ld_loss
 
         moe_info = {
             'full_softmax_probs':   gate_out.full_softmax_probs.detach(),
@@ -194,7 +199,7 @@ class JointModalityMoEBlock(nn.Module):
             'topk_idx':             gate_out.topk_idx.detach(),
             'topk_weights':         gate_out.topk_weights.detach(),
             'aux_loss':             aux,
-            'importance_loss':      imp_loss,
+            'balance_loss':         bal_loss,
             'load_loss':            ld_loss,
         }
         self._moe_info = moe_info

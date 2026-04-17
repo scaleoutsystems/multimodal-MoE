@@ -40,7 +40,7 @@ Fusion:
     This is the ONLY fusion step — no ConvFuser is used in this variant.
 
 Regularisation:
-    - importance_loss: equal gate-prob mass across all E experts.
+    - switch_balance_loss: load-balance loss across all E experts.
     - load_loss:       equal hard selection counts across all E experts.
     - group_balance_loss: equal total routing mass to camera-group vs LiDAR-group.
 
@@ -67,7 +67,7 @@ from torch import Tensor
 from mmdet3d.registry import MODELS
 
 from .bev_experts import make_bev_experts
-from .losses import group_balance_loss, importance_loss, load_loss
+from .losses import group_balance_loss, load_loss, switch_balance_loss
 from .routing import BEVSummaryHead, ContextEncoder, TopkGate
 
 
@@ -245,7 +245,12 @@ class ModalitySpecificMoEBlock(nn.Module):
             torch.cat([cam_out, lidar_out], dim=1))
 
         # ── Step 5: Auxiliary losses ──────────────────────────────────
-        imp_loss = importance_loss(gate_out.full_softmax_probs, self.importance_coef)
+        bal_loss = switch_balance_loss(
+            gate_out.full_softmax_probs,
+            gate_out.topk_idx,
+            self.num_experts,
+            self.importance_coef,
+        )
         ld_loss  = load_loss(expert_counts, self.load_coef)
         gb_loss  = group_balance_loss(
             gate_out.full_softmax_probs,
@@ -253,7 +258,7 @@ class ModalitySpecificMoEBlock(nn.Module):
             self.lidar_expert_ids,
             self.group_balance_coef,
         )
-        aux = imp_loss + ld_loss + gb_loss
+        aux = bal_loss + ld_loss + gb_loss
 
         with torch.no_grad():
             cam_mass   = gate_out.full_softmax_probs[:, self.cam_expert_ids].sum().item()
@@ -269,7 +274,7 @@ class ModalitySpecificMoEBlock(nn.Module):
             'cam_group_mass':       cam_mass,
             'lidar_group_mass':     lidar_mass,
             'aux_loss':             aux,
-            'importance_loss':      imp_loss,
+            'balance_loss':         bal_loss,
             'load_loss':            ld_loss,
         }
         self._moe_info = moe_info

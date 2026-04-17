@@ -1,28 +1,94 @@
 """Auxiliary MoE losses for expert balancing.
 
-importance_loss     — equal gate-probability mass across all experts (differentiable).
-load_loss           — equal hard-selection counts across all experts (monitoring only).
+switch_balance_loss — Switch Transformer load-balance loss; combines detached
+                      hard-selection frequency with differentiable router
+                      probability so the gradient actually corrects imbalance.
+                      Replaces importance_loss for hard top-k routing.
+load_loss           — equal hard-selection counts across all experts (monitoring only,
+                      no gradient).
 group_balance_loss  — equal routing mass between two expert groups, e.g. camera vs
                       LiDAR experts in the modality-specific variant (differentiable).
-
-All imbalance measures use squared coefficient of variation (CV²) or a squared
-fractional deviation, both of which are zero when balanced and grow smoothly
-with imbalance — making them easy to tune via a scalar coefficient.
+importance_loss     — (superseded) CV² of soft probability mass; too weak for hard
+                      top-k routing because dense probs are nearly uniform when
+                      logits are small.  Kept for reference.
 
 Variant usage:
-    joint-modality experts (JointModalityMoEBlock) → importance_loss + load_loss
-    modality-specific (ModalitySpecificMoEBlock) → importance_loss + load_loss
+    joint-modality experts (JointModalityMoEBlock) → switch_balance_loss + load_loss
+    modality-specific (ModalitySpecificMoEBlock) → switch_balance_loss + load_loss
                                                    + group_balance_loss
-    fusion-then-MoE (BEVMoEBlock on fused BEV) → importance_loss + load_loss
+    fusion-then-MoE (BEVMoEBlock on fused BEV) → switch_balance_loss + load_loss
 """
 from typing import List
 
+import torch
 from torch import Tensor
+
+
+def switch_balance_loss(
+    gate_probs: Tensor,
+    topk_idx: Tensor,
+    num_experts: int,
+    coef: float,
+) -> Tensor:
+    """Switch Transformer auxiliary load-balance loss (Fedus et al., 2022).
+
+    Exact formula — Switch Transformers, Section 2.1:
+
+        L_balance = α · E · Σ_{e=1}^{E}  f_e · P_e
+
+    where:
+        E   = num_experts
+        α   = coef                         (scaling coefficient)
+
+        f_e = (1 / (B · k)) · Σ_{b=1}^{B} Σ_{j=1}^{k} 1[topk_idx[b,j] = e]
+            = fraction of all token-expert slots dispatched to expert e
+            [computed from discrete top-k selections → detached, no gradient]
+
+        P_e = (1 / B) · Σ_{b=1}^{B} gate_probs[b, e]
+            = mean pre-top-k softmax probability assigned to expert e
+            [differentiable — gradient flows back to the router]
+
+    When expert e is overloaded (high f_e), the product f_e · P_e is large,
+    so the gradient through P_e pushes the router to reduce its probability
+    for that expert.  This directly counteracts the observed load imbalance,
+    unlike importance_loss whose signal collapses to zero when logits are small.
+
+    Scale: L_balance = α   when routing is perfectly uniform (f_e = P_e = 1/E).
+           L_balance = α·E when all tokens are dispatched to a single expert.
+
+    Args:
+        gate_probs:  (B, E) pre-top-k full softmax probabilities.
+        topk_idx:    (B, k) indices of selected experts per sample.
+        num_experts: Total number of experts E.
+        coef:        Scalar weight α applied to the loss.
+
+    Returns:
+        Scalar loss tensor (differentiable through gate_probs).
+    """
+    B, k = topk_idx.shape
+
+    # f_e: detached dispatch frequency per expert.
+    counts = torch.zeros(num_experts, device=gate_probs.device)
+    counts.scatter_add_(
+        0,
+        topk_idx.reshape(-1),
+        torch.ones(B * k, device=gate_probs.device),
+    )
+    f = (counts / (B * k)).detach()    # (E,) — no gradient
+
+    # P_e: mean differentiable router probability per expert.
+    P = gate_probs.mean(dim=0)          # (E,) — gradient flows here
+
+    return num_experts * (f * P).sum() * coef
 
 
 def importance_loss(gate_probs: Tensor, coef: float,
                     eps: float = 1e-8) -> Tensor:
-    """Penalise uneven probability mass across experts.
+    """(Superseded by switch_balance_loss for hard top-k routing.)
+
+    Penalise uneven soft probability mass across experts via CV².
+    Ineffective when gate logits are small because the dense softmax
+    remains nearly uniform even when hard selections are skewed.
 
     Args:
         gate_probs: (B, E) softmax routing probabilities.
@@ -32,11 +98,7 @@ def importance_loss(gate_probs: Tensor, coef: float,
     Returns:
         Scalar loss tensor (differentiable through gate_probs).
     """
-    # Sum each expert's probability across the batch → "importance" of
-    # each expert.  If the gate always picks one expert, that expert's
-    # importance dominates and CV^2 is high → loss pushes the gate to
-    # spread probability mass more evenly.
-    importance = gate_probs.sum(dim=0)  # sum the probabilities column-wise across the batch (B, E) --> (E,)
+    importance = gate_probs.sum(dim=0)
     mean = importance.mean()
     cv_sq = importance.var() / (mean ** 2 + eps)
     return cv_sq * coef
