@@ -69,7 +69,7 @@ Scaling behaviour with g = num_experts
                                         switch_balance_loss back-pressure
 
 Sentinel: if grad_norm drifts above ~50 sustained (typical is 5–10), reduce
-residual_gain or increase importance_coef.
+residual_gain or increase switch_coef.
 
 moe_info contract
 -----------------
@@ -118,7 +118,7 @@ class BEVMoEBlock(nn.Module):
         num_experts:      Number of expert modules.
         k:                Top-k experts selected per sample.
         num_convs:        Conv layers inside each BEVResidualExpert.
-        importance_coef:  Weight for the Switch balance loss α
+        switch_coef:      Weight for the Switch balance loss α
                           (config name: moe_importance_loss_weight). Default 1e-2.
         load_coef:        Weight for the load balancing loss. Default 1e-2.
         residual_gain:    Scalar multiplier applied to the routed expert delta
@@ -141,8 +141,8 @@ class BEVMoEBlock(nn.Module):
         num_experts: int = 6,
         k: int = 1,
         num_convs: int = 1,
-        importance_coef: float = 0.02,    # moe_importance_loss_weight
-        load_coef: float = 0.01,
+        switch_coef: float = 0.001,    # moe_importance_loss_weight
+        load_coef: float = 0.001,
         residual_gain: float = 1.0,
         router_pool_size: int = 2,
         router_hidden_dim: int = 128,
@@ -153,7 +153,7 @@ class BEVMoEBlock(nn.Module):
         self.channels = channels
         self.num_experts = num_experts
         self.k = k
-        self.importance_coef = importance_coef
+        self.switch_coef = switch_coef
         self.load_coef = load_coef
         self.residual_gain = float(residual_gain)
 
@@ -266,7 +266,7 @@ class BEVMoEBlock(nn.Module):
             gate_out.full_softmax_probs,
             gate_out.topk_idx,
             self.num_experts,
-            self.importance_coef,
+            self.switch_coef,
         )
         ld_loss  = load_loss(expert_counts, self.load_coef)
         aux      = bal_loss + ld_loss
