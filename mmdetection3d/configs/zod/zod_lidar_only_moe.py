@@ -44,10 +44,19 @@ bev_moe_cfg = dict(
     type='BEVMoEBlock',
     channels=256,
     num_experts=num_experts,
-    k=1,
+    k=2,
     num_convs=2,
-    importance_coef=0.005,
-    load_coef=0.01,
+    # Switch balance loss coefficient (α).  Reduced from 0.005 → 0.001 to
+    # allow mild probability peaking during bootstrap.  At perfect uniform
+    # routing L_balance ≡ α, so the floor is now 0.001 instead of 0.005.
+    importance_coef=0.0005,
+    load_coef=0.0005,
+    # Residual-delta dispatch gain.  Set to num_experts so that at init
+    # (Switch-style weight ≈ 1/E) the effective expert contribution
+    # g·w ≈ 1 — experts contribute at full scale from step 1, unblocking
+    # the detection gradient to the gate.  See BEVMoEBlock class docstring
+    # for the full bootstrap rationale and stability caveats.
+    residual_gain=float(num_experts),
     router_pool_size=2,
     router_hidden_dim=128,
     router_out_dim=64,
@@ -321,11 +330,48 @@ train_cfg = dict(by_epoch=True, max_epochs=20, val_interval=1)
 val_cfg = dict()
 test_cfg = dict()
 
+# ── Optimizer ─────────────────────────────────────────────────────────────
+# Routing-path param groups (gate / summary head / context encoder) are
+# small MLPs with few parameters that need to learn meaningful logit
+# margins for top-k dispatch to specialise.  Empirically the dense softmax
+# stays near-uniform (margins ~0.05 in logit space) while hard top-1 is
+# skewed, suggesting the routing path is over-damped by the same weight
+# decay (0.01) and base LR (5e-5) used for the pretrained LiDAR backbone.
+#
+# We therefore give routing-path parameters their own multipliers via
+# MMEngine's paramwise_cfg.custom_keys (matched as substrings against
+# parameter names; longest match wins, so these keys cannot leak onto
+# bev_moe.experts.*):
+#
+#   bev_moe.gate.*             — TopkGate.gate linear layer
+#   bev_moe.summary.*          — BEVSummaryHead MLP + final LayerNorm
+#   bev_moe.context_encoder.*  — ContextEncoder embeddings + proj MLP
+#
+# lr_mult=3.0   → routing LR 1.5e-4 (vs backbone 5e-5); lets logit
+#                 margins grow faster so top-1 choices become confident.
+# decay_mult=0.0 → no weight decay on routing params.  Decay on the gate
+#                 Linear actively shrinks logit magnitudes, which is
+#                 exactly what's preventing margin growth.  Embeddings
+#                 and LayerNorm params also standardly get no decay.
+#
+# Expert CNN blocks (bev_moe.experts.*) are NOT listed here and therefore
+# fall through to the default AdamW settings (lr=5e-5, weight_decay=0.01),
+# matching the LiDAR backbone / neck / bbox_head.  Architecture, routing
+# semantics (k=2, Switch-style weights), residual_gain, and aux losses are
+# all unchanged.
 optim_wrapper = dict(
     type='AmpOptimWrapper',
     optimizer=dict(type='AdamW', lr=lr, weight_decay=0.01),
     clip_grad=dict(max_norm=10, norm_type=2),
-    loss_scale='dynamic')
+    loss_scale='dynamic',
+    paramwise_cfg=dict(
+        custom_keys={
+            'bev_moe.gate':            dict(lr_mult=3.0, decay_mult=0.0),
+            'bev_moe.summary':         dict(lr_mult=3.0, decay_mult=0.0),
+            'bev_moe.context_encoder': dict(lr_mult=3.0, decay_mult=0.0),
+        },
+    ),
+)
 
 auto_scale_lr = dict(enable=False)
 log_processor = dict(window_size=50)

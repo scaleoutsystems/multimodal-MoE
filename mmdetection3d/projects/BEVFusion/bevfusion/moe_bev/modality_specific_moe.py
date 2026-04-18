@@ -29,7 +29,14 @@ Expert dispatch:
 
     For each sample, the k selected experts are dispatched to their respective
     modality's BEV map. The output for each modality starts from the original
-    BEV (identity passthrough) and accumulates weighted expert deltas.
+    BEV (identity passthrough) and accumulates weighted expert deltas scaled
+    by ``residual_gain``:
+        cam_out   = cam_bev   + residual_gain · Σ_j∈cam  w_j · (expert_j(cam_bev) − cam_bev)
+        lidar_out = lidar_bev + residual_gain · Σ_j∈lid  w_j · (expert_j(lidar_bev) − lidar_bev)
+    See BEVMoEBlock docstring (bev_moe.py) for the bootstrap rationale behind
+    residual_gain; the short version is that Switch-style weights are ≈ 1/E at
+    init, so residual_gain = num_experts keeps expert contributions at full
+    scale from step 1 and unblocks gate learning.
 
 Fusion:
     After expert dispatch, cam_out (Cc ch) and lidar_out (Cl ch) are
@@ -90,6 +97,13 @@ class ModalitySpecificMoEBlock(nn.Module):
         importance_coef:       Weight for importance loss.
         load_coef:             Weight for load loss.
         group_balance_coef:    Weight for camera-vs-LiDAR group balance loss.
+        residual_gain:         Scalar multiplier on the routed expert delta
+                               (applied independently to cam and LiDAR paths):
+                                 cam_out   = cam_bev   + residual_gain · Σ w·Δ_cam
+                                 lidar_out = lidar_bev + residual_gain · Σ w·Δ_lidar
+                               Set to num_experts (= num_cam_experts +
+                               num_lidar_experts) to compensate for Switch-style
+                               weights (≈ 1/E at init).  Default 1.0.
         router_pool_size:      Spatial pooling size for BEVSummaryHead.
         router_hidden_dim:     Hidden dim of BEVSummaryHead MLP.
         router_out_dim:        Output dim per modality BEVSummaryHead.
@@ -109,6 +123,7 @@ class ModalitySpecificMoEBlock(nn.Module):
         importance_coef: float = 0.02,
         load_coef: float = 0.01,
         group_balance_coef: float = 0.005,
+        residual_gain: float = 1.0,
         router_pool_size: int = 2,
         router_hidden_dim: int = 128,
         router_out_dim: int = 64,
@@ -125,6 +140,7 @@ class ModalitySpecificMoEBlock(nn.Module):
         self.importance_coef = importance_coef
         self.load_coef = load_coef
         self.group_balance_coef = group_balance_coef
+        self.residual_gain = float(residual_gain)
 
         self.cam_expert_ids: List[int] = list(range(num_cam_experts))
         self.lidar_expert_ids: List[int] = list(range(num_cam_experts,
@@ -232,13 +248,13 @@ class ModalitySpecificMoEBlock(nn.Module):
                 if eidx in self.cam_expert_ids:
                     exp_out = self.cam_experts[eidx](cam_bev[b:b + 1])
                     delta = exp_out - cam_bev[b:b + 1]
-                    cam_out[b] = cam_out[b] + weight * delta[0]
+                    cam_out[b] = cam_out[b] + self.residual_gain * weight * delta[0]
                 else:
                     lidar_eidx = eidx - self.num_cam_experts
                     exp_out = self.lidar_experts[lidar_eidx](
                         lidar_bev[b:b + 1])
                     delta = exp_out - lidar_bev[b:b + 1]
-                    lidar_out[b] = lidar_out[b] + weight * delta[0]
+                    lidar_out[b] = lidar_out[b] + self.residual_gain * weight * delta[0]
 
         # ── Step 4: Fusion — concat → 1×1 proj → 3×3 align ──────────
         fused_bev = self.fusion_proj(

@@ -18,32 +18,58 @@ descriptor is signed and unit-variance so gate logits can grow and carry
 meaningful preference signals.  See BEVSummaryHead docstring for the full shape
 trace and design rationale.
 
-Dispatch strategy: residual-delta
-----------------------------------
+Dispatch strategy: residual-delta with bootstrap gain
+------------------------------------------------------
 BEVResidualExperts output  x + delta  (the input feature plus a residual).
 Dispatch is therefore implemented as:
 
-    x_out = x_bev + Σ_j  w_j · (expert_j(x_bev) − x_bev)
+    x_out = x_bev + g · Σ_j  w_j · (expert_j(x_bev) − x_bev)
 
-where w_j are Switch-style dispatch weights (see routing.py for definition).
+where w_j are Switch-style dispatch weights (see routing.py for definition)
+and g = ``residual_gain`` is a constant scalar multiplier on the expert
+contribution.
 
-Why this matters
-~~~~~~~~~~~~~~~~
+Why the gain exists (bootstrap problem)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Gate weights from TopkGate are Switch-style: they are gathered from the
 pre-top-k softmax and NOT renormalised to sum to 1.  At initialisation each
-weight is approximately 1/E (≈ 0.17 for 6 experts).
+weight is approximately 1/E (≈ 0.17 for 6 experts).  With residual-delta
+dispatch and g=1, the expert's effective contribution is then w·Δ ≈ Δ/E,
+which is essentially zero because Δ itself is small at init.
 
+Consequence without a gain (g=1):
+  - Experts barely influence x_out → detection loss doesn't prefer any
+    particular expert → no rich-get-richer signal → gate's softmax stays
+    near-uniform → w stays ≈ 1/E → experts never learn to differentiate.
+    (Empirically: moe_balance_loss stays pinned at α regardless of hard
+     selection imbalance.)
+
+Setting g = num_experts (≈ E) makes g·w ≈ 1 at init, so the expert
+contributes at full scale from step 1.  As experts learn distinctive Δs,
+the detection gradient w.r.t. w becomes strong (∝ g·Δ), which lets the
+gate actually peak → specialisation emerges.
+
+Why the naive dispatch (no residual, no gain) is wrong
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 If instead the naive dispatch   x_out = Σ_j w_j · expert_j(x_bev)   were used
-with w_j ≈ 0.17, the output BEV feature map would be scaled down 6×.  That
+with w_j ≈ 1/E, the output BEV feature map would be scaled down E× globally
+(because residual experts output x+Δ, so the whole x is scaled too).  That
 scaling propagates through pts_backbone and collapses detection performance
 (empirically: loss_heatmap rises 2×, matched_ious drops 10×, moe_balance_loss
 stays near zero because the gate receives a corrupt gradient signal).
 
-The residual-delta form isolates the expert contribution in the delta term so
-the backbone always sees an x-scale feature regardless of w_j magnitude:
-    k=1, w=1    → x_out = expert_out          (exactly the old behaviour)
-    k=1, w<<1   → x_out ≈ x_bev + small delta (soft gating, scale preserved)
-    k>1, any w  → weighted mixture of deltas added to x_bev
+Scaling behaviour with g = num_experts
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Gate state                    g·w   Effective expert contribution
+    ─────────────────────────────────────────────────────────────────
+    Uniform softmax (init)        ≈ 1   x_out ≈ x_bev + Δ   (full scale)
+    Mild peaking (w ≈ 0.3)        ≈ 1.8 moderate amplification
+    Strong peaking (w ≈ 0.5)      ≈ 3.0 possible instability — watch grad_norm
+    Collapsed (w ≈ 1.0)           ≈ E   risk of runaway — unlikely under
+                                        switch_balance_loss back-pressure
+
+Sentinel: if grad_norm drifts above ~50 sustained (typical is 5–10), reduce
+residual_gain or increase importance_coef.
 
 moe_info contract
 -----------------
@@ -95,6 +121,13 @@ class BEVMoEBlock(nn.Module):
         importance_coef:  Weight for the Switch balance loss α
                           (config name: moe_importance_loss_weight). Default 1e-2.
         load_coef:        Weight for the load balancing loss. Default 1e-2.
+        residual_gain:    Scalar multiplier applied to the routed expert delta
+                          in the residual-delta dispatch:
+                             x_out = x_bev + residual_gain · Σ_j w_j · Δ_j
+                          Set to num_experts to compensate for the ≈ 1/E
+                          magnitude of Switch-style weights at init (bootstrap).
+                          Default 1.0 (no amplification — preserves legacy
+                          behaviour when the caller doesn't override).
         router_pool_size: Spatial size for BEVSummaryHead pooling grid. Default 2.
         router_hidden_dim: Hidden dim of the MLP inside BEVSummaryHead. Default 128.
         router_out_dim:   Output dim of BEVSummaryHead (gate input dim). Default 64.
@@ -110,6 +143,7 @@ class BEVMoEBlock(nn.Module):
         num_convs: int = 1,
         importance_coef: float = 0.02,    # moe_importance_loss_weight
         load_coef: float = 0.01,
+        residual_gain: float = 1.0,
         router_pool_size: int = 2,
         router_hidden_dim: int = 128,
         router_out_dim: int = 64,
@@ -121,6 +155,7 @@ class BEVMoEBlock(nn.Module):
         self.k = k
         self.importance_coef = importance_coef
         self.load_coef = load_coef
+        self.residual_gain = float(residual_gain)
 
         # Independent residual-conv experts; with top-1 routing
         # at most one expert runs per sample — cost ≈ one ConvFuser forward
@@ -196,16 +231,18 @@ class BEVMoEBlock(nn.Module):
         #                                        (NOT renormalised to sum to 1)
 
         # ── Step 3: Dispatch to selected experts ──────────────────────
-        # Residual-delta dispatch:
-        #   x_out = x_bev + Σ_j w_j · (expert_j(x_bev) − x_bev)
+        # Residual-delta dispatch with bootstrap gain:
+        #   x_out = x_bev + g · Σ_j w_j · (expert_j(x_bev) − x_bev)
+        # where g = self.residual_gain.
+        #
         # Experts are residual (output x + delta), so (expert_out − x_bev)
-        # extracts the delta.  Adding router-confidence-weighted deltas back
-        # to x_bev preserves the input scale regardless of w_j magnitude:
-        #   k=1, w=1   → x_out = expert_out
-        #   k=1, w<<1  → x_out ≈ x_bev + small expert contribution
-        # This is what makes Switch-style (non-sum-to-1) weights safe here —
-        # without it, w<1 would down-scale the BEV feature map 1/w× and
-        # break the backbone.
+        # extracts the delta.  Adding g·w_j-weighted deltas back to x_bev
+        # preserves the input scale regardless of w_j magnitude:
+        #   k=1, g·w ≈ 1  → x_out ≈ expert_out           (full contribution)
+        #   k=1, g·w << 1 → x_out ≈ x_bev + small delta  (soft gating)
+        # g = num_experts compensates for Switch-style weights which at init
+        # are ≈ 1/E; without this, expert contribution is effectively zero
+        # and the gate gets no gradient signal (see class docstring).
         x_out = x_bev.clone()
         expert_counts = torch.zeros(self.num_experts, device=x_bev.device)
 
@@ -218,7 +255,7 @@ class BEVMoEBlock(nn.Module):
                 expert_out = self.experts[eidx](xb)
                 delta_sum = delta_sum + weight * (expert_out - xb)
                 expert_counts[eidx] += 1
-            x_out[b] = (xb + delta_sum)[0]
+            x_out[b] = (xb + self.residual_gain * delta_sum)[0]
 
         # ── Step 4: Auxiliary losses ───────────────────────────────────
         # switch_balance_loss: multiplies detached dispatch frequency (f_e)

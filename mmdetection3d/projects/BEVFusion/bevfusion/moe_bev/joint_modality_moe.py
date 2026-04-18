@@ -42,6 +42,20 @@ IMPORTANT — gradient flow limitation with k=1:
     passed to switch_balance_loss so gradient flows through the probability
     average P_e regardless of k.
 
+residual_gain parameter
+-----------------------
+``residual_gain`` is accepted for config parity with BEVMoEBlock and
+ModalitySpecificMoEBlock but is a no-op in this block.  The bootstrap
+problem it solves (Switch weights ≈ 1/E making expert contributions
+vanish under residual-delta dispatch) does not apply here because:
+  (1) There is no natural residual reference input — joint experts produce
+      fresh fused BEVs, not corrections on top of an input.
+  (2) The locally renormalised dispatch weights already sum to 1, so the
+      fused output is at unit scale at init regardless of the raw weight
+      magnitude.
+A warning is issued if a non-1.0 value is passed so the user knows the
+value is silently ignored.
+
 moe_info contract
 -----------------
 self._moe_info is written after every forward() with:
@@ -119,6 +133,11 @@ class JointModalityMoEBlock(nn.Module):
         k:                 Top-k experts per sample.
         importance_coef:   Weight for importance balancing loss.
         load_coef:         Weight for load balancing loss.
+        residual_gain:     Accepted for config parity with BEVMoEBlock /
+                           ModalitySpecificMoEBlock but is a NO-OP here
+                           (see module docstring for why).  A warning is
+                           issued if a value other than 1.0 is passed.
+                           Default 1.0.
         router_pool_size:  Spatial size for BEVSummaryHead pooling grid.
         router_hidden_dim: Hidden dim of the MLP inside BEVSummaryHead.
         router_out_dim:    Output dim per modality BEVSummaryHead.
@@ -135,6 +154,7 @@ class JointModalityMoEBlock(nn.Module):
         k: int = 1,
         importance_coef: float = 0.02,
         load_coef: float = 0.01,
+        residual_gain: float = 1.0,
         router_pool_size: int = 2,
         router_hidden_dim: int = 128,
         router_out_dim: int = 64,
@@ -148,6 +168,18 @@ class JointModalityMoEBlock(nn.Module):
         self.k = k
         self.importance_coef = importance_coef
         self.load_coef = load_coef
+        self.residual_gain = float(residual_gain)
+        if self.residual_gain != 1.0:
+            import warnings
+            warnings.warn(
+                f'JointModalityMoEBlock received residual_gain='
+                f'{self.residual_gain} but this parameter is a no-op for '
+                f'this block (joint experts produce fresh fused BEVs; '
+                f'there is no natural residual reference).  The value is '
+                f'silently ignored — use BEVMoEBlock or '
+                f'ModalitySpecificMoEBlock if you need residual_gain to '
+                f'have effect.',
+                stacklevel=2)
 
         self.experts = nn.ModuleList([
             JointModalityExpert(cam_channels, lidar_channels, out_channels)
