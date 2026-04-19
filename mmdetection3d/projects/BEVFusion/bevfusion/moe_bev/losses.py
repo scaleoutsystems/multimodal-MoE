@@ -117,14 +117,14 @@ def load_loss(expert_counts: Tensor, coef: float,
         eps: small constant to avoid division by zero.
 
     Returns:
-        Scalar loss tensor (not differentiable -- use importance_loss
+        Scalar loss tensor (not differentiable -- use switch_balance_loss
         for gradient-based balancing).
     """
-    # Unlike importance_loss, this operates on discrete counts (how many
+    # Unlike switch_balance_loss, this operates on discrete counts (how many
     # samples were actually routed to each expert) which are not
     # differentiable.  .detach() ensures no gradient flows — this loss
     # serves purely as a logged monitoring signal alongside the
-    # differentiable importance_loss.
+    # differentiable switch_balance_loss.
     counts = expert_counts.float()
     mean = counts.mean()
     cv_sq = counts.var() / (mean ** 2 + eps)

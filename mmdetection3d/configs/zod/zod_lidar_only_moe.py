@@ -49,8 +49,8 @@ bev_moe_cfg = dict(
     # Switch balance loss coefficient (α).  Reduced from 0.005 → 0.001 to
     # allow mild probability peaking during bootstrap.  At perfect uniform
     # routing L_balance ≡ α, so the floor is now 0.001 instead of 0.005.
-    importance_coef=0.0005,
-    load_coef=0.0005,
+    switch_coef=0.005,
+    load_coef=0.005,
     # Residual-delta dispatch gain.  Set to num_experts so that at init
     # (Switch-style weight ≈ 1/E) the effective expert contribution
     # g·w ≈ 1 — experts contribute at full scale from step 1, unblocking

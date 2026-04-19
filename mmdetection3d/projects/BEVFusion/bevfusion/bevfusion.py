@@ -438,12 +438,12 @@ class BEVFusion(Base3DDetector):
         if aux is not None and aux.numel() > 0 and aux.item() > 0:
             losses['aux_depth_loss'] = aux
 
-        # MoE auxiliary losses.  Log importance and load separately so they
-        # appear as distinct entries in the training log.  The combined
+        # MoE auxiliary losses.  Log switch_balance_loss and load_loss separately
+        # so they appear as distinct entries in the training log.  The combined
         # aux_loss tensor already carries the correct gradient via extract_feat;
         # we read per-block _moe_info to get the split.
         if self._moe_aux_loss is not None:
-            _imp_parts: list = []
+            _bal_parts: list = []
             _ld_parts:  list = []
             for _block_name in ('bev_moe', 'joint_modality_moe',
                                 'modality_specific_moe'):
@@ -453,11 +453,11 @@ class BEVFusion(Base3DDetector):
                     _bal = _info.get('balance_loss')
                     _ld  = _info.get('load_loss')
                     if _bal is not None:
-                        _imp_parts.append(_bal)
+                        _bal_parts.append(_bal)
                     if _ld is not None:
                         _ld_parts.append(_ld)
-            if _imp_parts:
-                losses['moe_balance_loss'] = sum(_imp_parts)
+            if _bal_parts:
+                losses['moe_balance_loss'] = sum(_bal_parts)
                 losses['moe_load_loss']    = sum(_ld_parts) if _ld_parts else \
                     self._moe_aux_loss.detach() * 0
             else:

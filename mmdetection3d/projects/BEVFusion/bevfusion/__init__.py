@@ -4,6 +4,20 @@ __all__ = ['BEVFusionSparseEncoder']
 
 # Some BEVFusion modules require custom CUDA extensions (e.g., bev_pool_ext).
 # Keep sparse encoder importable even if those optional ops are unavailable.
+# MoE modules have no CUDA-extension dependencies and must always be
+# importable so that @MODELS.register_module() runs unconditionally.
+from .moe_bev import (BEVMoEBlock, BEVResidualExpert,
+                      JointModalityExpert, JointModalityMoEBlock,
+                      ModalitySpecificMoEBlock)
+
+__all__ += [
+    'BEVMoEBlock', 'JointModalityMoEBlock', 'BEVResidualExpert',
+    'JointModalityExpert', 'ModalitySpecificMoEBlock',
+]
+
+# The remaining BEVFusion modules require optional CUDA extensions
+# (e.g. bev_pool_ext for the camera LSS path).  Keep them in a
+# try/except so a missing extension doesn't break LiDAR-only runs.
 try:
     from .bevfusion import BEVFusion
     from .bevfusion_camera_zero import BEVFusionCameraZero
@@ -18,13 +32,6 @@ try:
     from .utils import (BBoxBEVL1Cost, HeuristicAssigner3D, HungarianAssigner3D,
                         IoU3DCost)
 
-    # MoE modules — importing the sub-package triggers @MODELS.register_module()
-    # for BEVMoEBlock, JointModalityMoEBlock, ModalitySpecificMoEBlock,
-    # BEVResidualExpert, and JointModalityExpert.
-    from .moe_bev import (BEVMoEBlock, BEVResidualExpert,
-                          JointModalityExpert, JointModalityMoEBlock,
-                          ModalitySpecificMoEBlock)
-
     __all__ += [
         'BEVFusion', 'BEVFusionCameraZero', 'CameraOnlyBEVFusion',
         'TransFusionHead', 'ConvFuser', 'ImageAug3D', 'GridMask',
@@ -33,8 +40,6 @@ try:
         'LSSTransform', 'BEVLoadMultiViewImageFromFiles',
         'TransformerDecoderLayer', 'BEVFusionRandomFlip3D',
         'BEVFusionGlobalRotScaleTrans',
-        'BEVMoEBlock', 'JointModalityMoEBlock', 'BEVResidualExpert',
-        'JointModalityExpert', 'ModalitySpecificMoEBlock',
     ]
 except Exception:
     pass

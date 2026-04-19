@@ -119,7 +119,7 @@ class BEVMoEBlock(nn.Module):
         k:                Top-k experts selected per sample.
         num_convs:        Conv layers inside each BEVResidualExpert.
         switch_coef:      Weight for the Switch balance loss α
-                          (config name: moe_importance_loss_weight). Default 1e-2.
+                          (logged as moe_balance_loss). Default 1e-2.
         load_coef:        Weight for the load balancing loss. Default 1e-2.
         residual_gain:    Scalar multiplier applied to the routed expert delta
                           in the residual-delta dispatch:
@@ -141,7 +141,7 @@ class BEVMoEBlock(nn.Module):
         num_experts: int = 6,
         k: int = 1,
         num_convs: int = 1,
-        switch_coef: float = 0.001,    # moe_importance_loss_weight
+        switch_coef: float = 0.001,    # logged as moe_balance_loss
         load_coef: float = 0.001,
         residual_gain: float = 1.0,
         router_pool_size: int = 2,
