@@ -13,28 +13,20 @@ GateOutput contract
 -------------------
 All gate modules return a ``GateOutput`` with the following fields:
 
-    full_softmax_probs   (B, E)  — softmax(logits) computed over ALL experts
-                                   (no masking).  This is the router's "belief"
+    full_softmax_probs   (B, E)  — We take the clean_logits and perform a standard
+                                    softmax over all experts. This shows the "raw belief"
+                                     before we forced the model to be sparse.
+                                   This is the router's "belief"
                                    over the full pool and is used for:
                                      • importance_loss (CV² of per-expert mass)
                                      • dense_mean_prob_per_expert diagnostics
 
-    sparse_softmax_probs (B, E)  — the renormalised top-k mixture laid back
-                                   into ``(B, E)`` with zeros off-topk, so the
-                                   non-zero entries on each row sum to 1.
-                                   Diagnostics/analysis only — dispatch uses
-                                   ``topk_weights`` directly.
-
-    topk_idx             (B, k)  — indices of the k selected experts per sample.
-                                   Used for selection-frequency diagnostics.
-
-    topk_weights         (B, k)  — Shazeer-style dispatch weights:
-                                       topk_weights = softmax(topk_vals / T)
-                                   i.e. the softmax of just the top-k logits.
-                                   Σ_j topk_weights[b, j] = 1 per sample.  This
-                                   is the canonical Shazeer et al. (2017) MoE
-                                   gate output and what every downstream block
-                                   dispatches through.
+    sparse_softmax_probs (B, E)  — This is exactly like full_softmax_probs, 
+                                    but it uses the renormalized weights from topk_weights
+                                     and puts them back into the full-size (1x4) shape.
+                                    Renormalised top-k mixture laid back
+                                   into ``(B, E)`` with zeros off-topk, so the non-zero entries on each row sum to 1.
+                                   Diagnostics/analysis only — dispatch uses ``topk_weights`` directly.
 
     clean_logits         (B, E)  — pre-noise gate logits (identical to the
                                    post-noise logits for deterministic gates).
@@ -499,14 +491,24 @@ class NoisyTopkGate(nn.Module):
     training so that non-dominant experts still receive gradient signal,
     improving load balance.  At inference the gate is deterministic.
 
-    Crucially, logits are **normalised per sample** before noise is added.
-    Without this, a single large logit dominates regardless of noise magnitude,
-    making the noise ineffective at redistributing expert selection.  This
-    normalisation is not in the original paper but is essential in practice.
+    Logits are **z-score normalised per sample** before noise is added.
+    This fixes the signal scale at std=1 across experts throughout training,
+    so the SNR of the noise is stable: ``noise_floor=0.4`` always gives
+    SNR≈2.5 and can reliably flip top-k selections regardless of how large
+    the gate's weight matrix grows.  Without z-score the gate logits drift to
+    ±3–5 units over training and ``noise_floor=0.4`` becomes negligible —
+    noise can no longer flip top-k, so exploration and the Gaussian-CDF
+    ``load_loss`` both degrade silently in late training.
+
+    With z-score the maximum softmax value is bounded at ~0.45 (E=6) or
+    ~0.48 (E=5) for T=1.0.  To allow decisive per-context dense probabilities
+    **lower the temperature** rather than removing z-score: T=0.5 doubles
+    the effective logit margins in softmax space, transforming the peak from
+    ~0.45 to ~0.75 while keeping noise fully effective.
 
     Routing procedure:
       1. ``clean_logits = W_gate(x)`` then z-score normalise per sample.
-      2. Training: ``noisy_logits = clean_logits + ε · softplus(W_noise(x)) + noise_floor``.
+      2. Training: ``noisy_logits = clean_logits + randn * noise_floor``.
          Eval:    ``noisy_logits = clean_logits``.
       3. ``full_softmax_probs = softmax(noisy_logits / T)`` — pre-top-k
          router belief (consumed by ``importance_loss``).
@@ -516,6 +518,17 @@ class NoisyTopkGate(nn.Module):
       6. ``sparse_softmax_probs`` is the same mixture placed into ``(B, E)``
          with zeros off-topk (diagnostics only — blocks dispatch through
          ``topk_weights`` directly).
+
+    Why constant noise rather than input-dependent ``W_noise(x)``
+    -------------------------------------------------------------
+    The original Shazeer paper uses a learned linear ``W_noise(x)`` to produce
+    per-sample per-expert noise std.  In this implementation logits are
+    **z-score normalised** per sample before noise addition, so the signal scale
+    is already fixed at std=1 across experts — there is no sample-specific
+    scale to modulate.  A full ``W_noise`` matmul (same size as ``W_gate``)
+    therefore adds cost without benefit.  The constant ``noise_floor`` is
+    sufficient: it controls exploration uniformly across all inputs, and the
+    ``load_loss`` Gaussian-CDF denominator uses this same constant honestly.
 
     Args:
         feat_dim: Dimension of the pooled BEV feature vector.
@@ -529,10 +542,10 @@ class NoisyTopkGate(nn.Module):
             impact on probabilities (since noise is added pre-scaling);
             values > 1 flatten it.  Top-k selection is unaffected (T>0
             preserves rank).
-        noise_floor: Minimum noise std added on top of the learned component.
-            Prevents the network from collapsing noise to zero.  Default: 0.3.
-        input_dropout: Dropout probability applied to the gate input.
-        logit_dropout: Dropout probability applied to the noisy logits.
+        noise_floor: Constant noise std added during training.  With
+            z-score normalisation fixing signal std=1, this directly controls
+            SNR: ``noise_floor=0.4`` → SNR≈2.5 throughout training.
+            Default: 0.3.
     """
 
     def __init__(
@@ -543,8 +556,6 @@ class NoisyTopkGate(nn.Module):
         context_dim: int = 0,
         temperature: float = 1.0,
         noise_floor: float = 0.3,
-        input_dropout: float = 0.0,
-        logit_dropout: float = 0.0,
     ):
         super().__init__()
         assert 1 <= k <= num_experts, f'k must be in [1, num_experts], got {k}'
@@ -556,11 +567,7 @@ class NoisyTopkGate(nn.Module):
         self.noise_floor = noise_floor
 
         in_dim = feat_dim + context_dim
-        self.w_gate  = nn.Linear(in_dim, num_experts)
-        self.w_noise = nn.Linear(in_dim, num_experts)
-
-        self.in_drop  = nn.Dropout(p=input_dropout)  if input_dropout  > 0 else None
-        self.log_drop = nn.Dropout(p=logit_dropout)  if logit_dropout  > 0 else None
+        self.w_gate = nn.Linear(in_dim, num_experts)
 
     def forward(self, feat: Tensor,
                 ctx: Optional[Tensor] = None) -> GateOutput:
@@ -574,41 +581,27 @@ class NoisyTopkGate(nn.Module):
             :class:`GateOutput` with ``full_softmax_probs`` ``(B, E)``,
             ``sparse_softmax_probs`` ``(B, E)``, ``topk_idx`` ``(B, k)``,
             and ``topk_weights`` ``(B, k)``.
-
-
-
-        NOTE: z-score caps softmax peak (logits always std=1 → softmax max ≈ 0.3–0.5 for E=6).
-         The router can never fully "commit" to one expert by growing logit magnitude. 
-         This is a feature, not a bug — it's exactly what prevented the weight-decay 
-         collapse described in the BEVSummaryHead docstring. Dispatch magnitude is 
-         instead controlled by residual_gain=num_experts, which compensates for the ~1/E weights.
         """
         if ctx is not None:
             feat = torch.cat([feat, ctx], dim=1)  # (B, feat_dim + context_dim)
 
-        h = self.in_drop(feat) if self.in_drop is not None else feat
-
-        # Clean logits H_clean(x) = W_gate · h, then z-score normalised per
-        # sample so all experts start on the same scale (see class docstring).
-        # These are the "mean" of the noise distribution used in the Shazeer
-        # load_loss Gaussian CDF — do NOT add noise here.
-        clean_logits = self.w_gate(h)                                        # (B, E)
+        # Clean logits, z-score normalised per sample so signal std=1 always.
+        # This keeps the noise SNR stable throughout training (noise_floor is
+        # calibrated relative to a known signal scale).  Consumed by load_loss
+        # as the Gaussian distribution mean — do NOT add noise here.
+        clean_logits = self.w_gate(feat)                                     # (B, E)
         clean_logits = (clean_logits - clean_logits.mean(dim=-1, keepdim=True)) / \
                        (clean_logits.std(dim=-1, keepdim=True) + 1e-5)
 
         if self.training:
-            # Learned noise std (strictly positive) plus a constant noise floor
-            # so the network cannot suppress exploration entirely.
-            noise_std = F.softplus(self.w_noise(h)) + self.noise_floor       # (B, E)
-            noisy_logits = clean_logits + torch.randn_like(noise_std) * noise_std
+            # Constant noise std.  SNR = 1/noise_floor ≈ 2.5 with noise_floor=0.4.
+            noise_std = torch.full_like(clean_logits, self.noise_floor)      # (B, E)
+            noisy_logits = clean_logits + torch.randn_like(clean_logits) * self.noise_floor
         else:
             # Eval path: no noise added, so Shazeer load_loss cannot be
             # computed (signalled to callers by noise_std=None).
             noise_std = None
             noisy_logits = clean_logits
-
-        if self.log_drop is not None:
-            noisy_logits = self.log_drop(noisy_logits)
 
         # Temperature controls softmax sharpness consistently for
         # full_softmax_probs (consumed by importance_loss + diagnostics) and

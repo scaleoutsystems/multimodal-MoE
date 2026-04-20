@@ -38,7 +38,12 @@ input_modality = dict(use_lidar=True, use_camera=False)
 backend_args = None
 
 # ── MoE configuration ────────────────────────────────────────────────────
-num_experts = 6
+# 5 experts to match the 5 ZOD road_type categories (arterial-rural,
+# arterial-urban, city, highway, smaller-rural).  With 6 experts one was
+# always structurally dead because there was no 6th context niche to claim.
+# 5C2 = 10 possible top-2 pairs → enough combinatorial richness for the
+# router to learn context-specific primary + secondary expert combos.
+num_experts = 5
 
 bev_moe_cfg = dict(
     type='BEVMoEBlock',
@@ -46,18 +51,12 @@ bev_moe_cfg = dict(
     num_experts=num_experts,
     k=2,
     num_convs=2,
-    # Switch balance loss coefficient (α).  Bumped 0.005 → 0.05 after run
-    # 4485767, then 0.05 → 0.1 after run 4487087 which showed val-time
-    # collapse flipping between 1–2 experts per epoch with dense probs
-    # near-uniform (no effective pressure on P_e).  Relative to the
-    # detection loss (~1–2 at steady state) a floor of 0.1 is now a few
-    # per cent of total loss and actually exerts torque on the router.
-    # NOTE: run 4487087 moe_importance_loss sat at ~0.065 (near its uniform
-    # floor α=0.05) because the noisy gate drowned the signal; this bump
-    # is paired with noise_floor 1.0 → 0.2 below, which must happen
-    # together.  importance_loss = CV² of per-expert soft-mass; it is
-    # fully differentiable and always provides gradient pressure.
-    importance_coef=0.1,
+    # Importance loss coefficient (α).  History:
+    #   0.005 (initial) → 0.05 (post-4485767) → 0.1 (post-4487087) → 0.3 (post-4488428).
+    # Kept at 0.3 for this run: with E=5 experts and no z-score normalization
+    # the dead-expert structural problem is gone, but 0.3 still provides
+    # healthy gradient pressure to keep all experts utilized.
+    importance_coef=0.3,
     # load_loss uses the Shazeer Gaussian-CDF dispatch estimator via
     # clean/noisy logits from NoisyTopkGate.  It penalises hard-dispatch
     # collapse independently of the soft importance term above.  0.05 is
@@ -86,37 +85,27 @@ bev_moe_cfg = dict(
         embed_dim=16,
         out_dim=64,
     ),
-    # Use Shazeer et al. noisy top-k gate.  Learned input-dependent
-    # Gaussian noise is added to logits during training to encourage load
-    # balance and give non-dominant experts gradient signal.
+    # Noisy top-k gate with z-score normalisation (see routing.py).
+    # Z-score fixes signal std=1, so noise_floor directly controls the SNR
+    # of the exploration noise throughout training — it never becomes
+    # ineffective as the gate learns (unlike un-normalised logits where
+    # logit margins grow to ±5 and noise_floor=0.4 becomes negligible).
     #
-    # noise_floor history: 0.3 → 1.0 (run 4485767, to break 1-expert
-    # collapse) → 0.2 (run 4487087 follow-up, current).
+    # temperature=0.5: halves T, doubling effective logit differences in
+    # softmax space.  With z-score bounding the max logit at ~+1.2 (E=5),
+    # T=1.0 caps per-context dense probs at ~0.48 (too flat to see gate
+    # confidence).  T=0.5 raises the cap to ~0.75, making dominant experts
+    # clearly visible in the dense_prob plots without disturbing load_loss
+    # or the noise SNR (both operate in logit space, before the temperature
+    # scaling).
     #
-    # Why 1.0 was too high (run 4487087 diagnosis):
-    # NoisyTopkGate z-score-normalises logits per sample so signal std
-    # ≈ 1.0 across experts.  With noise_std = softplus(·) + noise_floor
-    # ≥ noise_floor = 1.0, noise is AT LEAST as large as signal at every
-    # training step → SNR ≤ 1 → top-k selection is essentially random.
-    # Evidence: train-time top-1 frequencies were all ~0.18 (=1/E with
-    # dead expert_1), while val-time (no noise) collapsed to 1–2 experts
-    # and the active set flipped every epoch (E1: {0,4}, E2: {2,5},
-    # E3: {0,3}).  Dense probs stayed ~uniform (~0.18), mean_gate_entropy
-    # 1.666 out of ln(6)=1.79, because the gate received no consistent
-    # gradient about which expert was actually better for each sample.
-    #
-    # 0.2 restores SNR ≈ 5 (noise std ≥ 0.2 vs signal std ≈ 1.0) so real
-    # preferences can form, while still letting non-dominant experts get
-    # occasional gradient signal.  If val routing still collapses after
-    # a few epochs, step to 0.3 rather than 1.0 — the right
-    # counter-measure to 1-expert collapse is importance_coef / residual_gain,
-    # not drowning the gate.
-    # TODO: decay noise_floor from 0.3 → 0.05 over epochs 0–8 once a
-    # schedule hook exists; static for now.
+    # noise_floor=0.4: SNR ≈ 2.5 (noise std 0.4 vs signal std 1.0).
+    # TODO: decay noise_floor 0.4 → 0.05 over epochs 0–8 once a schedule
+    # hook exists; static for now.
     gate_type='noisy_topk',
     gate_cfg=dict(
-        noise_floor=0.2,
-        temperature=1.0,
+        noise_floor=0.4,
+        temperature=0.5,
     ),
 )
 

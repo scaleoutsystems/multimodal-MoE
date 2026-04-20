@@ -37,6 +37,17 @@ Produces matplotlib figures per val epoch:
     dense_prob_by_{key}_epoch{N}.png
         Grouped bars: dense mean prob per expert, by context group.
 
+    dispatch_mass_by_{key}_epoch{N}.png
+        Grouped bars: actual Shazeer topk dispatch mass per expert, by context
+        group.  With k>1 this shows both top-1 and secondary selections
+        weighted by their renormalized Shazeer weights, making it the most
+        informative plot for diagnosing B-team / dead-expert patterns.
+
+    topk_selection_by_{key}_epoch{N}.png
+        Grouped bars: top-k (any position) selection frequency per expert, by
+        context group.  Separates dead experts (never in top-k) from secondary
+        partners (routinely in top-k but rarely top-1).
+
 Output location: <runner.work_dir>/context_routing/
 """
 from __future__ import annotations
@@ -391,6 +402,17 @@ class ContextExpertUsageVisualizationHook(Hook):
 
         dense_prob_by_{key}_epoch{N}.png
             Grouped bars: dense mean prob per expert, per context value.
+
+        dispatch_mass_by_{key}_epoch{N}.png
+            Grouped bars: Shazeer topk dispatch mass per expert, per context
+            value.  Captures both top-1 and secondary (top-2+) selections
+            weighted by their renormalized weights — the ground truth for
+            "how much work does each expert do per context."
+
+        topk_selection_by_{key}_epoch{N}.png
+            Grouped bars: any-position top-k selection freq per expert, per
+            context value.  Distinguishes dead experts (zero) from B-team
+            secondary partners (high topk but low top1).
     """
 
     priority = 'LOW'
@@ -465,7 +487,9 @@ class ContextExpertUsageVisualizationHook(Hook):
         self._plot_overall(epoch, stats.get('overall', {}), E)
         for key, groups in stats.get('per_context', {}).items():
             self._plot_top1_by_context(epoch, key, groups, E)
+            self._plot_topk_by_context(epoch, key, groups, E)
             self._plot_dense_prob_by_context(epoch, key, groups, E)
+            self._plot_dispatch_mass_by_context(epoch, key, groups, E)
 
         runner.logger.info(
             f'ContextExpertUsageVisualizationHook: plots → {self._out_dir}')
@@ -597,6 +621,17 @@ class ContextExpertUsageVisualizationHook(Hook):
             filename=f'top1_selection_by_{key}_epoch{epoch}.png',
         )
 
+    def _plot_topk_by_context(
+        self, epoch: int, key: str, groups: dict, E: int
+    ) -> None:
+        self._plot_grouped_bars(
+            epoch, key, groups, E,
+            metric_key='topk_selection_freq_per_expert',
+            ylabel='Fraction of samples (any top-k position)',
+            title=f'Top-k Selection Frequency by {key.replace("_", " ").title()} (Epoch {epoch})',
+            filename=f'topk_selection_by_{key}_epoch{epoch}.png',
+        )
+
     def _plot_dense_prob_by_context(
         self, epoch: int, key: str, groups: dict, E: int
     ) -> None:
@@ -606,4 +641,15 @@ class ContextExpertUsageVisualizationHook(Hook):
             ylabel='Mean pre-top-k softmax probability',
             title=f'Dense Mean Probability by {key.replace("_", " ").title()} (Pre-Top-k) (Epoch {epoch})',
             filename=f'dense_prob_by_{key}_epoch{epoch}.png',
+        )
+
+    def _plot_dispatch_mass_by_context(
+        self, epoch: int, key: str, groups: dict, E: int
+    ) -> None:
+        self._plot_grouped_bars(
+            epoch, key, groups, E,
+            metric_key='dispatch_mass_per_expert',
+            ylabel='Mean Shazeer dispatch mass (topk weights)',
+            title=f'Dispatch Mass by {key.replace("_", " ").title()} (Epoch {epoch})',
+            filename=f'dispatch_mass_by_{key}_epoch{epoch}.png',
         )
