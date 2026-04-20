@@ -40,26 +40,6 @@ This is especially useful because:
 
 ---
 
-## Complexity
-
-Count  
-high: 869  
-medium: 1493  
-low: 2681  
-
-| Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
-|---|---:|---:|---:|---:|---:|---:|
-| high | 0.5653 | 0.8401 | 0.0038 | 0.2093 | 0.5944 | 0.8386 |
-| medium | 0.5694 | 0.8123 | 0.0058 | 0.2254 | 0.5912 | 0.8149 |
-| low | 0.5585 | 0.7762 | 0.0083 | 0.2311 | 0.5880 | 0.7796 |
-
-### Quick read
-- **LiDAR-only** is fairly stable across complexity.
-- **Camera-only** is best in **low** complexity and worst in **high** complexity, especially on **AP@0.5m**.
-- **Fusion** improves over LiDAR-only on **AP@0.50** in all bins, but is very similar to LiDAR-only on **AP@0.5m**.
-
----
-
 ## Lighting
 
 Count  
@@ -159,11 +139,11 @@ cloud_like: 5928
 ### Camera-only
 - Very weak on **AP@0.50**.
 - Still shows non-trivial coarse localization on **AP@0.5m**.
-- **Road type** is again the strongest context effect:
+- **Road type** is the strongest context effect:
   - **highway** is essentially dead
-  - **arterial_rural** is also very weak
+  - **arterial_rural** is very weak
   - **city** and **arterial_urban** are much better
-- Complexity also matters, with **low** complexity best.
+- Weather also affects performance, especially for coarse localization.
 
 ### Fusion
 - Best overall model on **AP@0.50**.
@@ -176,73 +156,46 @@ cloud_like: 5928
 ## Context groups most relevant for MoE routing
 
 ### Most relevant: `road_type`
-This is the strongest and cleanest context signal across all three models.
+- Strongest and clearest signal across all models.
+- Separates fundamentally different scene regimes (urban vs rural vs highway).
+- Affects both difficulty and model behavior.
 
-Why it matters:
-- The relative difficulty changes a lot between **city / arterial_urban** and **arterial_rural / highway**.
-- This likely reflects major shifts in:
-  - pedestrian frequency
-  - scene geometry
-  - visual context
-  - range / scale / sparsity
-- It is therefore a strong candidate for routing both:
-  - **across modalities**
-  - **within a single modality**
+### Second most relevant: `weather / weather_group`
+- Directly linked to **sensor reliability shifts**, especially for the camera.
+- Affects coarse localization more strongly than IoU in camera-only.
+- Complements road type by capturing environmental rather than structural variation.
 
-### Second most relevant: `complexity`
-Why it matters:
-- It changes camera reliability clearly.
-- It is plausible that expert behavior should differ between sparse/simple scenes and crowded/occluded scenes.
-- This is likely useful for:
-  - multimodal routing
-  - LiDAR-only routing
-  - camera-only routing
-
-### Third most relevant: weather / adverse regime
-Why it matters:
-- The weather effect is weaker than road type, but still visible.
-- It is especially relevant if you want routing to respond to modality reliability shifts, since weather can change:
-  - image quality
-  - contrast
-  - visibility
-  - possibly LiDAR return quality in some cases
-
-### Less relevant: lighting
-Why:
-- It does have some effect, but it is less consistent and less strong than road type.
-- It may still be worth including, but it looks weaker as a primary routing signal.
+### Less relevant: `lighting`
+- Has a measurable but smaller and less consistent effect.
+- Likely a secondary signal rather than a primary routing variable.
 
 ---
 
-## MoE routing: across modalities vs within a single modality
+## MoE routing interpretation
 
-### Across modalities
-For multimodal MoE, the most useful routing signals are the ones that likely change **relative modality usefulness**.
-
-Best candidates:
+### Across modalities (camera vs LiDAR)
+Most relevant signals:
 1. **road_type**
-2. **weather / adverse regime**
-3. **complexity**
+2. **weather**
 
 Why:
-- These are the most plausible drivers of when camera adds value versus when LiDAR should dominate.
+- These are the variables most likely to change **relative modality usefulness**.
+- Road type captures scene structure.
+- Weather captures sensing conditions.
 
 ### Within a single modality
-For LiDAR-only or camera-only MoE, the question is slightly different:
-- not “which modality should matter more?”
-- but “which kind of expert should handle this regime?”
+Most relevant signals:
+1. **road_type**
+2. **weather (secondary)**
 
-Here, **road_type** still looks strongest.
-After that:
-- **complexity** is probably more useful than lighting
-- **weather** may still matter, especially for camera-only
+Why:
+- Experts can specialize to different scene regimes (e.g. highway vs city).
+- Weather may still affect feature quality, especially for camera.
 
-So there is overlap, but the interpretation changes:
-- **multimodal routing** cares about relative modality complementarity
-- **single-modality routing** cares more about regime-specific specialization within the same sensor stream
+---
 
-### Bottom line
-- **road_type** is the strongest candidate for both multimodal and single-modality routing
-- **complexity** is probably the next cleanest candidate
-- **weather** is more relevant for multimodal routing than for LiDAR-only routing
-- **lighting** currently looks like the weakest of the main candidates
+## Final takeaway
+
+- **Road type is the dominant context signal** across all models.
+- **Weather is the most meaningful complementary signal**, especially for multimodal routing.
+- Fusion improves overall performance but **does not eliminate context dependence**, reinforcing the motivation for context-aware MoE routing.
