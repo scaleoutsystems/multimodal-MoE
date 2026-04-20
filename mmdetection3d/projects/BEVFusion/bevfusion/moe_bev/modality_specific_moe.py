@@ -33,10 +33,11 @@ Expert dispatch:
     by ``residual_gain``:
         cam_out   = cam_bev   + residual_gain · Σ_j∈cam  w_j · (expert_j(cam_bev) − cam_bev)
         lidar_out = lidar_bev + residual_gain · Σ_j∈lid  w_j · (expert_j(lidar_bev) − lidar_bev)
-    See BEVMoEBlock docstring (bev_moe.py) for the bootstrap rationale behind
-    residual_gain; the short version is that Switch-style weights are ≈ 1/E at
-    init, so residual_gain = num_experts keeps expert contributions at full
-    scale from step 1 and unblocks gate learning.
+    The w_j come from the gate's Shazeer top-k mixture (Σ_j w_j = 1 across
+    the joint pool), so an individual modality accumulates only the fraction
+    of mass assigned to its experts.  ``residual_gain`` therefore does not
+    need to track num_experts — default 1.0 applies the weighted delta at
+    full scale.  See BEVMoEBlock docstring for tuning guidance.
 
 Fusion:
     After expert dispatch, cam_out (Cc ch) and lidar_out (Cl ch) are
@@ -47,21 +48,27 @@ Fusion:
     This is the ONLY fusion step — no ConvFuser is used in this variant.
 
 Regularisation:
-    - switch_balance_loss: load-balance loss across all E experts.
-    - load_loss:       equal hard selection counts across all E experts.
-    - group_balance_loss: equal total routing mass to camera-group vs LiDAR-group.
+    - importance_loss:     CV² of per-expert mean soft probability mass.
+                           Catches dead experts (logged as moe_importance_loss).
+    - load_loss:           CV² of the Gaussian-CDF dispatch estimator.
+                           Catches hard-dispatch collapse (logged as moe_load_loss).
+    - group_balance_loss:  equal total routing mass to camera-group vs LiDAR-group.
 
 moe_info contract
 -----------------
 self._moe_info is written after every forward():
-    probs          (B, E)      — full softmax over all experts
-    topk_idx       (B, k)      — selected expert indices
-    topk_weights   (B, k)      — re-normalised weights
-    cam_expert_ids  list[int]  — indices of camera experts (for Hook C)
-    lidar_expert_ids list[int]
-    cam_group_mass   float     — total routing mass to camera group (this batch)
-    lidar_group_mass float
-    aux_loss        scalar
+    full_softmax_probs   (B, E)  — full pre-top-k softmax over all experts
+    sparse_softmax_probs (B, E)  — post-top-k masked softmax (diagnostics only)
+    topk_idx             (B, k)  — selected expert indices
+    topk_weights         (B, k)  — Shazeer top-k mixture weights (Σ_j = 1
+                                   across the joint pool)
+    cam_expert_ids       list[int]
+    lidar_expert_ids     list[int]
+    cam_group_mass       float   — total routing mass to camera group (this batch)
+    lidar_group_mass     float
+    aux_loss             scalar  — importance_loss + load_loss + group_balance_loss
+    importance_loss      scalar  — Shazeer importance term (moe_importance_loss)
+    load_loss            scalar  — Shazeer load term (moe_load_loss)
 """
 from __future__ import annotations
 
@@ -74,7 +81,7 @@ from torch import Tensor
 from mmdet3d.registry import MODELS
 
 from .bev_experts import make_bev_experts
-from .losses import group_balance_loss, load_loss, switch_balance_loss
+from .losses import group_balance_loss, importance_loss, load_loss
 from .routing import BEVSummaryHead, ContextEncoder, TopkGate
 
 
@@ -101,9 +108,11 @@ class ModalitySpecificMoEBlock(nn.Module):
                                (applied independently to cam and LiDAR paths):
                                  cam_out   = cam_bev   + residual_gain · Σ w·Δ_cam
                                  lidar_out = lidar_bev + residual_gain · Σ w·Δ_lidar
-                               Set to num_experts (= num_cam_experts +
-                               num_lidar_experts) to compensate for Switch-style
-                               weights (≈ 1/E at init).  Default 1.0.
+                               With Shazeer top-k mixture (Σ_j w_j = 1 across
+                               the joint pool) the default 1.0 applies the
+                               weighted delta at full scale with no dependence
+                               on num_experts.  See BEVMoEBlock module docstring
+                               for tuning guidance.
         router_pool_size:      Spatial pooling size for BEVSummaryHead.
         router_hidden_dim:     Hidden dim of BEVSummaryHead MLP.
         router_out_dim:        Output dim per modality BEVSummaryHead.
@@ -237,13 +246,10 @@ class ModalitySpecificMoEBlock(nn.Module):
         cam_out = cam_bev.clone()
         lidar_out = lidar_bev.clone()
 
-        expert_counts = torch.zeros(self.num_experts, device=cam_bev.device)
-
         for b in range(B):
             for j in range(self.k):
                 eidx = gate_out.topk_idx[b, j].item()
                 weight = gate_out.topk_weights[b, j]
-                expert_counts[eidx] += 1
 
                 if eidx in self.cam_expert_ids:
                     exp_out = self.cam_experts[eidx](cam_bev[b:b + 1])
@@ -261,20 +267,24 @@ class ModalitySpecificMoEBlock(nn.Module):
             torch.cat([cam_out, lidar_out], dim=1))
 
         # ── Step 5: Auxiliary losses ──────────────────────────────────
-        bal_loss = switch_balance_loss(
+        imp_loss = importance_loss(
             gate_out.full_softmax_probs,
-            gate_out.topk_idx,
-            self.num_experts,
             self.importance_coef,
         )
-        ld_loss  = load_loss(expert_counts, self.load_coef)
+        ld_loss  = load_loss(
+            gate_out.clean_logits,
+            gate_out.noisy_logits,
+            gate_out.noise_std,
+            self.k,
+            self.load_coef,
+        )
         gb_loss  = group_balance_loss(
             gate_out.full_softmax_probs,
             self.cam_expert_ids,
             self.lidar_expert_ids,
             self.group_balance_coef,
         )
-        aux = bal_loss + ld_loss + gb_loss
+        aux = imp_loss + ld_loss + gb_loss
 
         with torch.no_grad():
             cam_mass   = gate_out.full_softmax_probs[:, self.cam_expert_ids].sum().item()
@@ -290,7 +300,7 @@ class ModalitySpecificMoEBlock(nn.Module):
             'cam_group_mass':       cam_mass,
             'lidar_group_mass':     lidar_mass,
             'aux_loss':             aux,
-            'balance_loss':         bal_loss,
+            'importance_loss':      imp_loss,
             'load_loss':            ld_loss,
         }
         self._moe_info = moe_info

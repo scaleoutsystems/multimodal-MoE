@@ -11,57 +11,89 @@ the resulting descriptor and returns a GateOutput dataclass.
 
 GateOutput contract
 -------------------
-All gate modules return a ``GateOutput`` with four fields:
+All gate modules return a ``GateOutput`` with the following fields:
 
-    full_softmax_probs   (B, E)  — softmax(logits) computed BEFORE top-k
-                                   masking.  This is the router's "belief"
-                                   over all experts and is used for:
-                                     • switch_balance_loss (P_e term)
+    full_softmax_probs   (B, E)  — softmax(logits) computed over ALL experts
+                                   (no masking).  This is the router's "belief"
+                                   over the full pool and is used for:
+                                     • importance_loss (CV² of per-expert mass)
                                      • dense_mean_prob_per_expert diagnostics
-                                     • Switch-style dispatch weights (see below)
 
-    sparse_softmax_probs (B, E)  — softmax(logits with non-top-k set to -inf).
-                                   Zero for non-selected experts.  Returned for
-                                   diagnostics/analysis only; NOT used for
-                                   dispatch (see rationale below).
+    sparse_softmax_probs (B, E)  — the renormalised top-k mixture laid back
+                                   into ``(B, E)`` with zeros off-topk, so the
+                                   non-zero entries on each row sum to 1.
+                                   Diagnostics/analysis only — dispatch uses
+                                   ``topk_weights`` directly.
 
     topk_idx             (B, k)  — indices of the k selected experts per sample.
-                                   Used for selection-frequency diagnostics and
-                                   for computing f_e in switch_balance_loss.
+                                   Used for selection-frequency diagnostics.
 
-    topk_weights         (B, k)  — Switch-style dispatch weights:
-                                       topk_weights = full_softmax_probs.gather(
-                                           dim=1, index=topk_idx)
-                                   These are the router's confidence values at
-                                   the selected expert positions, gathered from
-                                   the PRE-top-k softmax.  They are NOT
-                                   renormalised to sum to 1.
+    topk_weights         (B, k)  — Shazeer-style dispatch weights:
+                                       topk_weights = softmax(topk_vals / T)
+                                   i.e. the softmax of just the top-k logits.
+                                   Σ_j topk_weights[b, j] = 1 per sample.  This
+                                   is the canonical Shazeer et al. (2017) MoE
+                                   gate output and what every downstream block
+                                   dispatches through.
 
-Why Switch-style weights (NOT renormalised masked softmax)
-----------------------------------------------------------
-The previous implementation computed topk_weights as:
-    1. mask non-top-k logits to -inf
-    2. sparse_softmax_probs = softmax(masked_logits)
-    3. topk_weights = sparse_softmax_probs.gather(...)
-    4. renormalise: topk_weights /= sum(topk_weights)
+    clean_logits         (B, E)  — pre-noise gate logits (identical to the
+                                   post-noise logits for deterministic gates).
+                                   Consumed by ``load_loss`` to compute Shazeer
+                                   et al.'s Gaussian-CDF load estimator.
 
-For k=1, step 2 produces a lone non-masked logit whose softmax is always 1.0,
-and step 4 leaves it at 1.0.  The constant 1.0 has zero gradient, so no
-signal from the detection loss ever reaches the gate.  This breaks the
-rich-get-richer dynamics that allow the gate to specialise.
+    noisy_logits         (B, E)  — logits actually used for top-k selection.
+                                   For TopkGate this equals ``clean_logits``;
+                                   for NoisyTopkGate these are the noisy logits
+                                   (clean + randn · noise_std) during training,
+                                   and equal ``clean_logits`` at eval.
 
-Using full_softmax_probs for topk_weights instead:
-    • topk_weights ∈ (0, 1) with a live gradient through the softmax
-    • valid for any k — no special-casing needed
-    • restores end-to-end gradient flow from the task loss through dispatch
-      to the gate weights
+    noise_std            (B, E) or None
+                                 — per-sample per-expert noise std used at this
+                                   forward pass.  ``None`` for deterministic
+                                   gates (TopkGate) or for NoisyTopkGate in eval
+                                   mode, signalling that ``load_loss`` cannot
+                                   be computed.
 
-NOTE: Because topk_weights no longer sum to 1, downstream dispatch blocks
-MUST handle the scale themselves:
-    • BEVMoEBlock     — residual-delta dispatch (scale-safe; see bev_moe.py)
-    • ModalitySpecificMoEBlock — delta dispatch (scale-safe; see modality_specific_moe.py)
-    • JointModalityMoEBlock   — locally renormalises topk_weights for dispatch
-                                 because it has no natural residual (see joint_modality_moe.py)
+Why renormalised top-k softmax (standard Shazeer) rather than gathered
+full-softmax values
+----------------------------------------------------------------------
+Earlier revisions used "Switch-style" dispatch weights ``topk_weights =
+full_softmax_probs.gather(dim=1, index=topk_idx)``: the router's confidence
+at each selected expert, NOT renormalised.  That form has an attractive
+property at k=1 (a live gradient through the softmax even when only one
+expert is active), but a bad property under residual-delta dispatch:
+
+    Σ_j topk_weights ∈ [k/E,  1]      (scales with router peakiness)
+
+so the effective magnitude of the expert residual ``g · Σ w · Δ`` *grows*
+as the router sharpens.  Early training gets weak expert signal, late
+training gets disproportionately strong signal; stability varies over a
+single run.  A ``residual_gain = num_experts`` kludge was required just to
+compensate the early-training deficit, and it had to track E.
+
+Renormalised top-k softmax (this implementation) computes
+
+    topk_weights = softmax(topk_vals / T)      # over k values only
+    Σ_j topk_weights = 1   always
+
+giving a constant-magnitude mixture at any router peakiness.  ``residual_gain``
+reverts to a plain scalar in (0, 1] — unit by default — with no dependence
+on ``num_experts``.
+
+Gradient flow with renormalised weights
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    • k ≥ 2: task loss flows through each ``topk_weights[b, j] =
+      σ(l_j)/(σ(l_1)+…+σ(l_k))``, pushing the router toward the expert that
+      best reduces the task loss for each sample.  Full specialisation.
+    • k = 1: ``topk_weights ≡ 1`` is constant, so task loss cannot select
+      between experts via the weight.  The gate is still trained via
+      ``importance_loss`` (full-softmax CV²) and ``load_loss`` (Gaussian-CDF
+      CV²), which together provide balance pressure but not task-specific
+      specialisation through dispatch.  Use k ≥ 2 if task-driven
+      specialisation is desired.
+
+All BEV MoE blocks assume Σ w = 1 and therefore take the renormalised
+weights directly; no block-local renormalisation is needed anymore.
 
 BEVSummaryHead final activation
 --------------------------------
@@ -192,13 +224,17 @@ class BEVSummaryHead(nn.Module):
 
 @dataclass
 class GateOutput:
-    full_softmax_probs:   Tensor  # (B, E) pre-top-k softmax — router belief over all experts
-    sparse_softmax_probs: Tensor  # (B, E) post-top-k masked softmax — zero on non-selected experts
-    topk_idx:             Tensor  # (B, k) selected expert indices
-    topk_weights:         Tensor  # (B, k) Switch-style dispatch weights (router
-                                  #         confidence at selected indices; NOT
-                                  #         renormalised to sum to 1 — downstream
-                                  #         blocks handle residual/scale)
+    full_softmax_probs:   Tensor            # (B, E) pre-top-k softmax — router belief over all experts
+    sparse_softmax_probs: Tensor            # (B, E) top-k mixture scattered into (B, E); zero off-topk
+    topk_idx:             Tensor            # (B, k) selected expert indices
+    topk_weights:         Tensor            # (B, k) Shazeer top-k mixture weights:
+                                            #         softmax(topk_vals / T), Σ_j=1 per sample.
+                                            #         Consumed directly by dispatch.
+    clean_logits:         Tensor            # (B, E) pre-noise gate logits (consumed by load_loss)
+    noisy_logits:         Tensor            # (B, E) logits actually fed to top-k
+    noise_std:            Optional[Tensor]  # (B, E) noise std used this step,
+                                            #         or None for deterministic gates
+                                            #         / eval forward passes
 
 
 # ── ZOD field registry ────────────────────────────────────────────────────
@@ -375,34 +411,27 @@ class ContextEncoder(nn.Module):
 # ── TopkGate ──────────────────────────────────────────────────────────────
 
 class TopkGate(nn.Module):
-    """Deterministic top-k gate over experts.
+    """Deterministic top-k gate over experts (Shazeer-style dispatch weights).
 
     Routing procedure:
-      1. Compute logits from the gate linear layer.
-      2. full_softmax_probs = softmax(logits) — pre-top-k router belief over all experts.
-      3. Select top-k expert indices from logits.
-      4. sparse_softmax_probs = softmax(masked_logits) where non-top-k → −∞.
-         Used for diagnostics only.
-      5. topk_weights = full_softmax_probs gathered at top-k indices
-         (Switch Transformer style — NOT renormalised to sum to 1).
+      1. ``logits = W_gate(x)``.
+      2. ``full_softmax_probs = softmax(logits)`` — pre-top-k router belief
+         over all experts (consumed by ``importance_loss`` and diagnostics).
+      3. Select top-k expert indices and their logit values.
+      4. ``topk_weights = softmax(topk_vals)`` — renormalised softmax over
+         just the top-k logits, so ``Σ_j topk_weights = 1`` per sample.
+         This is the standard Shazeer MoE dispatch weight.
+      5. ``sparse_softmax_probs`` is the same mixture placed back into
+         ``(B, E)`` with zeros off-topk.  Diagnostics only.
 
-    Why Switch-style topk_weights instead of renormalised masked softmax
-    -------------------------------------------------------------------
-    Using softmax(masked_logits).gather(...) and renormalising to sum to 1
-    gives ``topk_weights ≡ 1.0`` when k=1, because softmax of a single finite
-    value (with the rest at −∞) is identically 1.  Its derivative w.r.t. the
-    selected logit is zero, so NO gradient from the detection loss flows back
-    to the gate — the router cannot learn preferences, only balance.
-
-    Using full_softmax_probs directly gives ``topk_weights ∈ (0, 1)`` that
-    scales continuously with the router's confidence in the selected expert
-    (≈ 1/E when uniform, → 1 as the router sharpens).  The detection loss
-    then provides gradient through the weight back to the gate logits,
-    restoring rich-get-richer dynamics and genuine specialization.
-
-    Trade-off: weights do not sum to 1, so for residual experts the
-    expert delta is dampened by the router confidence — which is the
-    desired behaviour (less disruption when the router is uncertain).
+    Gradient flow
+    -------------
+    • ``k ≥ 2``: task loss flows through each ``topk_weights[b, j]`` via the
+      ratio ``σ(l_j)/Σ_i σ(l_i)`` over the top-k — the router is pushed
+      toward the expert that best reduces the task loss for each sample.
+    • ``k = 1``: ``topk_weights ≡ 1`` is constant w.r.t. ``l_top`` so task
+      loss cannot select between experts via the weight.  Use k ≥ 2 if you
+      want task-driven specialisation.  The aux losses still train the gate.
 
     Args:
         feat_dim: Dimension of the pooled BEV feature vector.
@@ -429,39 +458,36 @@ class TopkGate(nn.Module):
 
         Returns:
             :class:`GateOutput` with ``full_softmax_probs``,
-            ``sparse_softmax_probs``, ``topk_idx``, ``topk_weights``.
+            ``sparse_softmax_probs``, ``topk_idx``, ``topk_weights``
+            (Σ_j weights = 1 per sample), and placeholder noise fields.
         """
         if ctx is not None:
             feat = torch.cat([feat, ctx], dim=1)
 
-        logits = self.gate(feat)                               # (B, E)
+        logits = self.gate(feat)                                       # (B, E)
 
-        # Pre-top-k: router belief over all experts (unmasked).
-        full_softmax_probs = torch.softmax(logits, dim=-1)     # (B, E)
+        # Pre-top-k softmax — consumed by importance_loss and diagnostics.
+        full_softmax_probs = torch.softmax(logits, dim=-1)             # (B, E)
 
-        # Select top-k indices from logits.
-        topk_vals, topk_idx = torch.topk(logits, self.k, dim=-1)  # (B, k)
+        # Select top-k and compute the renormalised mixture over them.
+        topk_vals, topk_idx = torch.topk(logits, self.k, dim=-1)       # (B, k)
+        topk_weights = F.softmax(topk_vals, dim=-1)                    # (B, k), sum=1
 
-        # Sparse post-top-k softmax — diagnostics only (NOT used for dispatch).
-        # For k=1 this is identically 1.0 on the selected expert and carries
-        # no gradient; see class docstring for why this is unsuitable as the
-        # dispatch weight.
-        threshold = topk_vals[:, -1:]                          # (B, 1) smallest kept logit
-        masked = torch.where(
-            logits >= threshold,
-            logits,
-            torch.full_like(logits, float('-inf')),
+        # Diagnostic sparse view: the same mixture laid back into (B, E).
+        sparse_softmax_probs = torch.zeros_like(logits)
+        sparse_softmax_probs.scatter_(1, topk_idx, topk_weights)
+
+        # TopkGate is deterministic — no noise, so Shazeer-style load_loss
+        # cannot be computed.  Emit clean==noisy logits and noise_std=None.
+        return GateOutput(
+            full_softmax_probs=full_softmax_probs,
+            sparse_softmax_probs=sparse_softmax_probs,
+            topk_idx=topk_idx,
+            topk_weights=topk_weights,
+            clean_logits=logits,
+            noisy_logits=logits,
+            noise_std=None,
         )
-        sparse_softmax_probs = torch.softmax(masked, dim=-1)   # (B, E)
-
-        # Switch-style dispatch weights: full softmax confidence at the
-        # selected indices, WITHOUT renormalisation.  Preserves gradient
-        # flow to the gate for any k (including k=1).
-        topk_weights = full_softmax_probs.gather(dim=1, index=topk_idx)  # (B, k)
-
-        return GateOutput(full_softmax_probs=full_softmax_probs,
-                          sparse_softmax_probs=sparse_softmax_probs,
-                          topk_idx=topk_idx, topk_weights=topk_weights)
 
 
 # ── NoisyTopkGate ─────────────────────────────────────────────────────────
@@ -479,15 +505,17 @@ class NoisyTopkGate(nn.Module):
     normalisation is not in the original paper but is essential in practice.
 
     Routing procedure:
-      1. ``logits = W_gate(x)`` then z-score normalise per sample.
-      2. Training: add ``ε · softplus(W_noise(x)) + noise_floor``.
-      3. ``full_softmax_probs = softmax(logits)`` — pre-top-k router belief.
-      4. Keep only the top-k logits; set all others to ``−∞``.
-      5. ``sparse_softmax_probs = softmax(masked_logits / temperature)``
-
-    ``full_softmax_probs`` is the router's belief over all experts given the
-    (noisy at train-time) logits, before any masking.
-    ``sparse_softmax_probs`` is zero on non-selected experts.
+      1. ``clean_logits = W_gate(x)`` then z-score normalise per sample.
+      2. Training: ``noisy_logits = clean_logits + ε · softplus(W_noise(x)) + noise_floor``.
+         Eval:    ``noisy_logits = clean_logits``.
+      3. ``full_softmax_probs = softmax(noisy_logits / T)`` — pre-top-k
+         router belief (consumed by ``importance_loss``).
+      4. Top-k selected on ``noisy_logits`` (rank-invariant w.r.t. T>0).
+      5. ``topk_weights = softmax(topk_vals / T)`` — standard Shazeer MoE
+         dispatch weights renormalised over the top-k, Σ_j = 1 per sample.
+      6. ``sparse_softmax_probs`` is the same mixture placed into ``(B, E)``
+         with zeros off-topk (diagnostics only — blocks dispatch through
+         ``topk_weights`` directly).
 
     Args:
         feat_dim: Dimension of the pooled BEV feature vector.
@@ -495,8 +523,12 @@ class NoisyTopkGate(nn.Module):
         k: Number of experts selected per sample.
         context_dim: If > 0, context vector is concatenated with the feature
             vector before the gate linear layers (same as :class:`TopkGate`).
-        temperature: Softmax temperature.  Values < 1 sharpen the distribution
-            over selected experts; values > 1 flatten it.
+        temperature: Softmax temperature applied to BOTH the full (dispatch /
+            importance_loss) and the sparse (diagnostic) softmaxes.  Values
+            < 1 sharpen the distribution and amplify the effective noise
+            impact on probabilities (since noise is added pre-scaling);
+            values > 1 flatten it.  Top-k selection is unaffected (T>0
+            preserves rank).
         noise_floor: Minimum noise std added on top of the learned component.
             Prevents the network from collapsing noise to zero.  Default: 0.3.
         input_dropout: Dropout probability applied to the gate input.
@@ -542,51 +574,69 @@ class NoisyTopkGate(nn.Module):
             :class:`GateOutput` with ``full_softmax_probs`` ``(B, E)``,
             ``sparse_softmax_probs`` ``(B, E)``, ``topk_idx`` ``(B, k)``,
             and ``topk_weights`` ``(B, k)``.
+
+
+
+        NOTE: z-score caps softmax peak (logits always std=1 → softmax max ≈ 0.3–0.5 for E=6).
+         The router can never fully "commit" to one expert by growing logit magnitude. 
+         This is a feature, not a bug — it's exactly what prevented the weight-decay 
+         collapse described in the BEVSummaryHead docstring. Dispatch magnitude is 
+         instead controlled by residual_gain=num_experts, which compensates for the ~1/E weights.
         """
         if ctx is not None:
             feat = torch.cat([feat, ctx], dim=1)  # (B, feat_dim + context_dim)
 
         h = self.in_drop(feat) if self.in_drop is not None else feat
 
-        logits = self.w_gate(h)  # (B, E)
-
-        # Normalise logits per sample so all experts start on the same scale.
-        # Without this a dominant logit always wins and noise has no effect on
-        # load balancing — the whole point of the noisy gate.
-        logits = (logits - logits.mean(dim=-1, keepdim=True)) / \
-                 (logits.std(dim=-1, keepdim=True) + 1e-5)
+        # Clean logits H_clean(x) = W_gate · h, then z-score normalised per
+        # sample so all experts start on the same scale (see class docstring).
+        # These are the "mean" of the noise distribution used in the Shazeer
+        # load_loss Gaussian CDF — do NOT add noise here.
+        clean_logits = self.w_gate(h)                                        # (B, E)
+        clean_logits = (clean_logits - clean_logits.mean(dim=-1, keepdim=True)) / \
+                       (clean_logits.std(dim=-1, keepdim=True) + 1e-5)
 
         if self.training:
             # Learned noise std (strictly positive) plus a constant noise floor
             # so the network cannot suppress exploration entirely.
-            noise_std = F.softplus(self.w_noise(h)) + self.noise_floor  # (B, E)
-            logits = logits + torch.randn_like(noise_std) * noise_std    # (B, E)
+            noise_std = F.softplus(self.w_noise(h)) + self.noise_floor       # (B, E)
+            noisy_logits = clean_logits + torch.randn_like(noise_std) * noise_std
+        else:
+            # Eval path: no noise added, so Shazeer load_loss cannot be
+            # computed (signalled to callers by noise_std=None).
+            noise_std = None
+            noisy_logits = clean_logits
 
         if self.log_drop is not None:
-            logits = self.log_drop(logits)
+            noisy_logits = self.log_drop(noisy_logits)
 
-        # Pre-top-k: router belief over all experts given (noisy) logits.
-        full_softmax_probs = F.softmax(logits, dim=-1)                # (B, E)
+        # Temperature controls softmax sharpness consistently for
+        # full_softmax_probs (consumed by importance_loss + diagnostics) and
+        # topk_weights (consumed by dispatch).  T < 1 sharpens, T > 1
+        # flattens.  Top-k selection is unaffected (rank-invariant for T>0).
+        # Because T is applied AFTER noise addition, the effective noise
+        # magnitude in the softmax is noise_std / T — lowering T therefore
+        # also amplifies the impact of noise on probabilities.
 
-        # Select top-k indices from the (noisy) logits.
-        topk_vals, topk_idx = torch.topk(logits, k=self.k, dim=-1)   # (B, k)
+        # Pre-top-k softmax — consumed by importance_loss and diagnostics.
+        full_softmax_probs = F.softmax(noisy_logits / self.temperature, dim=-1)  # (B, E)
 
-        # Sparse post-top-k softmax — diagnostics only (NOT used for dispatch).
-        # For k=1 this is identically 1.0 on the selected expert and carries
-        # no gradient; see TopkGate docstring for the full rationale.
-        threshold = topk_vals[:, -1:]                                  # (B, 1)
-        masked = torch.where(
-            logits >= threshold,
-            logits,
-            torch.full_like(logits, float('-inf')),
-        )  # (B, E)
-        sparse_softmax_probs = F.softmax(masked / self.temperature, dim=-1)  # (B, E)
+        # Select top-k from the noisy logits and compute the renormalised
+        # mixture over those k values only — standard Shazeer MoE dispatch.
+        # Σ_j topk_weights = 1 per sample, regardless of router peakiness.
+        topk_vals, topk_idx = torch.topk(noisy_logits, k=self.k, dim=-1)     # (B, k)
+        topk_weights = F.softmax(topk_vals / self.temperature, dim=-1)       # (B, k), sum=1
 
-        # Switch-style dispatch weights: full softmax confidence at the
-        # selected indices, NOT renormalised.  Preserves gradient flow
-        # from the detection loss to the gate logits for any k.
-        topk_weights = full_softmax_probs.gather(dim=1, index=topk_idx)      # (B, k)
+        # Diagnostic sparse view: the same mixture laid back into (B, E).
+        sparse_softmax_probs = torch.zeros_like(noisy_logits)
+        sparse_softmax_probs.scatter_(1, topk_idx, topk_weights)
 
-        return GateOutput(full_softmax_probs=full_softmax_probs,
-                          sparse_softmax_probs=sparse_softmax_probs,
-                          topk_idx=topk_idx, topk_weights=topk_weights)
+        return GateOutput(
+            full_softmax_probs=full_softmax_probs,
+            sparse_softmax_probs=sparse_softmax_probs,
+            topk_idx=topk_idx,
+            topk_weights=topk_weights,
+            clean_logits=clean_logits,
+            noisy_logits=noisy_logits,
+            noise_std=noise_std,
+        )

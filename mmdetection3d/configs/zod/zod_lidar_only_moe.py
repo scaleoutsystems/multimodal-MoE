@@ -46,17 +46,38 @@ bev_moe_cfg = dict(
     num_experts=num_experts,
     k=2,
     num_convs=2,
-    # Switch balance loss coefficient (α).  Reduced from 0.005 → 0.001 to
-    # allow mild probability peaking during bootstrap.  At perfect uniform
-    # routing L_balance ≡ α, so the floor is now 0.001 instead of 0.005.
-    switch_coef=0.005,
-    load_coef=0.005,
-    # Residual-delta dispatch gain.  Set to num_experts so that at init
-    # (Switch-style weight ≈ 1/E) the effective expert contribution
-    # g·w ≈ 1 — experts contribute at full scale from step 1, unblocking
-    # the detection gradient to the gate.  See BEVMoEBlock class docstring
-    # for the full bootstrap rationale and stability caveats.
-    residual_gain=float(num_experts),
+    # Switch balance loss coefficient (α).  Bumped 0.005 → 0.05 after run
+    # 4485767, then 0.05 → 0.1 after run 4487087 which showed val-time
+    # collapse flipping between 1–2 experts per epoch with dense probs
+    # near-uniform (no effective pressure on P_e).  Relative to the
+    # detection loss (~1–2 at steady state) a floor of 0.1 is now a few
+    # per cent of total loss and actually exerts torque on the router.
+    # NOTE: run 4487087 moe_importance_loss sat at ~0.065 (near its uniform
+    # floor α=0.05) because the noisy gate drowned the signal; this bump
+    # is paired with noise_floor 1.0 → 0.2 below, which must happen
+    # together.  importance_loss = CV² of per-expert soft-mass; it is
+    # fully differentiable and always provides gradient pressure.
+    importance_coef=0.1,
+    # load_loss uses the Shazeer Gaussian-CDF dispatch estimator via
+    # clean/noisy logits from NoisyTopkGate.  It penalises hard-dispatch
+    # collapse independently of the soft importance term above.  0.05 is
+    # a conservative starting point that avoids dominating the detection
+    # loss while still providing back-pressure against dead experts.
+    load_coef=0.05,
+    # Residual-delta dispatch gain.  With the move to standard Shazeer
+    # top-k mixture weights (Σ_j w_j = 1 per sample, see routing.py), the
+    # effective expert contribution ‖Σ w·Δ‖ is controlled solely by Δ
+    # and g — router peakiness no longer changes the magnitude.  g=1 is
+    # therefore the principled default and no longer needs to track E.
+    #
+    # History: 3.0 (post-4485767, defensive) → 6.0 (post-4487087, to
+    # compensate Switch-style ≈1/E weights at init) → 1.0 (this run).
+    # The previous 6.0 was a workaround for Switch-style dispatch; it
+    # made g·Σw drift from ≈2 at init to ≈6 at collapse, coupling
+    # grad_norm to router peakiness.  Shazeer mixture removes that
+    # coupling entirely.  Monitor grad_norm — if sustained > 50, drop
+    # to 0.5 rather than scaling back up.
+    residual_gain=1.0,
     router_pool_size=2,
     router_hidden_dim=128,
     router_out_dim=64,
@@ -64,6 +85,38 @@ bev_moe_cfg = dict(
         fields=['road_type'],
         embed_dim=16,
         out_dim=64,
+    ),
+    # Use Shazeer et al. noisy top-k gate.  Learned input-dependent
+    # Gaussian noise is added to logits during training to encourage load
+    # balance and give non-dominant experts gradient signal.
+    #
+    # noise_floor history: 0.3 → 1.0 (run 4485767, to break 1-expert
+    # collapse) → 0.2 (run 4487087 follow-up, current).
+    #
+    # Why 1.0 was too high (run 4487087 diagnosis):
+    # NoisyTopkGate z-score-normalises logits per sample so signal std
+    # ≈ 1.0 across experts.  With noise_std = softplus(·) + noise_floor
+    # ≥ noise_floor = 1.0, noise is AT LEAST as large as signal at every
+    # training step → SNR ≤ 1 → top-k selection is essentially random.
+    # Evidence: train-time top-1 frequencies were all ~0.18 (=1/E with
+    # dead expert_1), while val-time (no noise) collapsed to 1–2 experts
+    # and the active set flipped every epoch (E1: {0,4}, E2: {2,5},
+    # E3: {0,3}).  Dense probs stayed ~uniform (~0.18), mean_gate_entropy
+    # 1.666 out of ln(6)=1.79, because the gate received no consistent
+    # gradient about which expert was actually better for each sample.
+    #
+    # 0.2 restores SNR ≈ 5 (noise std ≥ 0.2 vs signal std ≈ 1.0) so real
+    # preferences can form, while still letting non-dominant experts get
+    # occasional gradient signal.  If val routing still collapses after
+    # a few epochs, step to 0.3 rather than 1.0 — the right
+    # counter-measure to 1-expert collapse is importance_coef / residual_gain,
+    # not drowning the gate.
+    # TODO: decay noise_floor from 0.3 → 0.05 over epochs 0–8 once a
+    # schedule hook exists; static for now.
+    gate_type='noisy_topk',
+    gate_cfg=dict(
+        noise_floor=0.2,
+        temperature=1.0,
     ),
 )
 
@@ -332,33 +385,39 @@ test_cfg = dict()
 
 # ── Optimizer ─────────────────────────────────────────────────────────────
 # Routing-path param groups (gate / summary head / context encoder) are
-# small MLPs with few parameters that need to learn meaningful logit
-# margins for top-k dispatch to specialise.  Empirically the dense softmax
-# stays near-uniform (margins ~0.05 in logit space) while hard top-1 is
-# skewed, suggesting the routing path is over-damped by the same weight
-# decay (0.01) and base LR (5e-5) used for the pretrained LiDAR backbone.
+# small MLPs that need to learn meaningful logit margins for top-k
+# dispatch to specialise.  Weight decay on the gate Linear actively
+# shrinks logit magnitudes, so decay_mult=0.0 stays on all three routing
+# groups — embeddings and LayerNorm standardly get no decay either.
 #
-# We therefore give routing-path parameters their own multipliers via
-# MMEngine's paramwise_cfg.custom_keys (matched as substrings against
-# parameter names; longest match wins, so these keys cannot leak onto
-# bev_moe.experts.*):
+# Per-group lr_mult revised after run 4485767 (previously 3.0 / 3.0 / 3.0):
 #
-#   bev_moe.gate.*             — TopkGate.gate linear layer
-#   bev_moe.summary.*          — BEVSummaryHead MLP + final LayerNorm
-#   bev_moe.context_encoder.*  — ContextEncoder embeddings + proj MLP
+#   bev_moe.gate            — 3.0 → 1.0
+#       A 3× LR on the gate in combination with residual_gain=6 let the
+#       router accumulate logit margin for whichever expert was picked
+#       first faster than the balance losses or the noisy top-k could
+#       push back.  By epoch 1 top1_selection_freq on expert_3 was 1.0.
+#       Gate LR at parity with the backbone (5e-5) gives the balance
+#       losses and noise exploration room to bite before the gate
+#       commits.  If dense probs stay perfectly uniform after several
+#       epochs, raise toward 1.5–2.0 — do NOT restore 3.0 without first
+#       confirming moe_balance_loss is actually exerting pressure.
 #
-# lr_mult=3.0   → routing LR 1.5e-4 (vs backbone 5e-5); lets logit
-#                 margins grow faster so top-1 choices become confident.
-# decay_mult=0.0 → no weight decay on routing params.  Decay on the gate
-#                 Linear actively shrinks logit magnitudes, which is
-#                 exactly what's preventing margin growth.  Embeddings
-#                 and LayerNorm params also standardly get no decay.
+#   bev_moe.summary         — 3.0 → 2.0
+#       The BEV summary descriptor still needs to differentiate scenes,
+#       so keep a mild boost (effective LR 1.0e-4).
+#
+#   bev_moe.context_encoder — 3.0 → 2.0
+#       Context embeddings + proj MLP; same reasoning as summary.
+#       In run 4485767 per-road_type dense probs were identical across
+#       all five road types — the context path saw no gradient because
+#       the gate had already collapsed.  Keeping a modest boost here
+#       ensures context can learn once the gate starts varying.
 #
 # Expert CNN blocks (bev_moe.experts.*) are NOT listed here and therefore
 # fall through to the default AdamW settings (lr=5e-5, weight_decay=0.01),
 # matching the LiDAR backbone / neck / bbox_head.  Architecture, routing
-# semantics (k=2, Switch-style weights), residual_gain, and aux losses are
-# all unchanged.
+# semantics (k=2, Switch-style weights), and aux losses are unchanged.
 optim_wrapper = dict(
     type='AmpOptimWrapper',
     optimizer=dict(type='AdamW', lr=lr, weight_decay=0.01),
@@ -366,9 +425,9 @@ optim_wrapper = dict(
     loss_scale='dynamic',
     paramwise_cfg=dict(
         custom_keys={
-            'bev_moe.gate':            dict(lr_mult=3.0, decay_mult=0.0),
-            'bev_moe.summary':         dict(lr_mult=3.0, decay_mult=0.0),
-            'bev_moe.context_encoder': dict(lr_mult=3.0, decay_mult=0.0),
+            'bev_moe.gate':            dict(lr_mult=1.0, decay_mult=0.0),
+            'bev_moe.summary':         dict(lr_mult=2.0, decay_mult=0.0),
+            'bev_moe.context_encoder': dict(lr_mult=2.0, decay_mult=0.0),
         },
     ),
 )
