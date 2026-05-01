@@ -41,10 +41,15 @@ GateOutput contract
 -------------------
 All gate modules return a ``GateOutput`` with the following fields:
 
-    full_softmax_probs   (B, E)  — softmax over clean_logits (router belief
-                                   over the full pool).  Consumed by
-                                   ``importance_loss`` and the
-                                   ``dense_mean_prob_per_expert`` diagnostic.
+    full_softmax_probs   (B, E)  — softmax over clean_logits: the clean router
+                               belief over the full expert pool, before
+                               noise and before top-k. Consumed by
+                               ``importance_loss`` and the
+                               ``dense_mean_prob_per_expert`` diagnostic.
+                               This intentionally regularizes the learned
+                               deterministic router preference, while
+                               noisy_logits are used for training-time
+                               top-k exploration and load_loss.
 
     sparse_softmax_probs (B, E)  — top-k mixture (renormalised over the
                                    selected experts) scattered into the
@@ -150,8 +155,9 @@ class BEVSummaryHead(nn.Module):
 
        The 1×1 conv mixes channels per cell; the 3×3 conv mixes
        neighbouring pooled BEV regions so the descriptor encodes
-       relational structure (e.g. "object dense in front, sparse in
-       back") rather than independent per-cell summaries.
+       relational structure (e.g. "dense in near-range cells, sparse in
+        far-range cells", or left/right asymmetry) rather than independent
+        per-cell summaries.
 
     3. **Descriptor MLP**: flatten and project::
 
@@ -407,10 +413,12 @@ class NoisyTopkGate(nn.Module):
       2. Training: ``noise_std = softplus(W_noise(z) + noise_epsilon)``;
          ``noisy_logits = clean_logits + randn · noise_std``.
          Eval:    ``noisy_logits = clean_logits``; ``noise_std = None``.
-      3. ``full_softmax_probs = softmax(clean_logits / T)`` — pre-top-k
-         router belief.  Note: computed from clean logits so that the
-         ``importance_loss`` signal does not depend on a single noise
-         realisation.
+      3. ``full_softmax_probs = softmax(clean_logits / T)`` — clean pre-top-k
+        router belief.  This is intentionally computed from clean logits, not
+        noisy logits, so ``importance_loss`` regularizes the learned
+        deterministic router preference.  Training-time exploration still comes
+        from selecting top-k on ``noisy_logits``, and hard-dispatch balancing is
+        handled by ``load_loss``.
       4. Top-k selected on ``noisy_logits`` (rank-invariant w.r.t. T>0).
       5. ``topk_weights = softmax(topk_vals / T)`` — renormalised over the
          top-k, Σ_j = 1 per sample.
@@ -470,8 +478,11 @@ class NoisyTopkGate(nn.Module):
             noise_std = None
             noisy_logits = clean_logits
 
-        # Pre-top-k softmax — computed from clean logits so importance_loss
-        # is not driven by single noise samples.  Diagnostics use this too.
+        # Clean pre-top-k softmax.  We intentionally compute this from clean_logits
+        # so importance_loss and dense diagnostics regularize the deterministic
+        # router preference rather than a single noisy sample.  Noisy logits are
+        # still used below for top-k exploration and by load_loss for expected
+        # hard-dispatch balancing.
         full_softmax_probs = F.softmax(
             clean_logits / self.temperature, dim=-1)                    # (B, E)
 
