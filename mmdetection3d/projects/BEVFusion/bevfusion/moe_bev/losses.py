@@ -1,11 +1,17 @@
-"""Auxiliary MoE losses for expert balancing.
+"""Auxiliary MoE losses for expert balancing and router regularisation.
 
 Primary API (used by the BEV MoE blocks)
 ----------------------------------------
-The two default-active losses are Shazeer et al. (2017)'s "Outrageously Large
-Neural Networks" importance + load pair.  They work together and penalise
-complementary failure modes; with a NoisyTopkGate both are fully
-differentiable.
+The default-active losses are:
+
+* Shazeer et al. (2017) ``importance_loss`` + ``load_loss`` pair —
+  complementary balance signals; both are fully differentiable under a
+  ``NoisyTopkGate``.
+* ``router_z_loss`` — Mesh-Transformer / ST-MoE style scale regulariser on
+  the clean router logits.  Prevents one expert logit from dominating the
+  softmax and growing unboundedly.
+* ``group_balance_loss`` — used only by ``ModalitySpecificMoEBlock`` to
+  encourage balanced camera-group vs LiDAR-group routing mass.
 
     importance_loss(gate_probs, coef)
         CV² of the per-expert total soft probability mass
@@ -25,6 +31,14 @@ differentiable.
         clean logits and the noise std.  Penalises **uneven hard dispatch**,
         which is the failure mode where every expert has similar P_e but only
         1–2 experts actually win top-k.
+
+    router_z_loss(clean_logits, coef)
+        Mean of ``logsumexp(clean_logits, dim=-1) ** 2`` times ``coef``.
+        Pulls the clean-logit log-partition function toward zero, which
+        regularises the *scale* of the router logits without distorting
+        their relative ordering.  Use the **clean** logits (not the noisy
+        ones, and never the context logits) so the regulariser bites the
+        underlying router rather than a noise sample.
 
     group_balance_loss(gate_probs, cam_expert_ids, lidar_expert_ids, coef)
         Used only by the modality-specific variant; penalises deviation from
@@ -58,9 +72,17 @@ uniform floor α because noise-dominated f_e was already ~1/E, providing
 essentially no gradient signal under the current noisy-gate regime.
 
 Variant usage:
-    BEVMoEBlock                 → importance_loss + load_loss
-    JointModalityMoEBlock       → importance_loss + load_loss
-    ModalitySpecificMoEBlock    → importance_loss + load_loss + group_balance_loss
+    BEVMoEBlock                 → importance_loss + load_loss + router_z_loss
+                                  + ctx_loss
+    JointModalityMoEBlock       → importance_loss + load_loss + router_z_loss
+                                  + ctx_loss
+    ModalitySpecificMoEBlock    → importance_loss + load_loss + router_z_loss
+                                  + group_balance_loss + ctx_loss
+
+The ``ctx_loss`` term is a plain ``F.cross_entropy`` on the per-block
+``context_head(z)`` output; see ``moe_bev/routing.py`` for the rationale
+(context labels supervise the router descriptor without ever entering the
+gate input).
 """
 from __future__ import annotations
 
@@ -212,6 +234,39 @@ def load_loss(
     mean = load.mean()
     cv_sq = load.var(unbiased=False) / (mean ** 2 + eps)
     return cv_sq * coef
+
+
+# ── Router z-loss (Mesh-Transformer / ST-MoE scale regulariser) ──────────
+
+def router_z_loss(logits: Tensor, coef: float) -> Tensor:
+    """Router z-loss — mean ``logsumexp(logits, dim=-1) ** 2`` times ``coef``.
+
+    Penalises the squared log-partition of the router logits, which keeps
+    the *scale* of the logits in check.  Without this term one expert's
+    logit can grow without bound — softmax mass collapses onto it, the
+    others vanish into the floor, and the ``p(1-p)`` Jacobian of the
+    softmax stops providing usable balance gradient.  The z-loss bites the
+    overall magnitude (``log Σ exp(l)``) without distorting relative
+    ordering, so expert specialisation is preserved.
+
+    Always pass the **clean** router logits (``GateOutput.clean_logits``).
+    Do NOT pass ``noisy_logits`` (regularising a single noise sample is
+    meaningless), and do NOT pass the context-classifier logits (those
+    have a different role and a different desired scale).
+
+    Args:
+        logits: ``(B, E)`` clean router logits.
+        coef:   Scalar weight applied to the loss.  Pass 0 (or a negative)
+                to disable; the function returns a detached zero tensor.
+
+    Returns:
+        Scalar loss tensor (differentiable through ``logits`` whenever
+        ``coef > 0``).
+    """
+    if coef <= 0.0:
+        return logits.new_zeros(())
+    z = torch.logsumexp(logits, dim=-1)              # (B,)
+    return coef * (z ** 2).mean()
 
 
 # ── Switch Transformer balance loss (alternative, not used by default) ────

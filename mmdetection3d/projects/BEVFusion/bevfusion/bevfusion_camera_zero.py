@@ -18,6 +18,8 @@ Why zero here?
     architecture (bypasses ConvFuser entirely), making the comparison less
     apples-to-apples.
 
+The zero happens after the view-transform (so the tensor shape is right) but before the ConvFuser receives it. The ConvFuser's camera-channel filters are applied to zeros — net contribution = 0, while lidar channels pass through normally.
+
 Usage:
   Use config ``zod_bevfusion_finetune_camzero.py`` which simply overrides
   model.type to 'BEVFusionCameraZero' while keeping all weights the same.

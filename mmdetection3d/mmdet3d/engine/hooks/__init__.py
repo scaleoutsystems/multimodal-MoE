@@ -11,6 +11,7 @@ from .depth_projection_debug_hook import DepthProjectionDebugHook
 from .disable_object_sample_hook import DisableObjectSampleHook
 from .dual_checkpoint_init_hook import DualCheckpointInitHook
 from .efficiency_hooks import RunSummaryHook, TrainingEfficiencyHook
+from .expert_respawn_hook import ExpertRespawnHook
 from .freeze_lidar_hook import FreezeLidarBranchHook
 from .fusion_training_hook import FusionTrainingStrategyHook
 from .moe_routing_hook import MoERoutingHook
@@ -26,6 +27,7 @@ __all__ = [
     'DepthProjectionDebugHook',
     'TrainingEfficiencyHook', 'RunSummaryHook',
     'DualCheckpointInitHook',
+    'ExpertRespawnHook',
     'FusionTrainingStrategyHook',
     'FreezeLidarBranchHook',
     'MoERoutingHook',

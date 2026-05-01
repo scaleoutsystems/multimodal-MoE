@@ -1,39 +1,59 @@
 """MoE routing diagnostics hook.
 
-Tracks four mathematically distinct routing quantities per epoch (train + val):
+Tracks per-expert routing quantities, router-scale diagnostics, and
+context-supervised auxiliary diagnostics per epoch (train + val).
+
+Per-expert routing metrics (computed from each iter's ``_moe_info``):
 
     dispatch_mass_per_expert
         Mean post-top-k routed weight per expert, averaged over samples.
-        Uses the actual dispatch weights (topk_weights) after top-k masking
-        and any renormalisation applied by the model.
-        Reflects true expert contribution to the output.
+        Uses the actual dispatch weights (``topk_weights``) after top-k
+        masking and any renormalisation applied by the model.
 
     dense_mean_prob_per_expert
-        Mean pre-top-k softmax probability per expert, averaged over samples.
-        Computed from the full softmax over all experts before top-k masking.
+        Mean pre-top-k softmax probability per expert, averaged over
+        samples.  Computed from the full softmax over all experts.
         Reflects the router's continuous preference signal.
 
     top1_selection_freq_per_expert
-        Fraction of samples for which expert e is the rank-1 selected expert
-        (i.e. topk_idx[:, 0] == e).
+        Fraction of samples for which expert e is the rank-1 selection
+        (``topk_idx[:, 0] == e``).
 
     topk_selection_freq_per_expert
         Fraction of samples for which expert e appears anywhere in the
-        selected top-k set (i.e. in any column of topk_idx).
-        Equals top1_selection_freq when k=1.
+        top-k set.  Equals top1_selection_freq when k=1.
 
-All four quantities are computed from the same _moe_info dict
-(full_softmax_probs, topk_idx, topk_weights) so they are directly comparable.
+    mean_gate_entropy
+        Average ``-Σ p log p`` of the per-sample full pre-top-k softmax.
 
-Outputs
--------
-Per epoch, inside <work_dir>/moe_routing/:
+Router-scale diagnostics (mean over samples, per epoch):
+
+    clean_logits_{mean,std,abs_mean,min,max,lse_mean}
+    noisy_logits_{mean,std,abs_mean,min,max,lse_mean}    (if available)
+    noise_std_{mean,min,max}                              (NoisyTopkGate only)
+
+Context-supervised auxiliary diagnostics:
+
+    ctx_aux_loss              UNWEIGHTED F.cross_entropy(ctx_logits, label)
+    ctx_aux_loss_weighted     coef · ctx_aux_loss
+    router_z_loss             clean-logit z regulariser value
+    importance_loss
+    load_loss
+    group_balance_loss        (modality_specific only)
+    ctx_aux_acc               Fraction of correct argmax predictions.
+    ctx_aux_acc_per_class     (overall val) accuracy per context class.
+    ctx_pred_hist             bincount of argmax predictions over the split.
+    ctx_label_hist            bincount of context labels over the split.
+
+Outputs (under ``<work_dir>/moe_routing/``):
 
     dispatch_mass_train_epochN.json / dispatch_mass_val_epochN.json
     dense_mean_prob_train_epochN.json / dense_mean_prob_val_epochN.json
-    dispatch_mass_per_expert.png      — dispatch mass over epochs (line plot)
-    dense_mean_prob_per_expert.png    — dense softmax prob over epochs (line plot)
-    routing_summary_epochN.json       — val-epoch summary with all 4 metrics + AP
+    routing_summary_epochN.json — val-epoch summary including all routing
+                                  metrics, router-scale diagnostics,
+                                  context-aux diagnostics, and AP.
+    dispatch_mass_per_expert.png — line plot over epochs.
+    dense_mean_prob_per_expert.png — line plot over epochs.
 
 Hook C (modality-specific group mass):
     group_mass_train_epochN.json / group_mass_val_epochN.json
@@ -43,8 +63,8 @@ Config example
 --------------
     dict(
         type='MoERoutingHook',
-        num_experts=6,
-        ap_metric_keys=['mAP_0.5m', 'mAP_0.50'],   # both APs logged in summary
+        num_experts=5,
+        ap_metric_keys=['mAP_0.5m', 'mAP_0.50'],
         enable_hook_c=True,   # only has effect for modality_specific_moe
     )
 """
@@ -126,27 +146,8 @@ class MoERoutingHook(Hook):
         E = num_experts
 
         # ── Per-epoch accumulators (reset after each epoch) ─────────────
-        # dispatch_mass: sum of topk_weights scattered per expert
-        self._tr_dispatch: List[float] = [0.0] * E
-        self._va_dispatch: List[float] = [0.0] * E
-        # dense_prob: sum of full pre-top-k softmax probs per expert
-        self._tr_dense:    List[float] = [0.0] * E
-        self._va_dense:    List[float] = [0.0] * E
-        # top1_freq: count of samples where expert is rank-1 selection
-        self._tr_top1:     List[int]   = [0] * E
-        self._va_top1:     List[int]   = [0] * E
-        # topk_freq: count of samples where expert appears anywhere in top-k
-        self._tr_topk:     List[int]   = [0] * E
-        self._va_topk:     List[int]   = [0] * E
-        # sample counts
-        self._tr_n: int = 0
-        self._va_n: int = 0
-
-        # Modality group mass (Hook C; modality_specific_moe only)
-        self._tr_cam_mass:   float = 0.0
-        self._tr_lidar_mass: float = 0.0
-        self._va_cam_mass:   float = 0.0
-        self._va_lidar_mass: float = 0.0
+        self._tr = self._fresh_acc(E)
+        self._va = self._fresh_acc(E)
 
         # Epoch-history for line plots
         self._tr_dispatch_hist: Dict[int, List[float]] = {}
@@ -158,6 +159,38 @@ class MoERoutingHook(Hook):
 
         self._out_dir: Optional[str] = None
 
+    @staticmethod
+    def _fresh_acc(E: int) -> Dict[str, Any]:
+        """Build a fresh accumulator dict for one phase (train or val)."""
+        return {
+            # Per-expert routing
+            'dispatch':       [0.0] * E,
+            'dense':          [0.0] * E,
+            'top1':           [0]   * E,
+            'topk':           [0]   * E,
+            'entropy_sum':    0.0,
+            'n':              0,
+            # Modality group mass
+            'cam_mass':       0.0,
+            'lidar_mass':     0.0,
+            # Aux loss running sums (loss_value_sum, count) → mean later
+            'imp_sum':        0.0, 'imp_n':       0,
+            'load_sum':       0.0, 'load_n':      0,
+            'router_z_sum':   0.0, 'router_z_n':  0,
+            'group_bal_sum':  0.0, 'group_bal_n': 0,
+            'ctx_loss_sum':   0.0, 'ctx_loss_n':  0,
+            'ctx_w_sum':      0.0, 'ctx_w_n':     0,
+            'ctx_acc_sum':    0.0, 'ctx_acc_n':   0,
+            # Per-class context confusion (sum over iters): pred[c, t]
+            'ctx_pred_hist':  None,   # List[int] | None — sized on first hit
+            'ctx_label_hist': None,
+            'ctx_correct_per_class': None,   # List[int]
+            'ctx_total_per_class':   None,   # List[int]
+            'ctx_target_field':      None,
+            # Router-scale diagnostics (running sums of per-iter scalars)
+            'logit_stats':    {},  # key → [sum, n]
+        }
+
     # ── Setup ──────────────────────────────────────────────────────────────
 
     def before_run(self, runner) -> None:
@@ -167,24 +200,37 @@ class MoERoutingHook(Hook):
 
     # ── Per-iteration accumulation ─────────────────────────────────────────
 
+    @staticmethod
+    def _add_scalar_loss(acc: Dict[str, Any], key_sum: str, key_n: str,
+                         info: Dict[str, Any], src: str) -> None:
+        v = info.get(src)
+        if v is None:
+            return
+        if isinstance(v, torch.Tensor):
+            try:
+                v = float(v.detach().item())
+            except Exception:
+                return
+        try:
+            acc[key_sum] += float(v)
+            acc[key_n]   += 1
+        except (TypeError, ValueError):
+            pass
+
     def _accumulate(self, runner, phase: str) -> None:
-        """Accumulate all four routing metrics from _moe_info."""
+        """Accumulate routing + router-scale + ctx-aux metrics from _moe_info."""
         moe_modules = _get_moe_modules(runner.model)
         if not moe_modules:
             return
 
-        is_train = (phase == 'train')
-        dispatch = self._tr_dispatch if is_train else self._va_dispatch
-        dense    = self._tr_dense    if is_train else self._va_dense
-        top1     = self._tr_top1     if is_train else self._va_top1
-        topk     = self._tr_topk     if is_train else self._va_topk
+        acc = self._tr if phase == 'train' else self._va
 
         for attr_name, mod in moe_modules.items():
             info = getattr(mod, '_moe_info', None)
             if info is None:
                 continue
 
-            full_probs   = info.get('full_softmax_probs')  # (B, E) pre-top-k softmax
+            full_probs   = info.get('full_softmax_probs')  # (B, E)
             topk_idx     = info.get('topk_idx')            # (B, k)
             topk_weights = info.get('topk_weights')        # (B, k)
             if full_probs is None or topk_idx is None or topk_weights is None:
@@ -192,49 +238,113 @@ class MoERoutingHook(Hook):
 
             B, E = full_probs.shape
             k    = topk_idx.shape[1]
-            E    = min(E, self.num_experts)
+            E_use = min(E, self.num_experts)
 
-            # dense_mean_prob: sum of full (pre-top-k) softmax probs per expert
-            for e in range(E):
+            # ── Per-expert metrics ────────────────────────────────────
+            dispatch = acc['dispatch']
+            dense    = acc['dense']
+            top1     = acc['top1']
+            topk_arr = acc['topk']
+
+            for e in range(E_use):
                 dense[e] += float(full_probs[:, e].sum().item())
 
-            # dispatch_mass: scatter topk_weights per expert
             for b in range(B):
                 for j in range(k):
                     eidx = int(topk_idx[b, j].item())
                     if 0 <= eidx < self.num_experts:
                         dispatch[eidx] += float(topk_weights[b, j].item())
 
-            # top1_selection_freq: rank-1 expert per sample = topk_idx[:, 0]
             for b in range(B):
                 eidx = int(topk_idx[b, 0].item())
                 if 0 <= eidx < self.num_experts:
                     top1[eidx] += 1
 
-            # topk_selection_freq: any expert in the top-k set
             for b in range(B):
                 seen = set()
                 for j in range(k):
                     eidx = int(topk_idx[b, j].item())
                     if 0 <= eidx < self.num_experts and eidx not in seen:
-                        topk[eidx] += 1
+                        topk_arr[eidx] += 1
                         seen.add(eidx)
 
-            if is_train:
-                self._tr_n += B
-            else:
-                self._va_n += B
+            with torch.no_grad():
+                ent = -(full_probs.clamp_min(1e-12) *
+                        full_probs.clamp_min(1e-12).log()).sum(dim=-1)
+                acc['entropy_sum'] += float(ent.sum().item())
+            acc['n'] += B
 
-            # Hook C: modality group mass (modality_specific_moe only)
+            # ── Modality group mass (Hook C) ──────────────────────────
             if self.enable_hook_c and attr_name == 'modality_specific_moe':
-                cam_m   = info.get('cam_group_mass',   0.0)
-                lidar_m = info.get('lidar_group_mass', 0.0)
-                if is_train:
-                    self._tr_cam_mass   += cam_m
-                    self._tr_lidar_mass += lidar_m
-                else:
-                    self._va_cam_mass   += cam_m
-                    self._va_lidar_mass += lidar_m
+                acc['cam_mass']   += float(info.get('cam_group_mass',   0.0))
+                acc['lidar_mass'] += float(info.get('lidar_group_mass', 0.0))
+
+            # ── Aux loss components ───────────────────────────────────
+            self._add_scalar_loss(acc, 'imp_sum',       'imp_n',
+                                  info, 'importance_loss')
+            self._add_scalar_loss(acc, 'load_sum',      'load_n',
+                                  info, 'load_loss')
+            self._add_scalar_loss(acc, 'router_z_sum',  'router_z_n',
+                                  info, 'router_z_loss')
+            self._add_scalar_loss(acc, 'group_bal_sum', 'group_bal_n',
+                                  info, 'group_balance_loss')
+            self._add_scalar_loss(acc, 'ctx_loss_sum',  'ctx_loss_n',
+                                  info, 'ctx_aux_loss')
+            self._add_scalar_loss(acc, 'ctx_w_sum',     'ctx_w_n',
+                                  info, 'ctx_aux_loss_weighted')
+            self._add_scalar_loss(acc, 'ctx_acc_sum',   'ctx_acc_n',
+                                  info, 'ctx_aux_acc')
+
+            # ── Context histograms / per-class accuracy ───────────────
+            ctx_pred  = info.get('ctx_pred_hist')
+            ctx_label = info.get('ctx_label_hist')
+            target    = info.get('ctx_target_field')
+            if ctx_pred and ctx_label and len(ctx_pred) == len(ctx_label):
+                C = len(ctx_pred)
+                if acc['ctx_pred_hist'] is None:
+                    acc['ctx_pred_hist']  = [0] * C
+                    acc['ctx_label_hist'] = [0] * C
+                    acc['ctx_correct_per_class'] = [0] * C
+                    acc['ctx_total_per_class']   = [0] * C
+                # Pad if a different MoE block has more classes (rare).
+                while len(acc['ctx_pred_hist']) < C:
+                    acc['ctx_pred_hist'].append(0)
+                    acc['ctx_label_hist'].append(0)
+                    acc['ctx_correct_per_class'].append(0)
+                    acc['ctx_total_per_class'].append(0)
+                for c in range(C):
+                    acc['ctx_pred_hist'][c]  += int(ctx_pred[c])
+                    acc['ctx_label_hist'][c] += int(ctx_label[c])
+                # Per-class correct counts can only be derived per iter
+                # from the diagonal of a confusion matrix — we
+                # approximate using min(pred, label) per class which is
+                # a strict lower bound.  For a precise per-class
+                # accuracy use the per-sample analysis in
+                # ContextRoutingStatsHook.
+                for c in range(C):
+                    acc['ctx_correct_per_class'][c] += min(
+                        int(ctx_pred[c]), int(ctx_label[c]))
+                    acc['ctx_total_per_class'][c]   += int(ctx_label[c])
+                if target is not None:
+                    acc['ctx_target_field'] = target
+
+            # ── Router-scale diagnostics ──────────────────────────────
+            for src_key in (
+                'clean_logits_mean', 'clean_logits_std',
+                'clean_logits_abs_mean', 'clean_logits_min',
+                'clean_logits_max', 'clean_logits_lse_mean',
+                'noisy_logits_mean', 'noisy_logits_std',
+                'noisy_logits_abs_mean', 'noisy_logits_min',
+                'noisy_logits_max', 'noisy_logits_lse_mean',
+                'noise_std_mean', 'noise_std_min', 'noise_std_max',
+                'ctx_logits_mean_abs',
+            ):
+                v = info.get(src_key)
+                if v is None:
+                    continue
+                stats = acc['logit_stats'].setdefault(src_key, [0.0, 0])
+                stats[0] += float(v)
+                stats[1] += 1
 
     def after_train_iter(self, runner, batch_idx, data_batch=None,
                          outputs=None) -> None:
@@ -264,26 +374,68 @@ class MoERoutingHook(Hook):
     def _to_expert_dict(self, vals: List[float]) -> Dict[str, float]:
         return {f'expert_{i}': round(v, 8) for i, v in enumerate(vals)}
 
-    def _build_metrics(
-        self,
-        dispatch: List[float],
-        dense: List[float],
-        top1: List[int],
-        topk: List[int],
-        n: int,
-    ) -> Dict[str, Any]:
-        """Build the four canonical metric dicts for a given split."""
-        return {
+    def _build_metrics(self, acc: Dict[str, Any]) -> Dict[str, Any]:
+        """Build the canonical metric dict for a given split's accumulator."""
+        n = acc['n']
+        out: Dict[str, Any] = {
             'num_samples': n,
-            'dispatch_mass_per_expert':         self._to_expert_dict(
-                self._norm_dispatch(dispatch, n)),
-            'dense_mean_prob_per_expert':        self._to_expert_dict(
-                self._norm_dense(dense, n)),
-            'top1_selection_freq_per_expert':    self._to_expert_dict(
-                self._freq(top1, n)),
-            'topk_selection_freq_per_expert':    self._to_expert_dict(
-                self._freq(topk, n)),
+            'dispatch_mass_per_expert':       self._to_expert_dict(
+                self._norm_dispatch(acc['dispatch'], n)),
+            'dense_mean_prob_per_expert':      self._to_expert_dict(
+                self._norm_dense(acc['dense'], n)),
+            'top1_selection_freq_per_expert':  self._to_expert_dict(
+                self._freq(acc['top1'], n)),
+            'topk_selection_freq_per_expert':  self._to_expert_dict(
+                self._freq(acc['topk'], n)),
+            'mean_gate_entropy':              round(
+                acc['entropy_sum'] / max(n, 1), 6),
         }
+
+        # Aux loss means
+        def _mean(s: float, n: int) -> Optional[float]:
+            if n == 0:
+                return None
+            return round(s / n, 8)
+
+        for label, src_sum, src_n in (
+            ('importance_loss',       'imp_sum',       'imp_n'),
+            ('load_loss',             'load_sum',      'load_n'),
+            ('router_z_loss',         'router_z_sum',  'router_z_n'),
+            ('group_balance_loss',    'group_bal_sum', 'group_bal_n'),
+            ('ctx_aux_loss',          'ctx_loss_sum',  'ctx_loss_n'),
+            ('ctx_aux_loss_weighted', 'ctx_w_sum',     'ctx_w_n'),
+            ('ctx_aux_acc',           'ctx_acc_sum',   'ctx_acc_n'),
+        ):
+            v = _mean(acc[src_sum], acc[src_n])
+            if v is not None:
+                out[label] = v
+
+        # Router-scale diagnostics
+        scale: Dict[str, float] = {}
+        for k, (s, c) in acc['logit_stats'].items():
+            if c > 0:
+                scale[k] = round(s / c, 8)
+        if scale:
+            out['router_scale_diagnostics'] = scale
+
+        # Context histograms / per-class accuracy
+        if acc['ctx_pred_hist'] is not None:
+            out['ctx_target_field'] = acc.get('ctx_target_field')
+            out['ctx_pred_hist']    = list(acc['ctx_pred_hist'])
+            out['ctx_label_hist']   = list(acc['ctx_label_hist'])
+            per_class_acc = []
+            for correct, total in zip(acc['ctx_correct_per_class'],
+                                      acc['ctx_total_per_class']):
+                per_class_acc.append(
+                    round(correct / total, 6) if total > 0 else None)
+            out['ctx_aux_acc_per_class_lower_bound'] = per_class_acc
+            tot_correct = sum(acc['ctx_correct_per_class'])
+            tot_total   = sum(acc['ctx_total_per_class'])
+            if tot_total > 0:
+                out['ctx_aux_acc_overall_lower_bound'] = round(
+                    tot_correct / tot_total, 6)
+
+        return out
 
     # ── Epoch-trend plots ──────────────────────────────────────────────────
 
@@ -375,22 +527,18 @@ class MoERoutingHook(Hook):
 
     def after_train_epoch(self, runner) -> None:
         epoch = runner.epoch
-        n = self._tr_n
-        if n == 0:
+        acc = self._tr
+        if acc['n'] == 0:
             self._reset_train()
             return
 
-        metrics = self._build_metrics(
-            self._tr_dispatch, self._tr_dense,
-            self._tr_top1, self._tr_topk, n)
+        metrics = self._build_metrics(acc)
 
-        # Record histories for line plots
         dispatch_vals = list(metrics['dispatch_mass_per_expert'].values())
         dense_vals    = list(metrics['dense_mean_prob_per_expert'].values())
         self._tr_dispatch_hist[epoch] = dispatch_vals
         self._tr_dense_hist[epoch]    = dense_vals
 
-        # Save per-epoch JSONs
         self._save_json(
             {'epoch': epoch, 'split': 'train', **metrics},
             f'dispatch_mass_train_epoch{epoch}.json')
@@ -398,19 +546,18 @@ class MoERoutingHook(Hook):
             {'epoch': epoch, 'split': 'train', **metrics},
             f'dense_mean_prob_train_epoch{epoch}.json')
 
-        # Redraw epoch-trend plots
         self._save_dispatch_mass_plot()
         self._save_dense_prob_plot()
 
-        # Hook C: modality group mass
-        if self.enable_hook_c and (self._tr_cam_mass + self._tr_lidar_mass) > 0:
-            total = self._tr_cam_mass + self._tr_lidar_mass + 1e-8
-            cam_f   = self._tr_cam_mass   / total
-            lidar_f = self._tr_lidar_mass / total
+        if self.enable_hook_c and (acc['cam_mass'] + acc['lidar_mass']) > 0:
+            total = acc['cam_mass'] + acc['lidar_mass'] + 1e-8
+            cam_f   = acc['cam_mass']   / total
+            lidar_f = acc['lidar_mass'] / total
             self._tr_group_hist[epoch] = (cam_f, lidar_f)
             self._save_json(
                 {'epoch': epoch, 'split': 'train',
-                 'cam_group_mass_frac': cam_f, 'lidar_group_mass_frac': lidar_f},
+                 'cam_group_mass_frac': cam_f,
+                 'lidar_group_mass_frac': lidar_f},
                 f'group_mass_train_epoch{epoch}.json')
             self._save_group_mass_plot()
 
@@ -419,21 +566,18 @@ class MoERoutingHook(Hook):
     def after_val_epoch(self, runner, metrics: Optional[dict] = None) -> None:
         epoch = runner.epoch
         metrics = metrics or {}
-        n = self._va_n
-        if n == 0:
+        acc = self._va
+        if acc['n'] == 0:
             self._reset_val()
             return
 
-        routing_metrics = self._build_metrics(
-            self._va_dispatch, self._va_dense,
-            self._va_top1, self._va_topk, n)
+        routing_metrics = self._build_metrics(acc)
 
         dispatch_vals = list(routing_metrics['dispatch_mass_per_expert'].values())
         dense_vals    = list(routing_metrics['dense_mean_prob_per_expert'].values())
         self._va_dispatch_hist[epoch] = dispatch_vals
         self._va_dense_hist[epoch]    = dense_vals
 
-        # Per-epoch JSONs
         self._save_json(
             {'epoch': epoch, 'split': 'val', **routing_metrics},
             f'dispatch_mass_val_epoch{epoch}.json')
@@ -444,7 +588,6 @@ class MoERoutingHook(Hook):
         self._save_dispatch_mass_plot()
         self._save_dense_prob_plot()
 
-        # Val summary: all 4 metrics + all requested AP keys
         ap_values = {
             k: float(metrics.get(k, -1.0))
             for k in self.ap_metric_keys
@@ -455,22 +598,21 @@ class MoERoutingHook(Hook):
             **ap_values,
             **routing_metrics,
         }
-        # modality group mass (if available)
-        if self.enable_hook_c and (self._va_cam_mass + self._va_lidar_mass) > 0:
-            total = self._va_cam_mass + self._va_lidar_mass + 1e-8
-            summary['cam_group_mass_frac']   = self._va_cam_mass   / total
-            summary['lidar_group_mass_frac'] = self._va_lidar_mass / total
+        if self.enable_hook_c and (acc['cam_mass'] + acc['lidar_mass']) > 0:
+            total = acc['cam_mass'] + acc['lidar_mass'] + 1e-8
+            summary['cam_group_mass_frac']   = acc['cam_mass']   / total
+            summary['lidar_group_mass_frac'] = acc['lidar_mass'] / total
         self._save_json(summary, f'routing_summary_epoch{epoch}.json')
 
-        # Hook C: modality group mass
-        if self.enable_hook_c and (self._va_cam_mass + self._va_lidar_mass) > 0:
-            total = self._va_cam_mass + self._va_lidar_mass + 1e-8
-            cam_f   = self._va_cam_mass   / total
-            lidar_f = self._va_lidar_mass / total
+        if self.enable_hook_c and (acc['cam_mass'] + acc['lidar_mass']) > 0:
+            total = acc['cam_mass'] + acc['lidar_mass'] + 1e-8
+            cam_f   = acc['cam_mass']   / total
+            lidar_f = acc['lidar_mass'] / total
             self._va_group_hist[epoch] = (cam_f, lidar_f)
             self._save_json(
                 {'epoch': epoch, 'split': 'val',
-                 'cam_group_mass_frac': cam_f, 'lidar_group_mass_frac': lidar_f},
+                 'cam_group_mass_frac': cam_f,
+                 'lidar_group_mass_frac': lidar_f},
                 f'group_mass_val_epoch{epoch}.json')
             self._save_group_mass_plot()
 
@@ -479,21 +621,7 @@ class MoERoutingHook(Hook):
     # ── Resets ─────────────────────────────────────────────────────────────
 
     def _reset_train(self) -> None:
-        E = self.num_experts
-        self._tr_dispatch    = [0.0] * E
-        self._tr_dense       = [0.0] * E
-        self._tr_top1        = [0]   * E
-        self._tr_topk        = [0]   * E
-        self._tr_n           = 0
-        self._tr_cam_mass    = 0.0
-        self._tr_lidar_mass  = 0.0
+        self._tr = self._fresh_acc(self.num_experts)
 
     def _reset_val(self) -> None:
-        E = self.num_experts
-        self._va_dispatch    = [0.0] * E
-        self._va_dense       = [0.0] * E
-        self._va_top1        = [0]   * E
-        self._va_topk        = [0]   * E
-        self._va_n           = 0
-        self._va_cam_mass    = 0.0
-        self._va_lidar_mass  = 0.0
+        self._va = self._fresh_acc(self.num_experts)

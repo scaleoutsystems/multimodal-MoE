@@ -1,5 +1,11 @@
 """Context-aware routing diagnostics hooks.
 
+These hooks now operate as **post-hoc** routing analysers — they group the
+router's behaviour by the context label that supervises the MoE block's
+auxiliary CE head.  Context labels never enter the gate input; the analysis
+is purely diagnostic ("did the router learn context-aware specialisation
+even though it was only fed BEV summaries?").
+
 ContextRoutingStatsHook
 -----------------------
 Collects per-sample routing statistics during validation and saves aggregated
@@ -93,7 +99,16 @@ def _find_moe_modules(model) -> Dict[str, Any]:
 def _discover_from_model(
     model,
 ) -> Tuple[Optional[List[str]], Optional[int], Optional[str]]:
-    """Auto-detect context keys and expert count from the model."""
+    """Auto-detect context keys and expert count from the model.
+
+    Under context-supervised routing, each MoE block exposes the field
+    that supervises its auxiliary CE head as ``_ctx_target_field`` (set
+    when ``context_aux_cfg`` is configured).  Auto-discovery returns
+    that single field as the only key; if a block omits the auxiliary
+    head, no context grouping is reported (the per-context
+    visualisations become no-ops, but the post-hoc analysis can still
+    inspect overall routing).
+    """
     moe_mods = _find_moe_modules(model)
     context_keys: Optional[List[str]] = None
     num_experts:  Optional[int] = None
@@ -103,9 +118,9 @@ def _discover_from_model(
         if num_experts is None and hasattr(mod, 'num_experts'):
             num_experts = mod.num_experts
             block_name  = name
-        enc = getattr(mod, 'context_encoder', None)
-        if enc is not None and hasattr(enc, 'field_names'):
-            context_keys = list(enc.field_names)
+        target_field = getattr(mod, '_ctx_target_field', None)
+        if target_field is not None:
+            context_keys = [target_field]
             if hasattr(mod, 'num_experts'):
                 num_experts = mod.num_experts
                 block_name  = name
@@ -274,7 +289,9 @@ class ContextRoutingStatsHook(Hook):
 
     Args:
         context_keys:    Explicitly specify context fields to group by.
-                         None → auto-detect from the model's ContextEncoder.
+                         ``None`` → auto-detect from the MoE block's
+                         ``_ctx_target_field`` attribute (the single
+                         field configured via ``context_aux_cfg``).
         save_per_sample: Also save a per-sample JSON (for post-hoc analysis).
         out_subdir:      Subdirectory inside runner.work_dir.
     """

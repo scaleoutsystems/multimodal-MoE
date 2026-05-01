@@ -475,5 +475,5 @@ custom_hooks = [
     dict(type='DepthProjectionDebugHook', vis_epochs=_VIS_EPOCHS),
     dict(type='ValidationCurveHook',
          metric_keys=('mAP_0.50', 'mAP_0.5m'),
-         filename='val_curve_ap_0_50_0_5m'),
+         flrilename='val_curve_ap_0_50_0_5m'),
 ]

@@ -2,8 +2,8 @@
 
 JointModalityMoEBlock replaces ConvFuser entirely.  Each expert receives
 both camera and LiDAR BEV maps as input and learns its own fusion strategy
-(concat → 3×3 conv).  A TopkGate routes samples to experts based on
-spatial-aware summary descriptors from both modalities plus optional context.
+(concat → 3×3 conv).  A gate routes samples to experts based on
+spatial-aware summary descriptors from both modalities.
 
 Required graph (no ConvFuser anywhere)::
 
@@ -11,62 +11,43 @@ Required graph (no ConvFuser anywhere)::
                ├─→ JointModalityMoEBlock ─→ fused_bev ─→ pts_backbone
     lidar_bev ─┘
 
-Router input
-------------
-    cam_bev   → BEVSummaryHead(cam_channels)    → (B, 64)
-    lidar_bev → BEVSummaryHead(lidar_channels)  → (B, 64)
-    cat                                          → (B, 128)  [+ ctx]
-    TopkGate                                     → GateOutput
+Definition (router descriptor)
+------------------------------
+The router does **not** fuse the two BEV maps before scoring experts —
+descriptor-level conditioning only::
 
-Dispatch strategy: Shazeer top-k mixture (Σ w = 1)
---------------------------------------------------
-TopkGate returns standard Shazeer top-k mixture weights — renormalised over
-the top-k selections so ``Σ_j topk_weights = 1`` per sample (see routing.py).
+    z_L = lidar_summary(lidar_bev)         # (B, out_dim)
+    z_C = cam_summary(cam_bev)             # (B, out_dim)
+    z_LC = torch.cat([z_C, z_L], dim=1)    # (B, 2 · out_dim)
 
-Joint experts produce a fresh fused BEV map (not a residual correction on an
-existing feature map), so the dispatched output must be a proper weighted
-mixture that sums to 1 — otherwise the backbone sees a scale-corrupted
-feature.  With Shazeer top-k this constraint is satisfied by the gate
-output directly, so the block simply does:
+    gate_out   = gate(z_LC)
+    ctx_logits = context_head(z_LC)
+
+Experts then receive the full ``cam_bev`` and ``lidar_bev`` features.
+Concatenating the two summaries is descriptor-level conditioning, not
+feature-level fusion.
+
+Context-supervised routing
+--------------------------
+Same pattern as ``BEVMoEBlock``: a separate ``context_head`` is supervised
+by ``F.cross_entropy(ctx_logits, ctx_label)``.  Context labels are NEVER
+concatenated into the gate input.
+
+Dispatch strategy
+-----------------
+Joint experts produce a fresh fused BEV (not a residual correction), so
+the dispatched output must be a proper convex combination.  Shazeer top-k
+mixture weights satisfy ``Σ_j w_j = 1`` per sample, so
 
     out[b] = Σ_j  topk_weights[b, j] · expert_j(cam_bev[b], lidar_bev[b])
 
-No local renormalisation is needed.
-
-Gradient flow
--------------
-  • k ≥ 2: task loss flows through each ``topk_weights[b, j]`` (softmax
-    ratio over the top-k logits).  Full specialisation possible.
-  • k = 1: ``topk_weights ≡ 1`` is constant, so task loss cannot push the
-    router toward a specific expert via the weight.  Gate training relies
-    on ``importance_loss`` + ``load_loss``.  Use k ≥ 2 for task-driven
-    specialisation in this block.
-
-residual_gain parameter
------------------------
-``residual_gain`` is accepted for config parity with BEVMoEBlock and
-ModalitySpecificMoEBlock but is a no-op in this block — the fused output
-already sums to 1 by construction.  A warning is issued if a non-1.0 value
-is passed so the caller knows it is ignored.
+is automatically at unit scale.  ``residual_gain`` is accepted for config
+parity with the other blocks but is a no-op here.
 
 moe_info contract
 -----------------
-self._moe_info is written after every forward() with:
-    full_softmax_probs   (B, E)  — pre-top-k softmax (router belief over all experts).
-                                   Used by importance_loss and the
-                                   dense_mean_prob_per_expert diagnostics.
-    sparse_softmax_probs (B, E)  — top-k mixture laid back into (B, E), zero
-                                   off-topk.  Diagnostics only.
-    topk_idx             (B, k)  — selected expert indices per sample.
-    topk_weights         (B, k)  — Shazeer top-k mixture weights, Σ_j = 1.
-                                   Used directly for dispatch and for
-                                   dispatch_mass_per_expert diagnostics.
-    aux_loss             scalar  — importance_loss + load_loss.
-    importance_loss      scalar  — Shazeer importance term (logged as
-                                   moe_importance_loss).  Differentiable.
-    load_loss            scalar  — Shazeer Gaussian-CDF load term (logged as
-                                   moe_load_loss).  Differentiable when the
-                                   gate provides noise_std; zero otherwise.
+Same fields as ``BEVMoEBlock`` (see ``bev_moe.py`` docstring); no
+modality-group fields (those belong to ``ModalitySpecificMoEBlock``).
 """
 from __future__ import annotations
 
@@ -74,25 +55,23 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 
 from mmdet3d.registry import MODELS
 
-from .losses import importance_loss, load_loss
-from .routing import BEVSummaryHead, ContextEncoder, TopkGate
+from .bev_moe import _logit_diagnostics, _noise_diagnostics
+from .losses import importance_loss, load_loss, router_z_loss
+from .routing import (BEVSummaryHead, NoisyTopkGate, TopkGate,
+                       extract_context_labels, get_context_vocab)
 
 
 @MODELS.register_module()
 class JointModalityExpert(nn.Module):
     """Single joint-modality expert: concatenate two BEV maps and convolve.
 
-    Each expert has independent weights so it can learn a distinct
-    fusion strategy (e.g., camera-dominant vs. LiDAR-dominant).
-
-    Args:
-        cam_channels:   Camera BEV channels (e.g. 80).
-        lidar_channels: LiDAR BEV channels (e.g. 256).
-        out_channels:   Output fused BEV channels (e.g. 256).
+    Each expert has independent weights so it can learn a distinct fusion
+    strategy (e.g. camera-dominant vs LiDAR-dominant).
     """
 
     def __init__(self, cam_channels: int, lidar_channels: int,
@@ -113,29 +92,24 @@ class JointModalityExpert(nn.Module):
 class JointModalityMoEBlock(nn.Module):
     """Joint-modality MoE block — Variant A.
 
-    Replaces ConvFuser entirely.  Routes each sample to k fusion experts
-    based on spatial-aware routing descriptors from both BEV maps, plus
-    optional context metadata.  Each expert receives both cam_bev and
-    lidar_bev and produces a single fused output.
-
     Args:
-        cam_channels:      Camera BEV channels.
-        lidar_channels:    LiDAR BEV channels.
-        out_channels:      Output fused BEV channels.
-        num_experts:       Number of fusion experts.
-        k:                 Top-k experts per sample.
-        importance_coef:   Weight for importance balancing loss.
-        load_coef:         Weight for load balancing loss.
-        residual_gain:     Accepted for config parity with BEVMoEBlock /
-                           ModalitySpecificMoEBlock but is a NO-OP here
-                           (see module docstring for why).  A warning is
-                           issued if a value other than 1.0 is passed.
-                           Default 1.0.
-        router_pool_size:  Spatial size for BEVSummaryHead pooling grid.
-        router_hidden_dim: Hidden dim of the MLP inside BEVSummaryHead.
-        router_out_dim:    Output dim per modality BEVSummaryHead.
-                           Gate sees 2 × router_out_dim (+ ctx_dim) as input.
-        context_cfg:       If provided, build a ContextEncoder with these kwargs.
+        cam_channels:        Camera BEV channels.
+        lidar_channels:      LiDAR BEV channels.
+        out_channels:        Output fused BEV channels.
+        num_experts:         Number of fusion experts.
+        k:                   Top-k experts per sample (default 2).
+        importance_coef:     Weight for the Shazeer importance loss.
+        load_coef:           Weight for the Shazeer load loss.
+        z_loss_coef:         Weight for ``router_z_loss(clean_logits)``.
+        residual_gain:       Accepted for config parity; no-op here.
+        router_pool_size:    Pooling grid for BEVSummaryHead.
+        router_spatial_dim:  Spatial-mixer width inside BEVSummaryHead.
+        router_hidden_dim:   Hidden width of BEVSummaryHead's MLP.
+        router_out_dim:      Output dim per modality summary head.
+                             Gate sees ``2 · router_out_dim`` as input.
+        context_aux_cfg:     Same as ``BEVMoEBlock.context_aux_cfg``.
+        gate_type:           ``'topk'`` (default) or ``'noisy_topk'``.
+        gate_cfg:            Extra kwargs forwarded to ``NoisyTopkGate``.
     """
 
     def __init__(
@@ -144,14 +118,18 @@ class JointModalityMoEBlock(nn.Module):
         lidar_channels: int = 256,
         out_channels: int = 256,
         num_experts: int = 6,
-        k: int = 1,
+        k: int = 2,
         importance_coef: float = 0.02,
-        load_coef: float = 0.01,
+        load_coef: float = 0.002,
+        z_loss_coef: float = 1e-4,
         residual_gain: float = 1.0,
-        router_pool_size: int = 2,
-        router_hidden_dim: int = 128,
-        router_out_dim: int = 64,
-        context_cfg: Optional[dict] = None,
+        router_pool_size: int = 4,
+        router_spatial_dim: int = 128,
+        router_hidden_dim: int = 256,
+        router_out_dim: int = 128,
+        context_aux_cfg: Optional[dict] = None,
+        gate_type: str = 'topk',
+        gate_cfg: Optional[dict] = None,
     ):
         super().__init__()
         self.cam_channels = cam_channels
@@ -161,17 +139,15 @@ class JointModalityMoEBlock(nn.Module):
         self.k = k
         self.importance_coef = importance_coef
         self.load_coef = load_coef
+        self.z_loss_coef = float(z_loss_coef)
         self.residual_gain = float(residual_gain)
         if self.residual_gain != 1.0:
             import warnings
             warnings.warn(
                 f'JointModalityMoEBlock received residual_gain='
                 f'{self.residual_gain} but this parameter is a no-op for '
-                f'this block (joint experts produce fresh fused BEVs; '
-                f'there is no natural residual reference).  The value is '
-                f'silently ignored — use BEVMoEBlock or '
-                f'ModalitySpecificMoEBlock if you need residual_gain to '
-                f'have effect.',
+                f'this block (joint experts produce fresh fused BEVs). '
+                f'The value is silently ignored.',
                 stacklevel=2)
 
         self.experts = nn.ModuleList([
@@ -179,26 +155,67 @@ class JointModalityMoEBlock(nn.Module):
             for _ in range(num_experts)
         ])
 
-        self.cam_summary = BEVSummaryHead(cam_channels, router_pool_size,
-                                          router_hidden_dim, router_out_dim)
-        self.lidar_summary = BEVSummaryHead(lidar_channels, router_pool_size,
-                                            router_hidden_dim, router_out_dim)
+        self.cam_summary = BEVSummaryHead(
+            cam_channels, router_pool_size, router_spatial_dim,
+            router_hidden_dim, router_out_dim)
+        self.lidar_summary = BEVSummaryHead(
+            lidar_channels, router_pool_size, router_spatial_dim,
+            router_hidden_dim, router_out_dim)
 
-        ctx_dim = 0
-        if context_cfg is not None:
-            self.context_encoder = ContextEncoder(**context_cfg)
-            ctx_dim = self.context_encoder.out_dim
+        joint_dim = self.cam_summary.out_dim + self.lidar_summary.out_dim
+
+        self.context_aux_cfg: Optional[dict] = None
+        self.context_head: Optional[nn.Linear] = None
+        self._ctx_vocab_map: Optional[Dict[str, int]] = None
+        self._ctx_target_field: Optional[str] = None
+        self._ctx_loss_coef: float = 0.0
+        self._ctx_label_smoothing: float = 0.0
+        if context_aux_cfg is not None:
+            self._build_context_head(context_aux_cfg, joint_dim)
+
+        extra_gate_kwargs = gate_cfg or {}
+        if gate_type == 'noisy_topk':
+            self.gate = NoisyTopkGate(
+                feat_dim=joint_dim, num_experts=num_experts, k=k,
+                **extra_gate_kwargs)
         else:
-            self.context_encoder = None
+            self.gate = TopkGate(
+                feat_dim=joint_dim, num_experts=num_experts, k=k)
 
-        self.gate = TopkGate(
-            feat_dim=2 * router_out_dim,
-            num_experts=num_experts,
-            k=k,
-            context_dim=ctx_dim,
-        )
+        gate_in = (self.gate.gate.in_features
+                   if isinstance(self.gate, TopkGate)
+                   else self.gate.w_gate.in_features)
+        assert gate_in == joint_dim, (
+            f'JointModalityMoEBlock: gate input dim ({gate_in}) must equal '
+            f'sum of summary out_dims ({joint_dim}) — context vector must '
+            f'NOT be concatenated into the router input.')
 
         self._moe_info: Optional[Dict[str, Any]] = None
+
+    def _build_context_head(self, cfg: dict, in_dim: int) -> None:
+        cfg = dict(cfg)
+        target_field = cfg.pop('target_field', None)
+        if target_field is None:
+            raise ValueError(
+                "JointModalityMoEBlock.context_aux_cfg must include a "
+                "'target_field' (e.g. 'road_type').")
+        loss_coef = float(cfg.pop('loss_coef', 0.05))
+        label_smoothing = float(cfg.pop('label_smoothing', 0.0))
+        if cfg:
+            raise ValueError(
+                f"JointModalityMoEBlock.context_aux_cfg got unexpected keys: "
+                f"{list(cfg)}")
+
+        vocab = get_context_vocab(target_field)
+        vocab_map = {v: i for i, v in enumerate(vocab)}
+        self.context_head = nn.Linear(in_dim, len(vocab))
+        self._ctx_vocab_map = vocab_map
+        self._ctx_target_field = target_field
+        self._ctx_loss_coef = loss_coef
+        self._ctx_label_smoothing = label_smoothing
+        self.context_aux_cfg = dict(
+            target_field=target_field, loss_coef=loss_coef,
+            label_smoothing=label_smoothing, num_classes=len(vocab))
 
     def forward(
         self,
@@ -206,69 +223,97 @@ class JointModalityMoEBlock(nn.Module):
         lidar_bev: Tensor,
         batch_input_metas: Optional[List[dict]] = None,
     ) -> Tuple[Tensor, Dict[str, Any]]:
-        """Fuse camera and LiDAR BEV maps via routed experts.
-
-        Args:
-            cam_bev:            Camera BEV (B, Cc, H, W).
-            lidar_bev:          LiDAR BEV (B, Cl, H, W).
-            batch_input_metas:  Per-sample metadata (for context routing).
-
-        Returns:
-            fused_bev: (B, out_channels, H, W).
-            moe_info:  Dict with routing statistics and aux_loss.
-        """
         B = cam_bev.shape[0]
 
-        cam_feat = self.cam_summary(cam_bev)
-        lidar_feat = self.lidar_summary(lidar_bev)
-        feat = torch.cat([cam_feat, lidar_feat], dim=1)
+        z_C = self.cam_summary(cam_bev)
+        z_L = self.lidar_summary(lidar_bev)
+        z_LC = torch.cat([z_C, z_L], dim=1)
 
-        ctx = None
-        if self.context_encoder is not None and batch_input_metas is not None:
-            ctx = self.context_encoder(batch_input_metas)
-
-        gate_out = self.gate(feat, ctx)
+        gate_out = self.gate(z_LC)
 
         out = cam_bev.new_zeros(B, self.out_channels,
                                 cam_bev.shape[2], cam_bev.shape[3])
-
-        # Shazeer top-k mixture weights already sum to 1 per sample (see
-        # routing.py), so the fused output is automatically at unit scale.
-        # No local renormalisation needed.  With k=1 the single weight is
-        # identically 1.0 and carries no task-loss gradient; gate training
-        # for k=1 relies on importance_loss + load_loss.  Use k ≥ 2 for
-        # task-driven specialisation in this block.
         for b in range(B):
             sample_out = torch.zeros_like(out[b:b + 1])
             for j in range(self.k):
                 eidx = gate_out.topk_idx[b, j].item()
                 weight = gate_out.topk_weights[b, j]
-                expert_out = self.experts[eidx](cam_bev[b:b + 1],
-                                                lidar_bev[b:b + 1])
+                expert_out = self.experts[eidx](
+                    cam_bev[b:b + 1], lidar_bev[b:b + 1])
                 sample_out = sample_out + weight * expert_out
             out[b] = sample_out[0]
 
         imp_loss = importance_loss(
-            gate_out.full_softmax_probs,
-            self.importance_coef,
-        )
+            gate_out.full_softmax_probs, self.importance_coef)
         ld_loss  = load_loss(
-            gate_out.clean_logits,
-            gate_out.noisy_logits,
-            gate_out.noise_std,
-            self.k,
-            self.load_coef,
-        )
-        aux = imp_loss + ld_loss
+            gate_out.clean_logits, gate_out.noisy_logits,
+            gate_out.noise_std, self.k, self.load_coef)
+        z_loss   = router_z_loss(gate_out.clean_logits, self.z_loss_coef)
 
-        moe_info = {
+        ctx_loss_raw = z_LC.new_zeros(())
+        ctx_loss_weighted = z_LC.new_zeros(())
+        ctx_acc = z_LC.new_zeros(())
+        ctx_pred_hist: List[int] = []
+        ctx_label_hist: List[int] = []
+        ctx_logits_mean_abs = 0.0
+
+        if self.context_head is not None:
+            if batch_input_metas is None:
+                raise RuntimeError(
+                    'JointModalityMoEBlock: context_aux_cfg is configured '
+                    'but batch_input_metas was not passed to forward().')
+            ctx_logits = self.context_head(z_LC)
+            ctx_labels = extract_context_labels(
+                batch_input_metas, self._ctx_target_field,
+                self._ctx_vocab_map, z_LC.device)
+            assert ctx_labels.dtype == torch.long and ctx_labels.shape == (B,)
+            ctx_loss_raw = F.cross_entropy(
+                ctx_logits, ctx_labels,
+                label_smoothing=self._ctx_label_smoothing)
+            ctx_loss_weighted = self._ctx_loss_coef * ctx_loss_raw
+            with torch.no_grad():
+                pred = ctx_logits.argmax(dim=-1)
+                ctx_acc = (pred == ctx_labels).float().mean()
+                num_classes = self.context_aux_cfg['num_classes']
+                ctx_pred_hist = torch.bincount(
+                    pred, minlength=num_classes).cpu().tolist()
+                ctx_label_hist = torch.bincount(
+                    ctx_labels, minlength=num_classes).cpu().tolist()
+                ctx_logits_mean_abs = float(ctx_logits.abs().mean().item())
+
+        aux = imp_loss + ld_loss + z_loss + ctx_loss_weighted
+
+        moe_info: Dict[str, Any] = {
             'full_softmax_probs':   gate_out.full_softmax_probs.detach(),
             'sparse_softmax_probs': gate_out.sparse_softmax_probs.detach(),
             'topk_idx':             gate_out.topk_idx.detach(),
             'topk_weights':         gate_out.topk_weights.detach(),
+            'clean_logits':         gate_out.clean_logits.detach(),
+            'noisy_logits':         gate_out.noisy_logits.detach(),
+            'noise_std':            (gate_out.noise_std.detach()
+                                     if gate_out.noise_std is not None else None),
             'aux_loss':             aux,
             'importance_loss':      imp_loss,
             'load_loss':            ld_loss,
+            'router_z_loss':        z_loss,
+            'ctx_aux_loss':         (ctx_loss_raw.detach()
+                                     if isinstance(ctx_loss_raw, Tensor)
+                                     else ctx_loss_raw),
+            'ctx_aux_loss_weighted': ctx_loss_weighted,
+            'ctx_aux_acc':          ctx_acc.detach()
+                                    if isinstance(ctx_acc, Tensor) else ctx_acc,
+            'ctx_target_field':     self._ctx_target_field,
+            'ctx_pred_hist':        ctx_pred_hist,
+            'ctx_label_hist':       ctx_label_hist,
+            'ctx_logits_mean_abs':  ctx_logits_mean_abs,
         }
+        moe_info.update(_logit_diagnostics('clean_logits', gate_out.clean_logits))
+        if gate_out.noisy_logits is not gate_out.clean_logits and \
+                not torch.equal(gate_out.noisy_logits, gate_out.clean_logits):
+            moe_info.update(
+                _logit_diagnostics('noisy_logits', gate_out.noisy_logits))
+        if gate_out.noise_std is not None:
+            moe_info.update(_noise_diagnostics(gate_out.noise_std))
+
         self._moe_info = moe_info
         return out, moe_info

@@ -1,3 +1,7 @@
+# FOR ZOD_MOE Thesis (ablation study):
+# Continue training the best ZOD LiDAR-only checkpoint (epoch 18, best mAP_0.50).
+
+
 _base_ = ['zod_lidar_only.py']
 
 # ---------------------------------------------------------------------------

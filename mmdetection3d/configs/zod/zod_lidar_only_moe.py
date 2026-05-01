@@ -3,21 +3,24 @@ custom_imports = dict(
     imports=['projects.BEVFusion.bevfusion'], allow_failed_imports=False)
 
 # ---------------------------------------------------------------------------
-# Variant D — LiDAR-only MoE
+# Variant D — LiDAR-only MoE (context-supervised routing)
 # ---------------------------------------------------------------------------
 # Architecture:
 #   lidar_bev (256 ch) → BEVMoEBlock → pts_backbone → pts_neck → bbox_head
 #
 # No camera branch, no ConvFuser, no fusion of any kind.
-# BEVMoEBlock routes each sample to one of 6 residual-conv experts based on
-# a spatial-aware BEVSummaryHead descriptor + road_type context embedding.
+# BEVMoEBlock routes each sample to one of `num_experts` residual-conv
+# experts based on a spatial-aware BEVSummaryHead descriptor.  Context
+# labels (road_type by default) are used only to supervise an auxiliary context-prediction head
+# whose gradient flows back through the BEV summary descriptor (see
+# moe_bev/routing.py for the rationale).
 #
 # Experts use num_convs=2 to give comparable capacity to variants that flow
 # through ConvFuser (which itself is a single conv layer).
 #
 # Pretrained weights: NuScenes LiDAR-only BEVFusion checkpoint.
 # Same transfer semantics as zod_lidar_only.py — MoE-specific modules
-# (gate, summary head, context encoder, experts) are randomly initialised
+# (gate, summary head, context head, experts) are randomly initialised
 # since they don't exist in the checkpoint.
 # ---------------------------------------------------------------------------
 
@@ -38,11 +41,12 @@ input_modality = dict(use_lidar=True, use_camera=False)
 backend_args = None
 
 # ── MoE configuration ────────────────────────────────────────────────────
-# 5 experts to match the 5 ZOD road_type categories (arterial-rural,
-# arterial-urban, city, highway, smaller-rural).  With 6 experts one was
-# always structurally dead because there was no 6th context niche to claim.
-# 5C2 = 10 possible top-2 pairs → enough combinatorial richness for the
-# router to learn context-specific primary + secondary expert combos.
+# 5 experts.  Note: num_experts no longer needs to match the number of
+# context classes — under context-supervised routing the context loss
+# only shapes the BEV summary descriptor; expert dispatch stays
+# task-driven over the top-k.  Five experts give 5C2 = 10 possible
+# top-2 pairs which is enough combinatorial richness for the router
+# to learn primary + secondary specialisations.
 num_experts = 5
 
 bev_moe_cfg = dict(
@@ -51,61 +55,52 @@ bev_moe_cfg = dict(
     num_experts=num_experts,
     k=2,
     num_convs=2,
-    # Importance loss coefficient (α).  History:
-    #   0.005 (initial) → 0.05 (post-4485767) → 0.1 (post-4487087) → 0.3 (post-4488428).
-    # Kept at 0.3 for this run: with E=5 experts and no z-score normalization
-    # the dead-expert structural problem is gone, but 0.3 still provides
-    # healthy gradient pressure to keep all experts utilized.
-    importance_coef=0.3,
-    # load_loss uses the Shazeer Gaussian-CDF dispatch estimator via
-    # clean/noisy logits from NoisyTopkGate.  It penalises hard-dispatch
-    # collapse independently of the soft importance term above.  0.05 is
-    # a conservative starting point that avoids dominating the detection
-    # loss while still providing back-pressure against dead experts.
-    load_coef=0.05,
-    # Residual-delta dispatch gain.  With the move to standard Shazeer
-    # top-k mixture weights (Σ_j w_j = 1 per sample, see routing.py), the
-    # effective expert contribution ‖Σ w·Δ‖ is controlled solely by Δ
-    # and g — router peakiness no longer changes the magnitude.  g=1 is
-    # therefore the principled default and no longer needs to track E.
-    #
-    # History: 3.0 (post-4485767, defensive) → 6.0 (post-4487087, to
-    # compensate Switch-style ≈1/E weights at init) → 1.0 (this run).
-    # The previous 6.0 was a workaround for Switch-style dispatch; it
-    # made g·Σw drift from ≈2 at init to ≈6 at collapse, coupling
-    # grad_norm to router peakiness.  Shazeer mixture removes that
-    # coupling entirely.  Monitor grad_norm — if sustained > 50, drop
-    # to 0.5 rather than scaling back up.
+    # Shazeer importance loss weight.  Paper: 1e-2; we use 2× to keep
+    # balance pressure across the 20-epoch schedule without overpowering
+    # the detection loss.  If experts still collapse, prefer
+    # ExpertRespawnHook over cranking this further.
+    importance_coef=0.02,
+    # Shazeer Gaussian-CDF load loss weight; complements importance by
+    # penalising hard-dispatch collapse even when the soft distribution
+    # is uniform.  Requires NoisyTopkGate to produce a non-zero gradient.
+    load_coef=0.002,
+    # Mesh-Transformer / ST-MoE router z-loss weight.  Penalises the
+    # squared log-partition of the clean router logits, preventing one
+    # expert logit from dominating without distorting relative ordering.
+    # 1e-4 is a mild starting value — bump to 1e-3 if logit magnitudes
+    # grow above ~5 (visible in moe_routing's clean_logits_lse_mean
+    # diagnostic).  Always applied to clean_logits, never to ctx_logits.
+    z_loss_coef=1e-4,
+    # Residual-delta dispatch gain.  With Shazeer top-k mixture weights
+    # (Σ_j w_j = 1 per sample) the effective expert contribution
+    # ‖Σ w·Δ‖ is controlled solely by Δ and g; g=1 applies the delta at
+    # full scale.  If grad_norm sustains > 50, drop to 0.5.
     residual_gain=1.0,
-    router_pool_size=2,
-    router_hidden_dim=128,
-    router_out_dim=64,
-    context_cfg=dict(
-        fields=['road_type'],
-        embed_dim=16,
-        out_dim=64,
+    # BEVSummaryHead defaults (avg + max pool to a 4×4 grid; 1×1 + 3×3
+    # spatial mixer at 128 ch; flatten + 2-layer MLP → 128-d descriptor).
+    router_pool_size=4,
+    router_spatial_dim=128,
+    router_hidden_dim=256,
+    router_out_dim=128,
+    # Context-supervised routing.  ``target_field`` selects which ZOD
+    # categorical field provides the labels for the auxiliary context
+    # CE head.  ``loss_coef`` weights the CE in the total aux loss; keep
+    # it small initially so the context signal shapes z without
+    # dominating detection learning.  ``label_smoothing`` is the
+    # F.cross_entropy parameter; 0.0 keeps the CE sharp at the start.
+    context_aux_cfg=dict(
+        target_field='road_type',
+        loss_coef=0.05,
+        label_smoothing=0.0,
     ),
-    # Noisy top-k gate with z-score normalisation (see routing.py).
-    # Z-score fixes signal std=1, so noise_floor directly controls the SNR
-    # of the exploration noise throughout training — it never becomes
-    # ineffective as the gate learns (unlike un-normalised logits where
-    # logit margins grow to ±5 and noise_floor=0.4 becomes negligible).
-    #
-    # temperature=0.5: halves T, doubling effective logit differences in
-    # softmax space.  With z-score bounding the max logit at ~+1.2 (E=5),
-    # T=1.0 caps per-context dense probs at ~0.48 (too flat to see gate
-    # confidence).  T=0.5 raises the cap to ~0.75, making dominant experts
-    # clearly visible in the dense_prob plots without disturbing load_loss
-    # or the noise SNR (both operate in logit space, before the temperature
-    # scaling).
-    #
-    # noise_floor=0.4: SNR ≈ 2.5 (noise std 0.4 vs signal std 1.0).
-    # TODO: decay noise_floor 0.4 → 0.05 over epochs 0–8 once a schedule
-    # hook exists; static for now.
+    # Noisy top-k gate (Shazeer et al. 2017): adds learned input-dependent
+    # Gaussian noise during training to encourage load balance.  At eval
+    # the gate is deterministic and load_loss returns zero (signalled by
+    # noise_std=None).  Required for load_loss to receive gradient.
     gate_type='noisy_topk',
     gate_cfg=dict(
-        noise_floor=0.4,
-        temperature=0.5,
+        noise_epsilon=1e-2,
+        temperature=1.0,
     ),
 )
 
@@ -223,8 +218,9 @@ model = dict(
 )
 
 # ── Pipelines ─────────────────────────────────────────────────────────────
-# 'context' must be in meta_keys so that ContextEncoder can read road_type
-# from batch_input_metas during routing.
+# 'context' must be in meta_keys so that BEVMoEBlock can read the
+# configured target_field (road_type) from batch_input_metas to build
+# the integer labels consumed by the auxiliary context CE loss.
 
 train_pipeline = [
     dict(
@@ -373,40 +369,26 @@ val_cfg = dict()
 test_cfg = dict()
 
 # ── Optimizer ─────────────────────────────────────────────────────────────
-# Routing-path param groups (gate / summary head / context encoder) are
+# Routing-path param groups (gate / summary head / context_head) are
 # small MLPs that need to learn meaningful logit margins for top-k
 # dispatch to specialise.  Weight decay on the gate Linear actively
-# shrinks logit magnitudes, so decay_mult=0.0 stays on all three routing
-# groups — embeddings and LayerNorm standardly get no decay either.
+# shrinks logit magnitudes, so decay_mult=0.0 stays on all routing
+# groups — LayerNorm standardly gets no decay either.
 #
-# Per-group lr_mult revised after run 4485767 (previously 3.0 / 3.0 / 3.0):
-#
-#   bev_moe.gate            — 3.0 → 1.0
-#       A 3× LR on the gate in combination with residual_gain=6 let the
-#       router accumulate logit margin for whichever expert was picked
-#       first faster than the balance losses or the noisy top-k could
-#       push back.  By epoch 1 top1_selection_freq on expert_3 was 1.0.
-#       Gate LR at parity with the backbone (5e-5) gives the balance
-#       losses and noise exploration room to bite before the gate
-#       commits.  If dense probs stay perfectly uniform after several
-#       epochs, raise toward 1.5–2.0 — do NOT restore 3.0 without first
-#       confirming moe_balance_loss is actually exerting pressure.
-#
-#   bev_moe.summary         — 3.0 → 2.0
-#       The BEV summary descriptor still needs to differentiate scenes,
-#       so keep a mild boost (effective LR 1.0e-4).
-#
-#   bev_moe.context_encoder — 3.0 → 2.0
-#       Context embeddings + proj MLP; same reasoning as summary.
-#       In run 4485767 per-road_type dense probs were identical across
-#       all five road types — the context path saw no gradient because
-#       the gate had already collapsed.  Keeping a modest boost here
-#       ensures context can learn once the gate starts varying.
+#   bev_moe.gate            — base LR; covers both w_gate and w_noise of
+#                              NoisyTopkGate (substring match).  Shared
+#                              with the Shazeer noise head so the noise
+#                              path receives matched updates.
+#   bev_moe.summary         — 2× LR; the BEV summary descriptor needs to
+#                              differentiate scenes across contexts.
+#   bev_moe.context_head    — 2× LR; the new auxiliary context classifier
+#                              that supervises the routing descriptor via
+#                              F.cross_entropy(ctx_logits, road_type).
+#                              Replaces the old context_encoder param
+#                              group (which no longer exists).
 #
 # Expert CNN blocks (bev_moe.experts.*) are NOT listed here and therefore
-# fall through to the default AdamW settings (lr=5e-5, weight_decay=0.01),
-# matching the LiDAR backbone / neck / bbox_head.  Architecture, routing
-# semantics (k=2, Switch-style weights), and aux losses are unchanged.
+# fall through to the default AdamW settings (lr=5e-5, weight_decay=0.01).
 optim_wrapper = dict(
     type='AmpOptimWrapper',
     optimizer=dict(type='AdamW', lr=lr, weight_decay=0.01),
@@ -414,9 +396,9 @@ optim_wrapper = dict(
     loss_scale='dynamic',
     paramwise_cfg=dict(
         custom_keys={
-            'bev_moe.gate':            dict(lr_mult=1.0, decay_mult=0.0),
-            'bev_moe.summary':         dict(lr_mult=2.0, decay_mult=0.0),
-            'bev_moe.context_encoder': dict(lr_mult=2.0, decay_mult=0.0),
+            'bev_moe.gate':         dict(lr_mult=1.0, decay_mult=0.0),
+            'bev_moe.summary':      dict(lr_mult=2.0, decay_mult=0.0),
+            'bev_moe.context_head': dict(lr_mult=2.0, decay_mult=0.0),
         },
     ),
 )
@@ -448,6 +430,25 @@ custom_hooks = [
          metric_keys=('mAP_0.50', 'mAP_0.5m'),
          filename='val_curve_ap_0_50_0_5m'),
     # ── MoE routing hooks ────────────────────────────────────────────
+    # ExpertRespawnHook must run *before* MoERoutingHook so that the
+    # routing plot for epoch N+1 reflects the post-respawn state.
+    # Hook ordering is deterministic on priority: ExpertRespawnHook
+    # uses 'NORMAL' (50), MoERoutingHook uses 'BELOW_NORMAL' (60) — so
+    # respawn fires first on the after_train_epoch event.
+    #
+    # dead_threshold_ratio=0.1 means "dead if dispatch < 10% of uniform
+    # share": for E=5 that's 0.02 absolute — well above noise level
+    # but well below a live expert's steady-state ~0.20.  Every run
+    # we've inspected had dead experts clearly below 0.01, so this
+    # threshold catches them without false positives.
+    dict(
+        type='ExpertRespawnHook',
+        num_experts=num_experts,
+        dead_threshold_ratio=0.1,
+        perturbation_std=0.02,
+        max_respawns=5,
+        skip_first_epoch=True,
+    ),
     dict(
         type='MoERoutingHook',
         num_experts=num_experts,

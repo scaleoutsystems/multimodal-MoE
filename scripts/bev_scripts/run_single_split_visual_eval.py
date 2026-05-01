@@ -43,6 +43,13 @@ BEVFusion model on the full test split:
       --task multi-modality_det \\
       --score-thr 0.3 \\
       --dry-run
+SBATCH submission lidar only on the night lighting split:
+CONFIG=mmdetection3d/configs/zod/zod_lidar_only.py \
+CKPT=outputs/runs/zod_lidar_only/zod-lidar-only_4454825/best_mAP_0.50_epoch_18.pth \
+SPLIT=lighting_test_day.txt \
+SPLITS_ROOT=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/splits \
+TASK=lidar_det \
+  sbatch mmdetection3d/tools/sbatch/meluxina_single_split_visual_eval.sbatch
 """
 
 from __future__ import annotations

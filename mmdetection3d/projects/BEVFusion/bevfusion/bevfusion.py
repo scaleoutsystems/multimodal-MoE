@@ -438,32 +438,56 @@ class BEVFusion(Base3DDetector):
         if aux is not None and aux.numel() > 0 and aux.item() > 0:
             losses['aux_depth_loss'] = aux
 
-        # MoE auxiliary losses.  Log importance_loss and load_loss separately
-        # so they appear as distinct entries in the training log.  The combined
-        # aux_loss tensor already carries the correct gradient via extract_feat;
-        # we read per-block _moe_info to get the split.
-        # Backward compat: old checkpoints may still store 'balance_loss';
-        # fall back to that key so mixed-version runs don't silently drop the loss.
+        # MoE auxiliary losses.  We read per-block _moe_info to split the
+        # combined aux_loss into individually-logged components so each
+        # appears as a distinct entry in the training log.  The components
+        # listed below are the *weighted* tensors that already entered
+        # aux_loss in extract_feat — summing them here gives the same
+        # gradient signal as the bare aux_loss tensor would, with no
+        # double counting.
+        #
+        # Names exposed to the logger (each contributes to the optimised
+        # total loss in mmengine.parse_losses):
+        #   moe_importance_loss       — Shazeer importance term (with grad)
+        #   moe_load_loss             — Shazeer load term (with grad when noisy)
+        #   moe_router_z_loss         — clean-logit z regulariser (with grad)
+        #   moe_group_balance_loss    — modality-specific only (with grad)
+        #   moe_ctx_aux_loss_weighted — coef · F.cross_entropy(ctx_logits, y)
+        #                              (with grad).  The unweighted (raw) ctx
+        #                              CE and richer diagnostics
+        #                              (ctx_aux_acc, ctx_pred_hist,
+        #                              ctx_label_hist, router-scale stats)
+        #                              are written into _moe_info instead and
+        #                              consumed by MoERoutingHook /
+        #                              ContextRoutingStatsHook.
         if self._moe_aux_loss is not None:
-            _imp_parts: list = []
-            _ld_parts:  list = []
+            _key_map = {
+                'importance_loss':       'moe_importance_loss',
+                'load_loss':             'moe_load_loss',
+                'router_z_loss':         'moe_router_z_loss',
+                'group_balance_loss':    'moe_group_balance_loss',
+                'ctx_aux_loss_weighted': 'moe_ctx_aux_loss_weighted',
+            }
+            _parts: Dict[str, list] = {dst: [] for dst in _key_map.values()}
             for _block_name in ('bev_moe', 'joint_modality_moe',
                                 'modality_specific_moe'):
                 _block = getattr(self, _block_name, None)
                 _info  = getattr(_block, '_moe_info', None) if _block else None
-                if _info is not None:
-                    _imp = _info.get('importance_loss',
-                                     _info.get('balance_loss'))  # compat fallback
-                    _ld  = _info.get('load_loss')
-                    if _imp is not None:
-                        _imp_parts.append(_imp)
-                    if _ld is not None:
-                        _ld_parts.append(_ld)
-            if _imp_parts:
-                losses['moe_importance_loss'] = sum(_imp_parts)
-                losses['moe_load_loss']       = sum(_ld_parts) if _ld_parts else \
-                    self._moe_aux_loss.detach() * 0
-            else:
+                if _info is None:
+                    continue
+                for _src_key, _dst_key in _key_map.items():
+                    _val = _info.get(_src_key)
+                    if isinstance(_val, torch.Tensor) and _val.requires_grad:
+                        _parts[_dst_key].append(_val)
+
+            _logged_anything = False
+            for _dst_key, _vals in _parts.items():
+                if not _vals:
+                    continue
+                losses[_dst_key] = sum(_vals)
+                _logged_anything = True
+
+            if not _logged_anything:
                 losses['moe_aux_loss'] = self._moe_aux_loss
 
         return losses
