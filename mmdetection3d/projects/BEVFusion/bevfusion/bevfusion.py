@@ -448,22 +448,27 @@ class BEVFusion(Base3DDetector):
         #
         # Names exposed to the logger (each contributes to the optimised
         # total loss in mmengine.parse_losses):
-        #   moe_importance_loss       — Shazeer importance term (with grad)
-        #   moe_load_loss             — Shazeer load term (with grad when noisy)
-        #   moe_router_z_loss         — clean-logit z regulariser (with grad)
-        #   moe_group_balance_loss    — modality-specific only (with grad)
-        #   moe_ctx_aux_loss_weighted — coef · F.cross_entropy(ctx_logits, y)
-        #                              (with grad).  The unweighted (raw) ctx
-        #                              CE and richer diagnostics
-        #                              (ctx_aux_acc, ctx_pred_hist,
-        #                              ctx_label_hist, router-scale stats)
-        #                              are written into _moe_info instead and
-        #                              consumed by MoERoutingHook /
-        #                              ContextRoutingStatsHook.
+        #   moe_importance_loss        — Shazeer importance term (with grad)
+        #   moe_load_loss              — Shazeer load term (with grad when noisy)
+        #   moe_switch_balance_loss    — Fedus Switch balance over
+        #                                clean_topk_idx (with grad; only
+        #                                present when switch_balance_coef > 0
+        #                                on a block)
+        #   moe_router_z_loss          — clean-logit z regulariser (with grad)
+        #   moe_group_balance_loss     — modality-specific only (with grad)
+        #   moe_ctx_aux_loss_weighted  — coef · F.cross_entropy(ctx_logits, y)
+        #                                (with grad).  The unweighted (raw) ctx
+        #                                CE and richer diagnostics
+        #                                (ctx_aux_acc, ctx_pred_hist,
+        #                                ctx_label_hist, router-scale stats)
+        #                                are written into _moe_info instead and
+        #                                consumed by MoERoutingHook /
+        #                                ContextRoutingStatsHook.
         if self._moe_aux_loss is not None:
             _key_map = {
                 'importance_loss':       'moe_importance_loss',
                 'load_loss':             'moe_load_loss',
+                'switch_balance_loss':   'moe_switch_balance_loss',
                 'router_z_loss':         'moe_router_z_loss',
                 'group_balance_loss':    'moe_group_balance_loss',
                 'ctx_aux_loss_weighted': 'moe_ctx_aux_loss_weighted',

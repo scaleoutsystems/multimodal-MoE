@@ -60,46 +60,86 @@ bev_moe_cfg = dict(
     # the detection loss.  If experts still collapse, prefer
     # ExpertRespawnHook over cranking this further.
     importance_coef=0.02,
-    # Shazeer Gaussian-CDF load loss weight; complements importance by
-    # penalising hard-dispatch collapse even when the soft distribution
-    # is uniform.  Requires NoisyTopkGate to produce a non-zero gradient.
-    load_coef=0.002,
+    # Shazeer Gaussian-CDF load loss weight.  Stays active because we
+    # keep NoisyTopkGate: load_loss balances expected noisy top-k
+    # utilisation and provides the exploration-side balance signal that
+    # importance_loss cannot (importance flattens mean softmax; load
+    # flattens the Gaussian-CDF dispatch estimator).  Requires
+    # NoisyTopkGate to produce a non-zero gradient.
+    load_coef=0.005,
+    # Fedus Switch balance loss.  Computed from the *clean*
+    # deterministic top-k (``gate_out.clean_topk_idx``), not the noisy
+    # dispatch top-k.  Rationale: under NoisyTopkGate the noisy f_e is
+    # already ~1/E (noise-spread) so feeding it into Switch gives
+    # essentially no gradient and just pins the loss at the uniform
+    # floor.  Using clean_topk_idx makes the Switch term discipline the
+    # clean router that is actually used at validation — complementary
+    # to load_loss, which continues to balance the noisy exploration
+    # dispatch.
+    switch_balance_coef=0.01,
     # Mesh-Transformer / ST-MoE router z-loss weight.  Penalises the
     # squared log-partition of the clean router logits, preventing one
     # expert logit from dominating without distorting relative ordering.
-    # 1e-4 is a mild starting value — bump to 1e-3 if logit magnitudes
-    # grow above ~5 (visible in moe_routing's clean_logits_lse_mean
-    # diagnostic).  Always applied to clean_logits, never to ctx_logits.
-    z_loss_coef=1e-4,
+    # Always applied to clean_logits, never to ctx_logits.
+    z_loss_coef=5e-4,
     # Residual-delta dispatch gain.  With Shazeer top-k mixture weights
     # (Σ_j w_j = 1 per sample) the effective expert contribution
     # ‖Σ w·Δ‖ is controlled solely by Δ and g; g=1 applies the delta at
     # full scale.  If grad_norm sustains > 50, drop to 0.5.
     residual_gain=1.0,
-    # BEVSummaryHead defaults (avg + max pool to a 4×4 grid; 1×1 + 3×3
-    # spatial mixer at 128 ch; flatten + 2-layer MLP → 128-d descriptor).
-    router_pool_size=4,
-    router_spatial_dim=128,
-    router_hidden_dim=256,
-    router_out_dim=128,
+    # BEVSummaryHead capacity — bumped from 4×4/128/256/128 to
+    # 6×6/192/384/192.  The 4×4 pooled summary was losing too much
+    # spatial information for road_type prediction; 6×6 preserves more
+    # near/far × left/right structure while keeping the descriptor head
+    # lightweight (the spatial mixer still runs only on the pooled
+    # grid).  Larger out_dim gives the context head and gate more
+    # signal without turning the router into a heavy perception module.
+    router_pool_size=6,
+    router_spatial_dim=192,
+    router_hidden_dim=384,
+    router_out_dim=192,
     # Context-supervised routing.  ``target_field`` selects which ZOD
     # categorical field provides the labels for the auxiliary context
-    # CE head.  ``loss_coef`` weights the CE in the total aux loss; keep
-    # it small initially so the context signal shapes z without
-    # dominating detection learning.  ``label_smoothing`` is the
-    # F.cross_entropy parameter; 0.0 keeps the CE sharp at the start.
+    # head.  ``loss_coef`` weights the context loss in the total aux
+    # loss.
+    #
+    # ``loss_type='weighted_ce'`` replaces the previous focal CE for
+    # road_type — focal still collapsed to majority-class ('city')
+    # predictions on ZOD, where class frequencies are [arterial-rural,
+    # arterial-urban, city, highway, smaller-rural] ≈ [7.9k, 19k, 40k,
+    # 8.9k, 4.1k].  ``class_weights='inverse_frequency'`` uses the
+    # module's built-in inverse-frequency weights
+    # [1.13, 0.47, 0.22, 1.01, 2.17] (normalised to mean 1) which are
+    # derived from the ZOD training distribution itself — within 1% of
+    # what you get by counting the train pkl at run time.  Label
+    # smoothing at 0.05 adds mild over-confidence regularisation
+    # without diluting the class-weight signal.
     context_aux_cfg=dict(
         target_field='road_type',
         loss_coef=0.05,
-        label_smoothing=0.0,
+        loss_type='weighted_ce',
+        label_smoothing=0.05,
+        class_weights='inverse_frequency',
     ),
     # Noisy top-k gate (Shazeer et al. 2017): adds learned input-dependent
     # Gaussian noise during training to encourage load balance.  At eval
-    # the gate is deterministic and load_loss returns zero (signalled by
-    # noise_std=None).  Required for load_loss to receive gradient.
+    # the gate is deterministic and load_loss returns zero (signalled
+    # by noise_std=None).  Required for load_loss to receive gradient.
+    #
+    # ``noise_scale=0.5`` halves the sampled gate noise relative to the
+    # paper formulation — diagnostics on the previous run showed
+    # noise_std_mean ≈ 0.32 vs clean_logits_std ≈ 0.19 (ratio ≈ 1.7),
+    # i.e. training-time routing was noise-driven and explained the
+    # train/eval routing mismatch.  Target after this change:
+    # noise_to_clean_std_ratio ≲ 1.
+    # ``noise_epsilon=1e-3`` drops the softplus floor by an order of
+    # magnitude (was 1e-2) so the noise std head can anneal closer to
+    # zero late in training while still keeping the Gaussian-CDF
+    # load_loss well-defined.
     gate_type='noisy_topk',
     gate_cfg=dict(
-        noise_epsilon=1e-2,
+        noise_epsilon=1e-3,
+        noise_scale=0.5,
         temperature=1.0,
     ),
 )
@@ -381,11 +421,11 @@ test_cfg = dict()
 #                              path receives matched updates.
 #   bev_moe.summary         — 2× LR; the BEV summary descriptor needs to
 #                              differentiate scenes across contexts.
-#   bev_moe.context_head    — 2× LR; the new auxiliary context classifier
-#                              that supervises the routing descriptor via
-#                              F.cross_entropy(ctx_logits, road_type).
-#                              Replaces the old context_encoder param
-#                              group (which no longer exists).
+    #   bev_moe.context_head    — 2× LR; the auxiliary context classifier
+    #                              that supervises the routing descriptor via
+    #                              focal_ce_loss(ctx_logits, road_type).
+    #                              Replaces the old context_encoder param
+    #                              group (which no longer exists).
 #
 # Expert CNN blocks (bev_moe.experts.*) are NOT listed here and therefore
 # fall through to the default AdamW settings (lr=5e-5, weight_decay=0.01).

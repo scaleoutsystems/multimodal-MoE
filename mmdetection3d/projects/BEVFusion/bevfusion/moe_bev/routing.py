@@ -56,7 +56,12 @@ All gate modules return a ``GateOutput`` with the following fields:
                                    full (B, E) shape with zeros off-topk.
                                    Diagnostics only.
 
-    topk_idx             (B, k)  — selected expert indices.
+    topk_idx             (B, k)  — selected expert indices used for the
+                                   actual dispatch this forward.  For
+                                   :class:`NoisyTopkGate` in training these
+                                   are the top-k of the *noisy* logits;
+                                   otherwise identical to
+                                   ``clean_topk_idx``.
 
     topk_weights         (B, k)  — Shazeer top-k mixture weights:
                                    ``softmax(topk_vals / T)`` with
@@ -70,7 +75,8 @@ All gate modules return a ``GateOutput`` with the following fields:
                                    Equals ``clean_logits`` for ``TopkGate``
                                    and for ``NoisyTopkGate`` in eval mode;
                                    for ``NoisyTopkGate`` in training these
-                                   are ``clean_logits + randn · noise_std``.
+                                   are
+                                   ``clean_logits + noise_scale · randn · noise_std``.
 
     noise_std            (B, E) or None
                                  — per-sample per-expert noise std used at
@@ -78,6 +84,16 @@ All gate modules return a ``GateOutput`` with the following fields:
                                    deterministic gates / eval forwards;
                                    signals to ``load_loss`` that no
                                    Gaussian-CDF integral can be computed.
+
+    clean_topk_idx       (B, k)  — deterministic top-k of ``clean_logits``.
+                                   This is the routing that would be used
+                                   at eval time and is what
+                                   ``switch_balance_loss`` should be
+                                   computed over for a ``NoisyTopkGate``
+                                   (see :func:`switch_balance_loss`).  For
+                                   :class:`TopkGate` and for
+                                   :class:`NoisyTopkGate` in eval mode this
+                                   equals ``topk_idx``.
 
 Top-k routing
 -------------
@@ -174,21 +190,26 @@ class BEVSummaryHead(nn.Module):
 
     Args:
         channels:    Number of input BEV channels.
-        pool_size:   Pooling grid resolution P (default 4 → 4×4 grid).
+        pool_size:   Pooling grid resolution P (default 6 → 6×6 grid).
+            A 6×6 grid preserves more near/far and left/right layout than
+            the old 4×4 default while staying lightweight; the spatial
+            mixer still runs only on the pooled grid so cost is negligible.
         spatial_dim: Number of channels in the spatial-mixer convs
-            (default 128).
-        hidden_dim:  Hidden width of the descriptor MLP (default 256).
+            (default 192).
+        hidden_dim:  Hidden width of the descriptor MLP (default 384).
         out_dim:     Final descriptor dimension; the gate's input dim
-            (default 128).  Exposed as ``self.out_dim``.
+            (default 192).  Exposed as ``self.out_dim``.  Larger out_dim
+            gives the context head and gate more signal without turning
+            the router into a heavy perception module.
     """
 
     def __init__(
         self,
         channels: int,
-        pool_size: int = 4,
-        spatial_dim: int = 128,
-        hidden_dim: int = 256,
-        out_dim: int = 128,
+        pool_size: int = 6,
+        spatial_dim: int = 192,
+        hidden_dim: int = 384,
+        out_dim: int = 192,
     ) -> None:
         super().__init__()
         self.pool_size = pool_size
@@ -235,7 +256,9 @@ class GateOutput:
     full_softmax_probs:   Tensor            # (B, E) softmax over clean_logits
     sparse_softmax_probs: Tensor            # (B, E) top-k mixture scattered
                                             #         into (B, E); zero off-topk
-    topk_idx:             Tensor            # (B, k) selected expert indices
+    topk_idx:             Tensor            # (B, k) dispatch indices
+                                            #         (noisy for NoisyTopkGate
+                                            #         during training)
     topk_weights:         Tensor            # (B, k) Shazeer top-k mixture
                                             #         weights, Σ_j = 1 per sample
     clean_logits:         Tensor            # (B, E) pre-noise gate logits
@@ -243,6 +266,20 @@ class GateOutput:
     noise_std:            Optional[Tensor]  # (B, E) or None — see GateOutput
                                             #         contract in the module
                                             #         docstring.
+    clean_topk_idx:       Optional[Tensor] = None
+                                            # (B, k) deterministic top-k of
+                                            #         clean_logits.  Equals
+                                            #         ``topk_idx`` for
+                                            #         :class:`TopkGate` and for
+                                            #         :class:`NoisyTopkGate` in
+                                            #         eval mode; differs in
+                                            #         training for the noisy
+                                            #         gate.  See module
+                                            #         docstring — used by
+                                            #         ``switch_balance_loss``
+                                            #         and the clean-routing
+                                            #         selection-frequency
+                                            #         diagnostics.
 
 
 # ── ZOD field registry ────────────────────────────────────────────────────
@@ -382,6 +419,8 @@ class TopkGate(nn.Module):
             clean_logits=logits,
             noisy_logits=logits,
             noise_std=None,
+            # Deterministic gate: clean top-k is identical to dispatch top-k.
+            clean_topk_idx=topk_idx,
         )
 
 
@@ -394,11 +433,12 @@ class NoisyTopkGate(nn.Module):
     training so non-dominant experts still receive gradient signal,
     improving load balance.  At inference the gate is deterministic.
 
-    Exact formulation (paper §2.1)::
+    Exact formulation (paper §2.1, with our ``noise_scale`` multiplier)::
 
         clean_logits = z · W_gate
         noise_std    = softplus( z · W_noise + noise_epsilon )        (training)
-        noisy_logits = clean_logits + StandardNormal() · noise_std    (training)
+        noisy_logits = clean_logits + noise_scale · StdNormal · noise_std
+                                                                      (training)
         noisy_logits = clean_logits                                   (eval)
 
     The noise std is produced by its own learned linear head ``W_noise``,
@@ -407,11 +447,20 @@ class NoisyTopkGate(nn.Module):
     paper's built-in annealing mechanism.  The constant ``noise_epsilon``
     keeps the std bounded away from 0 for the Gaussian-CDF ``load_loss``.
 
+    ``noise_scale`` is a global deterministic multiplier on the sampled
+    noise.  The standard Shazeer formulation corresponds to
+    ``noise_scale = 1.0``.  Values ``< 1`` reduce training-time routing
+    noise relative to the clean-logit spread, which is useful when the
+    network's natural per-expert ``noise_std`` grows large enough to swamp
+    the clean logit gaps (monitor ``noise_std_mean / clean_logits_std``:
+    should be ≲ 1).  This keeps exploration active while reducing the
+    train/eval routing mismatch.
+
     Routing procedure
     -----------------
       1. ``clean_logits = W_gate(z)`` — no normalisation.
       2. Training: ``noise_std = softplus(W_noise(z) + noise_epsilon)``;
-         ``noisy_logits = clean_logits + randn · noise_std``.
+         ``noisy_logits = clean_logits + noise_scale · randn · noise_std``.
          Eval:    ``noisy_logits = clean_logits``; ``noise_std = None``.
       3. ``full_softmax_probs = softmax(clean_logits / T)`` — clean pre-top-k
         router belief.  This is intentionally computed from clean logits, not
@@ -420,6 +469,11 @@ class NoisyTopkGate(nn.Module):
         from selecting top-k on ``noisy_logits``, and hard-dispatch balancing is
         handled by ``load_loss``.
       4. Top-k selected on ``noisy_logits`` (rank-invariant w.r.t. T>0).
+         In parallel, the deterministic clean top-k is also computed from
+         ``clean_logits`` and exposed as ``GateOutput.clean_topk_idx`` so
+         callers can feed :func:`switch_balance_loss` with the clean
+         selection rather than the noisy dispatch.  In eval mode the two
+         top-ks are identical.
       5. ``topk_weights = softmax(topk_vals / T)`` — renormalised over the
          top-k, Σ_j = 1 per sample.
 
@@ -430,7 +484,15 @@ class NoisyTopkGate(nn.Module):
         temperature:   Softmax temperature.  T < 1 sharpens, T > 1 flattens;
                        top-k selection is invariant for T > 0.  Default 1.0.
         noise_epsilon: Constant added before softplus for the noise std,
-                       giving a small positive floor.  Default 1e-2.
+                       giving a small positive floor.  Default 1e-3 — small
+                       enough to barely shift ``softplus`` output while still
+                       keeping it strictly above zero for the Gaussian-CDF
+                       ``load_loss``.
+        noise_scale:   Global multiplier on the sampled Gaussian noise.
+                       Default 1.0 (paper formulation).  Set to < 1 (e.g.
+                       0.5) to reduce training noise when the learned
+                       per-expert noise std is large relative to the
+                       clean-logit std.
     """
 
     def __init__(
@@ -439,16 +501,19 @@ class NoisyTopkGate(nn.Module):
         num_experts: int,
         k: int = 2,
         temperature: float = 1.0,
-        noise_epsilon: float = 1e-2,
+        noise_epsilon: float = 1e-3,
+        noise_scale: float = 1.0,
     ):
         super().__init__()
         assert 1 <= k <= num_experts, f'k must be in [1, num_experts], got {k}'
         assert temperature > 0.0, 'temperature must be positive'
+        assert noise_scale >= 0.0, 'noise_scale must be non-negative'
 
         self.num_experts = num_experts
         self.k = k
         self.temperature = temperature
-        self.noise_epsilon = noise_epsilon
+        self.noise_epsilon = float(noise_epsilon)
+        self.noise_scale = float(noise_scale)
 
         self.w_gate  = nn.Linear(feat_dim, num_experts)
         # Shazeer's second linear head producing per-sample per-expert noise
@@ -473,7 +538,13 @@ class NoisyTopkGate(nn.Module):
             # Shazeer input-dependent noise: std = softplus(W_noise·z + ε).
             raw = self.w_noise(feat) + self.noise_epsilon              # (B, E)
             noise_std = F.softplus(raw)                                # (B, E)
-            noisy_logits = clean_logits + torch.randn_like(clean_logits) * noise_std
+            # ``noise_scale`` globally scales the sampled noise so the
+            # exploration term stays comparable to clean-logit variation
+            # even when the learned per-expert ``noise_std`` drifts large.
+            noisy_logits = (clean_logits
+                            + self.noise_scale
+                            * torch.randn_like(clean_logits)
+                            * noise_std)
         else:
             noise_std = None
             noisy_logits = clean_logits
@@ -489,6 +560,16 @@ class NoisyTopkGate(nn.Module):
         topk_vals, topk_idx = torch.topk(noisy_logits, k=self.k, dim=-1)  # (B, k)
         topk_weights = F.softmax(topk_vals / self.temperature, dim=-1)    # (B, k)
 
+        # Deterministic clean top-k — what the router would pick at eval
+        # time.  Consumed by ``switch_balance_loss`` and the
+        # clean-routing selection-frequency diagnostics.  In eval mode
+        # ``noisy_logits is clean_logits`` so the two top-k ops yield the
+        # same indices.
+        if self.training:
+            _, clean_topk_idx = torch.topk(clean_logits, k=self.k, dim=-1)
+        else:
+            clean_topk_idx = topk_idx
+
         sparse_softmax_probs = torch.zeros_like(clean_logits)
         sparse_softmax_probs.scatter_(
             1, topk_idx, topk_weights.to(sparse_softmax_probs.dtype))
@@ -501,4 +582,5 @@ class NoisyTopkGate(nn.Module):
             clean_logits=clean_logits,
             noisy_logits=noisy_logits,
             noise_std=noise_std,
+            clean_topk_idx=clean_topk_idx,
         )

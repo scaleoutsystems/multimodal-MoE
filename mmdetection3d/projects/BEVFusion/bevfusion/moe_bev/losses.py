@@ -62,14 +62,18 @@ NoisyTopkGate in eval mode) to signal "no load_loss computable"; in that
 case ``load_loss`` returns a zero tensor attached to the graph so
 downstream sums do not break.
 
-Legacy / alternative
---------------------
+Optional companion
+------------------
 ``switch_balance_loss`` — Fedus et al. (2022) Switch Transformer balance
-loss (α · E · Σ f_e · P_e) is still defined and exported for experiments
-that want to swap the Shazeer pair for the Switch formulation, but is NOT
-called by any block by default.  Run 4487087 showed it sat pinned at its
-uniform floor α because noise-dominated f_e was already ~1/E, providing
-essentially no gradient signal under the current noisy-gate regime.
+loss (α · E · Σ f_e · P_e).  Disabled by default (``switch_balance_coef =
+0.0`` on every block); when a block opts in with a positive coefficient,
+the loss should be computed from ``GateOutput.clean_topk_idx``, not
+``topk_idx``, so it disciplines the *clean* deterministic router (the one
+used at validation) rather than the noisy training-time dispatch.  An
+earlier run (4487087) fed the noisy ``topk_idx`` into the loss and showed
+it pinned at the uniform floor α because noise-dominated f_e was already
+~1/E, providing essentially no gradient — passing ``clean_topk_idx`` is
+the fix.
 
 Variant usage:
     BEVMoEBlock                 → importance_loss + load_loss + router_z_loss
@@ -277,24 +281,54 @@ def switch_balance_loss(
     num_experts: int,
     coef: float,
 ) -> Tensor:
-    """Fedus et al. (2022) Switch Transformer balance loss (alternative).
+    """Fedus et al. (2022) Switch Transformer balance loss.
 
     Exact formula — Switch Transformers, Section 2.1:
 
         L_balance = α · E · Σ_{e=1}^{E}  f_e · P_e
 
-    where ``f_e`` is the detached hard-selection frequency and ``P_e`` is the
-    differentiable mean softmax probability for expert e.  See the module
-    docstring for why this is NOT the default under a noisy gate: f_e is
-    essentially fixed at 1/E by the noise, so the loss sits pinned at α and
-    provides almost no gradient.
+    where ``f_e`` is the detached hard-selection frequency and ``P_e`` is
+    the differentiable mean softmax probability for expert e.
 
-    Kept here so experiments can swap back to it without needing another
-    file change; not called by any BEV MoE block by default.
+    Choice of ``topk_idx``
+    ----------------------
+    The paper is written for a deterministic gate, where ``topk_idx``
+    directly reflects the routing the model will use at inference.  Under
+    a :class:`NoisyTopkGate`, the noisy top-k used at train time absorbs a
+    large Gaussian noise term and its per-expert selection frequency ``f_e``
+    tends to look artificially balanced — the training-time noise already
+    spreads hard dispatch across experts even when the *clean* router has
+    rank-collapsed.  Feeding the noisy ``topk_idx`` into this loss is
+    therefore mostly inert, which is exactly the "pinned at the uniform
+    floor" behaviour observed in earlier experiments.
+
+    For NoisyTopkGate runs that want a Switch-style discipline on the
+    deterministic validation-time router, pass
+    ``GateOutput.clean_topk_idx`` instead — the clean deterministic top-k
+    — so ``f_e`` captures clean rank-collapse rather than the noisy
+    exploration distribution.  Under a deterministic :class:`TopkGate` the
+    two are identical.
+
+    Typical use
+    -----------
+    Complements the Shazeer pair in NoisyTopkGate setups:
+
+        importance_loss      — balances soft pre-top-k mass (P_e).
+        load_loss            — balances expected noisy top-k utilisation
+                               (differentiable Gaussian-CDF estimator).
+        switch_balance_loss  — balances the *clean* deterministic top-k
+                               that will actually be used at validation
+                               (this function, fed with ``clean_topk_idx``).
 
     Args:
-        gate_probs:  (B, E) pre-top-k full softmax probabilities.
-        topk_idx:    (B, k) indices of selected experts per sample.
+        gate_probs:  (B, E) pre-top-k full softmax probabilities (typically
+            ``GateOutput.full_softmax_probs``, i.e. softmax over
+            ``clean_logits``).
+        topk_idx:    (B, k) indices of selected experts per sample.  Pass
+            ``GateOutput.clean_topk_idx`` with a NoisyTopkGate to
+            regularise the deterministic validation-time router; pass
+            ``GateOutput.topk_idx`` with a deterministic TopkGate (where
+            the two are equal).
         num_experts: Total number of experts E.
         coef:        Scalar weight α applied to the loss.
 

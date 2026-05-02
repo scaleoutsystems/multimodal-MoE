@@ -17,11 +17,25 @@ Per-expert routing metrics (computed from each iter's ``_moe_info``):
 
     top1_selection_freq_per_expert
         Fraction of samples for which expert e is the rank-1 selection
-        (``topk_idx[:, 0] == e``).
+        (``topk_idx[:, 0] == e``).  Computed from the *dispatch* top-k
+        (noisy for NoisyTopkGate during training, clean otherwise).
 
     topk_selection_freq_per_expert
         Fraction of samples for which expert e appears anywhere in the
-        top-k set.  Equals top1_selection_freq when k=1.
+        dispatch top-k set.  Equals top1_selection_freq when k=1.
+
+    clean_top1_selection_freq_per_expert
+        Same as ``top1_selection_freq_per_expert`` but computed from
+        ``clean_topk_idx`` — the deterministic top-k of the clean
+        logits.  For :class:`TopkGate` and for :class:`NoisyTopkGate`
+        in eval mode this is identical to
+        ``top1_selection_freq_per_expert``; under a NoisyTopkGate in
+        training it reveals what the router *would* dispatch without
+        the Gaussian noise perturbation, catching clean rank-collapse
+        that is hidden by the noisy dispatch.
+
+    clean_topk_selection_freq_per_expert
+        Clean-top-k analog of ``topk_selection_freq_per_expert``.
 
     mean_gate_entropy
         Average ``-Σ p log p`` of the per-sample full pre-top-k softmax.
@@ -39,11 +53,27 @@ Context-supervised auxiliary diagnostics:
     router_z_loss             clean-logit z regulariser value
     importance_loss
     load_loss
+    switch_balance_loss       Fedus Switch balance (present when
+                              switch_balance_coef > 0 on any block;
+                              should be computed from clean_topk_idx).
     group_balance_loss        (modality_specific only)
     ctx_aux_acc               Fraction of correct argmax predictions.
     ctx_aux_acc_per_class     (overall val) accuracy per context class.
     ctx_pred_hist             bincount of argmax predictions over the split.
     ctx_label_hist            bincount of context labels over the split.
+    ctx_loss_type             Most recent ctx loss type seen
+                              ('weighted_ce' | 'ce' | 'focal').
+    ctx_class_weights         Normalised class weights used for weighted_ce
+                              (None when not used).
+    summary_pool_size
+    summary_spatial_dim
+    summary_hidden_dim
+    summary_out_dim           Echo of the BEVSummaryHead config for the run.
+    noise_scale               NoisyTopkGate global noise multiplier (train-time
+                              only; most recent value seen).
+    noise_epsilon             NoisyTopkGate softplus epsilon on the std head.
+    noise_to_clean_std_ratio  Mean of ``noise_std_mean / clean_logits_std``
+                              across accumulated iterations.  Target: ≲ 1.
 
 Outputs (under ``<work_dir>/moe_routing/``):
 
@@ -163,11 +193,16 @@ class MoERoutingHook(Hook):
     def _fresh_acc(E: int) -> Dict[str, Any]:
         """Build a fresh accumulator dict for one phase (train or val)."""
         return {
-            # Per-expert routing
+            # Per-expert routing (dispatch = training/noisy top-k)
             'dispatch':       [0.0] * E,
             'dense':          [0.0] * E,
             'top1':           [0]   * E,
             'topk':           [0]   * E,
+            # Per-expert routing over the *clean* deterministic top-k
+            # (what the router would pick without training-time noise).
+            'clean_top1':     [0]   * E,
+            'clean_topk':     [0]   * E,
+            'clean_n':        0,
             'entropy_sum':    0.0,
             'n':              0,
             # Modality group mass
@@ -176,6 +211,7 @@ class MoERoutingHook(Hook):
             # Aux loss running sums (loss_value_sum, count) → mean later
             'imp_sum':        0.0, 'imp_n':       0,
             'load_sum':       0.0, 'load_n':      0,
+            'switch_sum':     0.0, 'switch_n':    0,
             'router_z_sum':   0.0, 'router_z_n':  0,
             'group_bal_sum':  0.0, 'group_bal_n': 0,
             'ctx_loss_sum':   0.0, 'ctx_loss_n':  0,
@@ -187,6 +223,12 @@ class MoERoutingHook(Hook):
             'ctx_correct_per_class': None,   # List[int]
             'ctx_total_per_class':   None,   # List[int]
             'ctx_target_field':      None,
+            # Ctx-head config echoes (last seen wins; all blocks share).
+            'ctx_loss_type':         None,
+            'ctx_class_weights':     None,
+            # BEVSummaryHead config echoes (last seen wins; all blocks
+            # in a run share).
+            'summary_cfg':           {},
             # Router-scale diagnostics (running sums of per-iter scalars)
             'logit_stats':    {},  # key → [sum, n]
         }
@@ -230,9 +272,10 @@ class MoERoutingHook(Hook):
             if info is None:
                 continue
 
-            full_probs   = info.get('full_softmax_probs')  # (B, E)
-            topk_idx     = info.get('topk_idx')            # (B, k)
-            topk_weights = info.get('topk_weights')        # (B, k)
+            full_probs     = info.get('full_softmax_probs')    # (B, E)
+            topk_idx       = info.get('topk_idx')              # (B, k)
+            topk_weights   = info.get('topk_weights')          # (B, k)
+            clean_topk_idx = info.get('clean_topk_idx')        # (B, k) | None
             if full_probs is None or topk_idx is None or topk_weights is None:
                 continue
 
@@ -240,7 +283,7 @@ class MoERoutingHook(Hook):
             k    = topk_idx.shape[1]
             E_use = min(E, self.num_experts)
 
-            # ── Per-expert metrics ────────────────────────────────────
+            # ── Per-expert metrics (dispatch top-k) ───────────────────
             dispatch = acc['dispatch']
             dense    = acc['dense']
             top1     = acc['top1']
@@ -268,6 +311,28 @@ class MoERoutingHook(Hook):
                         topk_arr[eidx] += 1
                         seen.add(eidx)
 
+            # ── Per-expert metrics (clean deterministic top-k) ────────
+            # Diagnostic-only: what the router would dispatch without
+            # the Gaussian noise term.  Under TopkGate / eval this is
+            # identical to the dispatch top-k above.
+            if clean_topk_idx is not None:
+                c_top1 = acc['clean_top1']
+                c_topk = acc['clean_topk']
+                k_clean = clean_topk_idx.shape[1]
+                for b in range(B):
+                    eidx = int(clean_topk_idx[b, 0].item())
+                    if 0 <= eidx < self.num_experts:
+                        c_top1[eidx] += 1
+                for b in range(B):
+                    seen = set()
+                    for j in range(k_clean):
+                        eidx = int(clean_topk_idx[b, j].item())
+                        if (0 <= eidx < self.num_experts
+                                and eidx not in seen):
+                            c_topk[eidx] += 1
+                            seen.add(eidx)
+                acc['clean_n'] += B
+
             with torch.no_grad():
                 ent = -(full_probs.clamp_min(1e-12) *
                         full_probs.clamp_min(1e-12).log()).sum(dim=-1)
@@ -284,6 +349,8 @@ class MoERoutingHook(Hook):
                                   info, 'importance_loss')
             self._add_scalar_loss(acc, 'load_sum',      'load_n',
                                   info, 'load_loss')
+            self._add_scalar_loss(acc, 'switch_sum',    'switch_n',
+                                  info, 'switch_balance_loss')
             self._add_scalar_loss(acc, 'router_z_sum',  'router_z_n',
                                   info, 'router_z_loss')
             self._add_scalar_loss(acc, 'group_bal_sum', 'group_bal_n',
@@ -294,6 +361,23 @@ class MoERoutingHook(Hook):
                                   info, 'ctx_aux_loss_weighted')
             self._add_scalar_loss(acc, 'ctx_acc_sum',   'ctx_acc_n',
                                   info, 'ctx_aux_acc')
+
+            # ── Ctx-head + BEVSummaryHead configuration echoes ────────
+            # Last-seen wins; inside a run the blocks share the same
+            # config so overwriting is fine.  Kept as plain fields in
+            # the accumulator so the final JSON metric dump carries
+            # them.
+            ctx_lt = info.get('ctx_loss_type')
+            if ctx_lt is not None:
+                acc['ctx_loss_type'] = str(ctx_lt)
+            ctx_cw = info.get('ctx_class_weights')
+            if ctx_cw is not None:
+                acc['ctx_class_weights'] = [float(w) for w in ctx_cw]
+            for cfg_key in ('summary_pool_size', 'summary_spatial_dim',
+                            'summary_hidden_dim', 'summary_out_dim'):
+                v = info.get(cfg_key)
+                if v is not None:
+                    acc['summary_cfg'][cfg_key] = int(v)
 
             # ── Context histograms / per-class accuracy ───────────────
             ctx_pred  = info.get('ctx_pred_hist')
@@ -329,6 +413,10 @@ class MoERoutingHook(Hook):
                     acc['ctx_target_field'] = target
 
             # ── Router-scale diagnostics ──────────────────────────────
+            # The ``noise_scale`` and ``noise_epsilon`` fields are
+            # constants per block but are accumulated as means for
+            # uniformity with the other scale diagnostics — the mean
+            # equals the constant for any non-empty window.
             for src_key in (
                 'clean_logits_mean', 'clean_logits_std',
                 'clean_logits_abs_mean', 'clean_logits_min',
@@ -337,6 +425,8 @@ class MoERoutingHook(Hook):
                 'noisy_logits_abs_mean', 'noisy_logits_min',
                 'noisy_logits_max', 'noisy_logits_lse_mean',
                 'noise_std_mean', 'noise_std_min', 'noise_std_max',
+                'noise_scale', 'noise_epsilon',
+                'noise_to_clean_std_ratio',
                 'ctx_logits_mean_abs',
             ):
                 v = info.get(src_key)
@@ -391,6 +481,17 @@ class MoERoutingHook(Hook):
                 acc['entropy_sum'] / max(n, 1), 6),
         }
 
+        # Clean-routing selection frequencies (diagnostic-only): what
+        # the router would dispatch without the training-time Gaussian
+        # noise.  Identical to ``top*_selection_freq_per_expert`` for
+        # TopkGate and for NoisyTopkGate in eval.
+        clean_n = acc['clean_n']
+        if clean_n > 0:
+            out['clean_top1_selection_freq_per_expert'] = self._to_expert_dict(
+                self._freq(acc['clean_top1'], clean_n))
+            out['clean_topk_selection_freq_per_expert'] = self._to_expert_dict(
+                self._freq(acc['clean_topk'], clean_n))
+
         # Aux loss means
         def _mean(s: float, n: int) -> Optional[float]:
             if n == 0:
@@ -400,6 +501,7 @@ class MoERoutingHook(Hook):
         for label, src_sum, src_n in (
             ('importance_loss',       'imp_sum',       'imp_n'),
             ('load_loss',             'load_sum',      'load_n'),
+            ('switch_balance_loss',   'switch_sum',    'switch_n'),
             ('router_z_loss',         'router_z_sum',  'router_z_n'),
             ('group_balance_loss',    'group_bal_sum', 'group_bal_n'),
             ('ctx_aux_loss',          'ctx_loss_sum',  'ctx_loss_n'),
@@ -409,6 +511,14 @@ class MoERoutingHook(Hook):
             v = _mean(acc[src_sum], acc[src_n])
             if v is not None:
                 out[label] = v
+
+        # Ctx-head and BEVSummaryHead config echoes.
+        if acc.get('ctx_loss_type') is not None:
+            out['ctx_loss_type'] = acc['ctx_loss_type']
+        if acc.get('ctx_class_weights') is not None:
+            out['ctx_class_weights'] = list(acc['ctx_class_weights'])
+        if acc.get('summary_cfg'):
+            out.update(acc['summary_cfg'])
 
         # Router-scale diagnostics
         scale: Dict[str, float] = {}
