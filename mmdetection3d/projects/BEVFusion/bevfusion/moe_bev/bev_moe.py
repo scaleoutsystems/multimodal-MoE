@@ -3,23 +3,48 @@
 BEVMoEBlock is a single-input MoE block used for:
   - Variant C: fusion-then-MoE — applied to the fused BEV after ConvFuser
     and before pts_backbone.
-  - Variant D: LiDAR-only MoE — applied to the LiDAR BEV at the same
-    insertion point before pts_backbone (no ConvFuser).
+  - Variant D: LiDAR-only MoE — applied after SECONDFPN (post-neck,
+    pre-bbox_head), operating on the semantically rich 512-ch FPN output.
 
   For modality-specific experts (joint gate over cam + lidar expert pools),
   use ModalitySpecificMoEBlock instead.
 
-Router input
-------------
-``BEVSummaryHead`` (avg + max pool to a P×P grid, 1×1 + 3×3 spatial mixer,
-flatten, two-layer MLP with final LayerNorm) produces the routing
-descriptor ``z``.  See ``routing.py`` for the rationale.
+Dual-summary design (residual-CNN encoders)
+--------------------------------------------
+Two independent ``BEVResSummaryEncoder`` branches (stem + 3 residual conv
+blocks + global average pooling) produce separate descriptors:
+
+    z_router  — task / routing branch; optimised by detection + MoE losses.
+    z_ctx     — context branch; optimised by context CE loss only.
+
+The gate receives a concatenation of both, but with ``z_ctx`` stop-grad
+so detection/router gradients cannot corrupt the context descriptor:
+
+    z_router  = self.router_summary(x_bev)   # (B, 256)
+    z_ctx     = self.context_summary(x_bev)  # (B, 256)
+
+    z_gate    = torch.cat([z_router, z_ctx.detach()], dim=1)  # (B, 512)
+    gate_out  = self.gate(z_gate)            # NoisyTopkGate — dispatch
+    ctx_logits = self.context_head(z_ctx)    # MLP head on z_ctx (full grad)
+
+Each encoder learns: spatial structure first (residual conv blocks at full
+BEV resolution) → global compression (AdaptiveAvgPool2d(1)) → projected
+descriptor.  This is the same principle as ResNet feature extraction used
+in the reference CIFAR MoE experiment.
+
+This design lets:
+
+- ``z_ctx`` learn road_type cleanly under weighted CE without detection
+  gradients competing inside the same descriptor.
+- The router read context information through ``z_ctx.detach()`` — the gate
+  *sees* context but cannot differentiate through it.
+- ``z_router`` remain free to learn task/routing-specific structure.
 
 Context-supervised routing
 --------------------------
-Context labels are NOT concatenated into the gate input.  The block uses
-a separate ``context_head`` (a small MLP — ``Linear → ReLU → LayerNorm →
-Linear``) on top of the BEV summary descriptor, supervised by one of:
+Context labels are NOT concatenated into the gate input.  The block's
+``context_head`` (a small MLP — ``Linear → ReLU → LayerNorm → Dropout →
+Linear``) consumes ``z_ctx`` exclusively and is supervised by one of:
 
     'ce'          — plain ``F.cross_entropy`` with optional label smoothing.
     'weighted_ce' — ``F.cross_entropy`` with per-class weights; the
@@ -35,15 +60,14 @@ Linear``) on top of the BEV summary descriptor, supervised by one of:
                     collapsed to the majority-class under heavy class
                     imbalance on ZOD, so 'weighted_ce' is preferred.
 
-The gradient flows back through ``z`` and shapes the BEV summary
-descriptor — expert dispatch remains task-driven (top-k over the router
-logits) but the descriptor is biased toward context-relevant directions.
+For the full pattern (LiDAR-only NoisyTopkGate setup, post-SECONDFPN)::
 
-For the full pattern (LiDAR-only NoisyTopkGate setup)::
-
-    z          = self.summary(x_bev)
-    gate_out   = self.gate(z)
-    ctx_logits = self.context_head(z)
+    # x_bev is (B, 512, H, W) from SECONDFPN
+    z_router   = self.router_summary(x_bev)   # BEVResSummaryEncoder
+    z_ctx      = self.context_summary(x_bev)  # BEVResSummaryEncoder
+    z_gate     = torch.cat([z_router, z_ctx.detach()], dim=1)
+    gate_out   = self.gate(z_gate)            # NoisyTopkGate — dispatch
+    ctx_logits = self.context_head(z_ctx)     # MLP head on z_ctx
     # loss_type='weighted_ce' (default in this file):
     ctx_loss   = F.cross_entropy(ctx_logits, ctx_label,
                                  weight=class_weights,
@@ -119,10 +143,23 @@ After every forward() call, ``self._moe_info`` is written with:
     noise_to_clean_std_ratio
                          scalar  — noise_std_mean / clean_logits_std
                                    (target: ≲ 1 under NoisyTopkGate)
-    summary_pool_size    int
-    summary_spatial_dim  int
-    summary_hidden_dim   int
-    summary_out_dim      int     — BEVSummaryHead configuration echoes.
+    router_summary_type             str  — 'BEVResSummaryEncoder'.
+    router_summary_stem_channels    int  — width of stem and first two res blocks.
+    router_summary_out_channels     int  — width of third res block and pooled rep.
+    router_summary_out_dim          int  — projected descriptor dimension (256).
+    router_summary_num_res_blocks   int  — number of residual blocks (3).
+    router_summary_dropout          float
+    context_summary_type            str  — 'BEVResSummaryEncoder'.
+    context_summary_stem_channels   int
+    context_summary_out_channels    int
+    context_summary_out_dim         int
+    context_summary_num_res_blocks  int
+    context_summary_dropout         float
+    gate_feat_dim            int  — 512 (= router_out_dim + context_out_dim).
+    z_ctx_detached_for_gate  bool — always True in this design.
+    context_head_type        str  — 'mlp' (MLP head on z_ctx).
+    moe_insertion_point      str  — 'post_secondfpn'.
+    moe_input_channels       int  — input channel count (512 for Variant D).
 """
 from __future__ import annotations
 
@@ -138,7 +175,7 @@ from mmdet3d.registry import MODELS
 from .bev_experts import make_bev_experts
 from .losses import (importance_loss, load_loss, router_z_loss,
                       switch_balance_loss)
-from .routing import (BEVSummaryHead, NoisyTopkGate, TopkGate,
+from .routing import (BEVResSummaryEncoder, NoisyTopkGate, TopkGate,
                        extract_context_labels, get_context_vocab)
 
 
@@ -153,7 +190,7 @@ from .routing import (BEVSummaryHead, NoisyTopkGate, TopkGate,
 _INVERSE_FREQUENCY_FALLBACK: Dict[str, List[float]] = {
     # ZOD_FIELD_REGISTRY order:
     # ['arterial-rural', 'arterial-urban', 'city', 'highway', 'smaller-rural']
-    'road_type': [1.13, 0.47, 0.22, 1.01, 2.17],
+    'road_type': [1.13, 0.47, 0.18, 1.8, 3.0],
 }
 
 
@@ -226,14 +263,6 @@ class BEVMoEBlock(nn.Module):
                               Pass 0 to disable.  Default 1e-4.
         residual_gain:        Scalar multiplier on the routed expert delta in
                               the residual-delta dispatch.  Default 1.0.
-        router_pool_size:     Spatial size of the BEVSummaryHead pooled grid.
-                              Default 6.
-        router_spatial_dim:   Channels in the BEVSummaryHead 1×1 + 3×3
-                              spatial mixer convs.  Default 192.
-        router_hidden_dim:    Hidden width of the BEVSummaryHead MLP.
-                              Default 384.
-        router_out_dim:       Output dim of BEVSummaryHead (gate input dim).
-                              Default 192.
         context_aux_cfg:      Dict configuring the context-supervised
                               auxiliary loss.  Recognised keys / defaults::
 
@@ -268,6 +297,15 @@ class BEVMoEBlock(nn.Module):
                               ``noise_scale``).
     """
 
+    # Shared architecture dimensions for both BEVResSummaryEncoder branches.
+    # Both router_summary and context_summary are built with these params.
+    _SUMMARY_STEM_CHANNELS  = 128
+    _SUMMARY_OUT_CHANNELS   = 256
+    _SUMMARY_OUT_DIM        = 256
+    _SUMMARY_DROPOUT        = 0.2
+    # Gate input = concat([z_router, z_ctx.detach()]) = 256 + 256.
+    _GATE_FEAT_DIM          = _SUMMARY_OUT_DIM * 2  # 512
+
     def __init__(
         self,
         channels: int,
@@ -279,10 +317,6 @@ class BEVMoEBlock(nn.Module):
         switch_balance_coef: float = 0.0,
         z_loss_coef: float = 1e-4,
         residual_gain: float = 1.0,
-        router_pool_size: int = 6,
-        router_spatial_dim: int = 192,
-        router_hidden_dim: int = 384,
-        router_out_dim: int = 192,
         context_aux_cfg: Optional[dict] = None,
         gate_type: str = 'topk',
         gate_cfg: Optional[dict] = None,
@@ -299,29 +333,35 @@ class BEVMoEBlock(nn.Module):
 
         self.experts = make_bev_experts(num_experts, channels, num_convs)
 
-        # BEV summary head: pooled grid → 1×1 + 3×3 spatial mixer → MLP.
-        # The config values are remembered on ``self`` (and echoed into
-        # ``moe_info``) so downstream hooks can log the router capacity.
-        self._summary_pool_size   = int(router_pool_size)
-        self._summary_spatial_dim = int(router_spatial_dim)
-        self._summary_hidden_dim  = int(router_hidden_dim)
-        self._summary_out_dim     = int(router_out_dim)
-        self.summary = BEVSummaryHead(
+        # ── Dual BEVResSummaryEncoder branches ────────────────────────
+        # Both encoders share the same architecture but have separate
+        # weights; they are trained by independent loss signals.
+        #
+        # router_summary:  optimised by detection + MoE routing losses.
+        # context_summary: optimised by context CE loss only.
+        #
+        # Each encoder: stem conv → 3 residual blocks → global avg pool
+        # → Linear → LayerNorm.  Spatial structure is learned at full BEV
+        # resolution before global compression.
+        #
+        # The gate receives cat([z_router, z_ctx.detach()]) so the router
+        # can read context structure without context CE corrupting z_router.
+        _enc_kwargs = dict(
             channels=channels,
-            pool_size=router_pool_size,
-            spatial_dim=router_spatial_dim,
-            hidden_dim=router_hidden_dim,
-            out_dim=router_out_dim,
+            stem_channels=self._SUMMARY_STEM_CHANNELS,
+            out_channels=self._SUMMARY_OUT_CHANNELS,
+            out_dim=self._SUMMARY_OUT_DIM,
+            dropout=self._SUMMARY_DROPOUT,
         )
+        self.router_summary  = BEVResSummaryEncoder(**_enc_kwargs)
+        self.context_summary = BEVResSummaryEncoder(**_enc_kwargs)
 
         # ── Context auxiliary classification head ─────────────────────
         # Configured via ``context_aux_cfg``; see ``_build_context_head``
-        # for the accepted keys.  The head is a tiny
-        # ``Linear → ReLU → LayerNorm → Linear`` MLP from the BEV summary
-        # descriptor to the context vocabulary.  Its output is consumed
-        # only by the context CE (weighted/plain/focal) — never by the
-        # gate.  Class weights, when used, are registered as a buffer so
-        # they follow device transitions automatically.
+        # for the accepted keys.  The head is an MLP wired to
+        # ``self.context_summary.out_dim`` (z_ctx only — not z_gate).
+        # Class weights, when used, are registered as a buffer so they
+        # follow device transitions automatically.
         self.context_aux_cfg: Optional[dict] = None
         self.context_head: Optional[nn.Module] = None
         self._ctx_vocab_map: Optional[Dict[str, int]] = None
@@ -329,7 +369,7 @@ class BEVMoEBlock(nn.Module):
         self._ctx_loss_coef: float = 0.0
         self._ctx_loss_type: str = 'ce'
         self._ctx_focal_gamma: float = 2.0
-        self._ctx_label_smoothing: float = 0.0
+        self._ctx_label_smoothing: float = 0.05
         # ``_ctx_class_weights_list`` is the plain Python list (None when
         # not used) kept for logging.  The tensor version is registered
         # as a buffer in ``_build_context_head`` (named
@@ -338,29 +378,33 @@ class BEVMoEBlock(nn.Module):
         if context_aux_cfg is not None:
             self._build_context_head(context_aux_cfg)
 
+        # Gate input = cat([z_router, z_ctx.detach()]) = 512.
+        gate_feat_dim = self._GATE_FEAT_DIM
         extra_gate_kwargs = gate_cfg or {}
         if gate_type == 'noisy_topk':
             self.gate = NoisyTopkGate(
-                feat_dim=router_out_dim,
+                feat_dim=gate_feat_dim,
                 num_experts=num_experts,
                 k=k,
                 **extra_gate_kwargs,
             )
         else:
             self.gate = TopkGate(
-                feat_dim=router_out_dim,
+                feat_dim=gate_feat_dim,
                 num_experts=num_experts,
                 k=k,
             )
 
-        # Sanity check: the gate must consume z directly (no context concat).
+        # Sanity check: gate must consume concat([z_router, z_ctx]).
         gate_in = (self.gate.gate.in_features
                    if isinstance(self.gate, TopkGate)
                    else self.gate.w_gate.in_features)
-        assert gate_in == router_out_dim, (
+        expected_gate_in = (self.router_summary.out_dim
+                            + self.context_summary.out_dim)
+        assert gate_in == expected_gate_in, (
             f'BEVMoEBlock: gate input dim ({gate_in}) must equal '
-            f'router_out_dim ({router_out_dim}) — context vector must NOT '
-            f'be concatenated into the router input.')
+            f'router_summary.out_dim + context_summary.out_dim '
+            f'({expected_gate_in}).')
 
         self._moe_info: Optional[Dict[str, Any]] = None
 
@@ -416,15 +460,15 @@ class BEVMoEBlock(nn.Module):
         vocab_map = {v: i for i, v in enumerate(vocab)}
         num_classes = len(vocab)
 
-        # Small MLP — a single linear head was under-parameterised for
-        # road_type on ZOD.  Linear → ReLU → LayerNorm → Linear keeps the
-        # head cheap while giving it one non-linearity and a
-        # unit-variance bottleneck.
-        z_dim = self.summary.out_dim
+        # MLP context head wired to context_summary.out_dim (z_ctx).
+        # z_ctx is produced by the dedicated context branch and never
+        # enters the gate directly.  Full gradient flows through z_ctx.
+        z_dim = self.context_summary.out_dim
         self.context_head = nn.Sequential(
             nn.Linear(z_dim, z_dim),
             nn.ReLU(inplace=True),
             nn.LayerNorm(z_dim),
+            nn.Dropout(0.2),
             nn.Linear(z_dim, num_classes),
         )
 
@@ -537,12 +581,18 @@ class BEVMoEBlock(nn.Module):
         """
         B = x_bev.shape[0]
 
-        # ── Step 1: Build routing descriptor ──────────────────────────
-        z = self.summary(x_bev)  # (B, router_out_dim)
+        # ── Step 1: Build dual BEV descriptors ────────────────────────
+        # z_router: task/routing branch — shaped by detection + MoE losses.
+        # z_ctx:    context branch — shaped by context CE only.
+        # z_gate:   cat([z_router, z_ctx.detach()]) fed to the gate so the
+        #           router reads context structure without context CE gradients
+        #           corrupting z_router.  z_ctx is NOT detached for context_head.
+        z_router = self.router_summary(x_bev)   # (B, 256)
+        z_ctx    = self.context_summary(x_bev)  # (B, 256)
+        z_gate   = torch.cat([z_router, z_ctx.detach()], dim=1)  # (B, 512)
 
         # ── Step 2: Gate → top-k expert selection ─────────────────────
-        # gate.forward consumes z DIRECTLY — context is never concatenated.
-        gate_out = self.gate(z)
+        gate_out = self.gate(z_gate)
 
         # ── Step 3: Dispatch to selected experts ──────────────────────
         x_out = x_bev.clone()
@@ -582,12 +632,12 @@ class BEVMoEBlock(nn.Module):
                 self.switch_balance_coef,
             )
         else:
-            sw_loss = z.new_zeros(())
+            sw_loss = z_router.new_zeros(())
 
         # Context auxiliary classification ----------------------------------
-        ctx_loss_raw = z.new_zeros(())
-        ctx_loss_weighted = z.new_zeros(())
-        ctx_acc = z.new_zeros(())
+        ctx_loss_raw = z_router.new_zeros(())
+        ctx_loss_weighted = z_router.new_zeros(())
+        ctx_acc = z_router.new_zeros(())
         ctx_pred_hist: List[int] = []
         ctx_label_hist: List[int] = []
         ctx_logits_mean_abs = 0.0
@@ -597,7 +647,7 @@ class BEVMoEBlock(nn.Module):
                 raise RuntimeError(
                     'BEVMoEBlock: context_aux_cfg is configured but '
                     'batch_input_metas was not passed to forward().')
-            ctx_logits = self.context_head(z)                      # (B, K)
+            ctx_logits = self.context_head(z_ctx)                  # (B, K)
             assert ctx_logits.dim() == 2 and \
                 ctx_logits.shape[0] == B and \
                 ctx_logits.shape[1] == self.context_aux_cfg['num_classes'], (
@@ -608,7 +658,7 @@ class BEVMoEBlock(nn.Module):
                 batch_input_metas,
                 self._ctx_target_field,
                 self._ctx_vocab_map,
-                z.device,
+                z_ctx.device,
             )
             assert ctx_labels.dtype == torch.long and ctx_labels.shape == (B,)
             if self._ctx_loss_type == 'focal':
@@ -685,12 +735,24 @@ class BEVMoEBlock(nn.Module):
                                      if self._ctx_class_weights_list is not None
                                      else None),
             'focal_gamma':          self._ctx_focal_gamma,
-            # BEVSummaryHead config — echoed so downstream hooks can log
-            # the router capacity used for this run.
-            'summary_pool_size':    self._summary_pool_size,
-            'summary_spatial_dim':  self._summary_spatial_dim,
-            'summary_hidden_dim':   self._summary_hidden_dim,
-            'summary_out_dim':      self._summary_out_dim,
+            # Dual BEVResSummaryEncoder config.
+            'router_summary_type':             'BEVResSummaryEncoder',
+            'router_summary_stem_channels':    self.router_summary.stem_channels,
+            'router_summary_out_channels':     self.router_summary.out_channels,
+            'router_summary_out_dim':          self.router_summary.out_dim,
+            'router_summary_num_res_blocks':   self.router_summary.num_res_blocks,
+            'router_summary_dropout':          self.router_summary.dropout,
+            'context_summary_type':            'BEVResSummaryEncoder',
+            'context_summary_stem_channels':   self.context_summary.stem_channels,
+            'context_summary_out_channels':    self.context_summary.out_channels,
+            'context_summary_out_dim':         self.context_summary.out_dim,
+            'context_summary_num_res_blocks':  self.context_summary.num_res_blocks,
+            'context_summary_dropout':         self.context_summary.dropout,
+            'gate_feat_dim':                   self._GATE_FEAT_DIM,
+            'z_ctx_detached_for_gate':         True,
+            'context_head_type':               'mlp',
+            'moe_insertion_point':             'post_secondfpn',
+            'moe_input_channels':              self.channels,
         }
 
         # Router-scale diagnostics from clean / noisy logits.

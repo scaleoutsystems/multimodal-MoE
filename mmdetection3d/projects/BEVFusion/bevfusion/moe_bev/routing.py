@@ -1,138 +1,105 @@
-"""Routing modules: BEVSummaryHead, TopkGate, NoisyTopkGate, context utils.
+"""Routing modules for BEV Mixture-of-Experts.
 
-Context-supervised routing — the design in this module
-======================================================
-Context labels (road_type, weather_group, …) are no longer concatenated into
-the router input.  ``ContextEncoder`` has been removed.  The router sees only
-the learned BEV summary descriptor ``z = BEVSummaryHead(x)``.
+Contents
+--------
+BEV summary encoders
+    :class:`BasicBEVResBlock`      — building block for BEVResSummaryEncoder.
+    :class:`BEVResSummaryEncoder`  — residual-CNN descriptor used by all variants.
 
-For every MoE variant the pattern is::
+Gate modules
+    :class:`TopkGate`              — deterministic top-k gate.
+    :class:`NoisyTopkGate`         — Shazeer noisy top-k gate.
+    :class:`GateOutput`            — dataclass returned by both gates.
 
-    z          = BEVSummaryHead(BEV_features)        # (B, out_dim)
-    gate_out   = gate(z)                             # router logits + dispatch
-    ctx_logits = context_head(z)                     # (B, num_context_classes)
-    ctx_loss   = F.cross_entropy(ctx_logits, ctx_label)
-    z_loss     = router_z_loss(gate_out.clean_logits, coef_z)
+Context utilities
+    :data:`ZOD_FIELD_REGISTRY`     — vocabulary registry for ZOD context fields.
+    :func:`get_context_vocab`      — look up a field's vocab list.
+    :func:`extract_context_labels` — convert batch metadata into integer labels.
 
-The auxiliary loss the block emits is the sum of:
+Context-supervised routing
+--------------------------
+Context labels (``road_type``, ``weather_group``, …) are **not** concatenated
+into the router input.  Instead, an auxiliary context head is supervised by
+those labels and shapes the BEV summary descriptor via its gradient — the gate
+never reads context labels directly.  This keeps expert dispatch task-driven
+while biasing the descriptor toward context-relevant BEV structure.
 
-    importance_loss + load_loss + ctx_loss_coef · ctx_loss + z_loss
-    (+ group_balance_loss for ModalitySpecificMoEBlock)
+All variants use :class:`BEVResSummaryEncoder` for descriptor extraction.
 
-Why no metadata in the router input
------------------------------------
-Concatenating an embedded context vector into the router input "leaks" the
-metadata into expert dispatch — the gate can short-circuit context-aware
-specialisation by reading the label directly.  That makes it impossible to
-tell whether the BEV features themselves can support context-aware routing.
+Variant D (LiDAR-only, ``BEVMoEBlock``) uses two independent branches::
 
-By contrast, the ``context_head`` is supervised by the same labels but only
-*shapes* the descriptor ``z``: gradients flow back through the summary head,
-encouraging it to organise BEV features along context-relevant directions.
-Expert dispatch remains task-driven (top-k over learned router logits), so
-the model can still pick experts based on local BEV evidence — but its
-internal representation is biased toward the context structure.
+    z_router   = router_summary(x_bev)            # task / routing branch
+    z_ctx      = context_summary(x_bev)           # context-CE branch
+    z_gate     = cat([z_router, z_ctx.detach()])  # gate sees both; no ctx grad
+    gate_out   = gate(z_gate)
+    ctx_logits = context_head(z_ctx)              # full grad through z_ctx
 
-The ``context_head`` is **not** the gate.  Its output ``ctx_logits`` is used
-only for the auxiliary CE loss; it never affects dispatch and is not used
-by ``router_z_loss``.
+Variants A/B (joint/modality-specific) use one encoder per modality::
+
+    z_C  = cam_summary(cam_bev)
+    z_L  = lidar_summary(lidar_bev)
+    z_LC = cat([z_C, z_L])
+    gate_out = gate(z_LC)
 
 GateOutput contract
 -------------------
-All gate modules return a ``GateOutput`` with the following fields:
+Both gate classes return a :class:`GateOutput` with these fields:
 
-    full_softmax_probs   (B, E)  — softmax over clean_logits: the clean router
-                               belief over the full expert pool, before
-                               noise and before top-k. Consumed by
-                               ``importance_loss`` and the
-                               ``dense_mean_prob_per_expert`` diagnostic.
-                               This intentionally regularizes the learned
-                               deterministic router preference, while
-                               noisy_logits are used for training-time
-                               top-k exploration and load_loss.
-
-    sparse_softmax_probs (B, E)  — top-k mixture (renormalised over the
-                                   selected experts) scattered into the
-                                   full (B, E) shape with zeros off-topk.
-                                   Diagnostics only.
-
-    topk_idx             (B, k)  — selected expert indices used for the
-                                   actual dispatch this forward.  For
-                                   :class:`NoisyTopkGate` in training these
-                                   are the top-k of the *noisy* logits;
-                                   otherwise identical to
-                                   ``clean_topk_idx``.
-
-    topk_weights         (B, k)  — Shazeer top-k mixture weights:
-                                   ``softmax(topk_vals / T)`` with
-                                   ``Σ_j topk_weights = 1`` per sample.
-                                   Consumed directly by dispatch.
-
-    clean_logits         (B, E)  — pre-noise gate logits.  Consumed by
-                                   ``router_z_loss`` and ``load_loss``.
-
-    noisy_logits         (B, E)  — logits used for the actual top-k.
-                                   Equals ``clean_logits`` for ``TopkGate``
-                                   and for ``NoisyTopkGate`` in eval mode;
-                                   for ``NoisyTopkGate`` in training these
-                                   are
-                                   ``clean_logits + noise_scale · randn · noise_std``.
-
+    full_softmax_probs   (B, E)  — softmax(clean_logits/T); consumed by
+                                   importance_loss and dense-prob diagnostics.
+    sparse_softmax_probs (B, E)  — top-k mixture scattered back to (B, E);
+                                   zeros off-topk.  Diagnostics only.
+    topk_idx             (B, k)  — dispatch indices (noisy for NoisyTopkGate
+                                   during training, else clean).
+    topk_weights         (B, k)  — Shazeer weights: softmax(topk_vals/T),
+                                   Σ_j = 1 per sample.  Used for dispatch.
+    clean_logits         (B, E)  — pre-noise logits; used by router_z_loss,
+                                   load_loss, and switch_balance_loss.
+    noisy_logits         (B, E)  — logits used for the top-k selection;
+                                   equals clean_logits at eval or for TopkGate.
     noise_std            (B, E) or None
-                                 — per-sample per-expert noise std used at
-                                   this forward pass.  ``None`` for
-                                   deterministic gates / eval forwards;
-                                   signals to ``load_loss`` that no
-                                   Gaussian-CDF integral can be computed.
-
-    clean_topk_idx       (B, k)  — deterministic top-k of ``clean_logits``.
-                                   This is the routing that would be used
-                                   at eval time and is what
-                                   ``switch_balance_loss`` should be
-                                   computed over for a ``NoisyTopkGate``
-                                   (see :func:`switch_balance_loss`).  For
-                                   :class:`TopkGate` and for
-                                   :class:`NoisyTopkGate` in eval mode this
-                                   equals ``topk_idx``.
+                                 — per-element noise std (training only,
+                                   NoisyTopkGate only); None signals
+                                   load_loss to return zero.
+    clean_topk_idx       (B, k)  — deterministic top-k of clean_logits;
+                                   fed to switch_balance_loss so it
+                                   disciplines the validation-time router.
+                                   Equals topk_idx at eval or for TopkGate.
 
 Top-k routing
 -------------
-Default ``k = 2`` is preserved deliberately:
+Default ``k = 2`` is intentional:
 
-    • Top-1 makes expert assignment very brittle.
-    • Top-2 enables cooperative / compositional specialisation.
-    • For ModalitySpecificMoEBlock, top-2 is the only way the router can
-      pick mixed (LiDAR + Camera) combinations as well as same-modality
-      pairs.
+* Top-1 makes assignment brittle; a single wrong decision has full impact.
+* Top-2 enables cooperative specialisation and, for ModalitySpecificMoEBlock,
+  allows mixed-modality (LiDAR + Camera) expert pairs.
 
-Do **not** switch the main design to top-1 "context-class" routing, and do
-**not** force ``num_experts == num_context_classes``.  Expert dispatch is
-task-driven; context supervision shapes ``z`` but does not hard-code any
-expert/context mapping.
+Do not hard-code ``num_experts == num_context_classes`` and do not switch to
+top-1 "context-class" routing — expert dispatch is task-driven.
 
-Final activation of BEVSummaryHead
-----------------------------------
-The summary head ends in LayerNorm rather than ReLU so the router descriptor
-is signed and unit-variance.  Signed inputs let the gate's linear projection
-produce expert logits of both signs and let logit magnitudes grow over
-training; a final ReLU instead leaves "dead" descriptor units stuck at 0
-(which combined with weight decay on the gate prevents logit magnitudes from
-growing — observed as the dead-gate failure mode in earlier runs).
+LayerNorm as final activation
+------------------------------
+All summary encoders end in ``LayerNorm`` rather than ``ReLU``.  Signed,
+unit-variance descriptors let the gate's linear projection produce logits of
+both signs; a final ReLU leaves dead units at 0, which combined with weight
+decay on the gate prevents logit magnitudes from growing (observed as a
+dead-gate failure mode in earlier runs).
 
-Selecting context targets per run
----------------------------------
-Each MoE block takes a single ``context_aux_cfg`` of the form::
+Context target configuration
+-----------------------------
+Each MoE block takes a ``context_aux_cfg`` dict::
 
     context_aux_cfg = dict(
-        target_field='road_type',
+        target_field='road_type',   # key in ZOD_FIELD_REGISTRY
         loss_coef=0.05,
-        label_smoothing=0.0,
+        loss_type='weighted_ce',    # 'weighted_ce' | 'ce' | 'focal'
+        label_smoothing=0.05,
+        class_weights='inverse_frequency',
     )
 
-``target_field`` must be a key of ``ZOD_FIELD_REGISTRY`` (the single source
-of truth for vocabularies).  Use :func:`extract_context_labels` to convert
-``batch_input_metas`` into the integer ``LongTensor`` consumed by the
-context CE loss.
+``target_field`` must be a key of :data:`ZOD_FIELD_REGISTRY`.  Use
+:func:`extract_context_labels` to convert ``batch_input_metas`` to the
+integer ``LongTensor`` consumed by the context CE loss.
 """
 
 from __future__ import annotations
@@ -146,107 +113,137 @@ import torch.nn.functional as F
 from torch import Tensor
 
 
-# ── BEVSummaryHead ────────────────────────────────────────────────────────
+# ── BasicBEVResBlock ──────────────────────────────────────────────────────
 
-class BEVSummaryHead(nn.Module):
-    """Spatial-aware summary head producing a routing descriptor ``z``.
+class BasicBEVResBlock(nn.Module):
+    """Two-layer residual conv block for BEV feature maps.
 
-    Pipeline
-    --------
-    Input ``x`` of shape ``(B, C, H, W)`` is summarised in three stages:
+    Main path:
+        Conv2d(in_channels → out_channels, 3×3, pad=1) → BN → ReLU
+        Conv2d(out_channels → out_channels, 3×3, pad=1) → BN
 
-    1. **Coarse spatial pooling**: ``AdaptiveAvgPool2d(P)`` and
-       ``AdaptiveMaxPool2d(P)`` produce two ``(B, C, P, P)`` maps that
-       split the BEV into a coarse near/far × left/right grid.  Both the
-       average and the peak per cell are kept so the router sees both
-       "is this region typically active?" and "is there a sharp peak
-       anywhere in this region?".  The two are concatenated channel-wise
-       to give ``(B, 2C, P, P)``.
+    Residual path (identity when in_channels == out_channels, 1×1 conv
+    + BN otherwise).
 
-    2. **Spatial mixer**: a tiny 1×1 + 3×3 conv stack mixes information
-       both within and across pooled cells:
-
-           Conv2d(2C → spatial_dim, k=1) → ReLU
-           Conv2d(spatial_dim → spatial_dim, k=3, padding=1) → ReLU
-
-       The 1×1 conv mixes channels per cell; the 3×3 conv mixes
-       neighbouring pooled BEV regions so the descriptor encodes
-       relational structure (e.g. "dense in near-range cells, sparse in
-        far-range cells", or left/right asymmetry) rather than independent
-        per-cell summaries.
-
-    3. **Descriptor MLP**: flatten and project::
-
-           Linear(spatial_dim · P · P → hidden_dim) → ReLU
-           Linear(hidden_dim → out_dim) → LayerNorm(out_dim)
-
-    The final LayerNorm gives a signed, unit-variance routing descriptor
-    suitable for a downstream linear gate (see module docstring for why a
-    final ReLU is harmful).
-
-    The MLP here is **not** the gate.  It produces ``z``; the gate is the
-    later linear map ``W_gate · z`` (and the context head is ``W_ctx · z``)
-    inside the MoE block.
+    Output: ReLU(main + residual)
 
     Args:
-        channels:    Number of input BEV channels.
-        pool_size:   Pooling grid resolution P (default 6 → 6×6 grid).
-            A 6×6 grid preserves more near/far and left/right layout than
-            the old 4×4 default while staying lightweight; the spatial
-            mixer still runs only on the pooled grid so cost is negligible.
-        spatial_dim: Number of channels in the spatial-mixer convs
-            (default 192).
-        hidden_dim:  Hidden width of the descriptor MLP (default 384).
-        out_dim:     Final descriptor dimension; the gate's input dim
-            (default 192).  Exposed as ``self.out_dim``.  Larger out_dim
-            gives the context head and gate more signal without turning
-            the router into a heavy perception module.
+        in_channels:  Number of input channels.
+        out_channels: Number of output channels.
+    """
+
+    def __init__(self, in_channels: int, out_channels: int) -> None:
+        super().__init__()
+        self.conv1 = nn.Conv2d(
+            in_channels, out_channels, kernel_size=3, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.conv2 = nn.Conv2d(
+            out_channels, out_channels, kernel_size=3, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+
+        if in_channels == out_channels:
+            self.shortcut: nn.Module = nn.Identity()
+        else:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=False),
+                nn.BatchNorm2d(out_channels),
+            )
+
+    def forward(self, x: Tensor) -> Tensor:
+        out = F.relu(self.bn1(self.conv1(x)), inplace=True)
+        out = self.bn2(self.conv2(out))
+        return F.relu(out + self.shortcut(x), inplace=True)
+
+
+# ── BEVResSummaryEncoder ──────────────────────────────────────────────────
+
+class BEVResSummaryEncoder(nn.Module):
+    """Residual-CNN BEV summary encoder producing a routing descriptor ``z``.
+
+    Architecture
+    ------------
+    1. **Stem**: Conv2d(C → stem_channels, 3×3) → BN → ReLU — projects
+       input channels without changing spatial resolution.
+
+    2. **Residual blocks** (3 × :class:`BasicBEVResBlock`):
+           BasicBEVResBlock(stem_channels, stem_channels)
+           BasicBEVResBlock(stem_channels, stem_channels)
+           BasicBEVResBlock(stem_channels, out_channels)
+       The last block widens channels if ``stem_channels != out_channels``.
+       Spatial structure is preserved (no pooling/striding) so all three
+       blocks learn spatial patterns before global compression.
+
+    3. **Pooling / vectorisation**:
+           AdaptiveAvgPool2d(1)      → (B, out_channels, 1, 1)
+           Flatten                  → (B, out_channels)
+           Linear(out_channels → out_dim) → (B, out_dim)
+           LayerNorm(out_dim)       → signed, unit-variance descriptor
+           Dropout(dropout)         → regularisation
+
+    Rationale: spatial reasoning first → global pooling → descriptor
+    vector.  This follows the same pattern as ResNet feature extraction
+    used in the CIFAR MoE reference experiment.
+
+    Args:
+        channels:      Number of input BEV channels ``C``.
+        stem_channels: Width of the stem and first two residual blocks.
+                       Default 128.
+        out_channels:  Width of the final residual block and pooled
+                       representation before the projection MLP.
+                       Default 256.
+        out_dim:       Output descriptor dimension (same as gate input
+                       dim per branch).  Exposed as ``self.out_dim``.
+                       Default 256.
+        dropout:       Dropout probability after LayerNorm.  Default 0.2.
     """
 
     def __init__(
         self,
         channels: int,
-        pool_size: int = 6,
-        spatial_dim: int = 192,
-        hidden_dim: int = 384,
-        out_dim: int = 192,
+        stem_channels: int = 128,
+        out_channels: int = 256,
+        out_dim: int = 256,
+        dropout: float = 0.2,
     ) -> None:
         super().__init__()
-        self.pool_size = pool_size
-        self.avg_pool = nn.AdaptiveAvgPool2d(pool_size)  # (B, C, P, P)
-        self.max_pool = nn.AdaptiveMaxPool2d(pool_size)  # (B, C, P, P)
-
-        self.spatial_mixer = nn.Sequential(
-            nn.Conv2d(2 * channels, spatial_dim, kernel_size=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(spatial_dim, spatial_dim, kernel_size=3, padding=1),
+        self.stem = nn.Sequential(
+            nn.Conv2d(channels, stem_channels, kernel_size=3,
+                      padding=1, bias=False),
+            nn.BatchNorm2d(stem_channels),
             nn.ReLU(inplace=True),
         )
-
-        flat_dim = spatial_dim * pool_size * pool_size
-        self.mlp = nn.Sequential(
-            nn.Linear(flat_dim, hidden_dim),
-            nn.ReLU(inplace=True),
-            nn.Linear(hidden_dim, out_dim),
+        self.res_blocks = nn.Sequential(
+            BasicBEVResBlock(stem_channels, stem_channels),
+            BasicBEVResBlock(stem_channels, stem_channels),
+            BasicBEVResBlock(stem_channels, out_channels),
+        )
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.proj = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(out_channels, out_dim),
             nn.LayerNorm(out_dim),
+            nn.Dropout(dropout),
         )
+
         self.out_dim = out_dim
+        self.stem_channels = stem_channels
+        self.out_channels = out_channels
+        self.num_res_blocks = 3
+        self.dropout = dropout
 
     def forward(self, x: Tensor) -> Tensor:
-        """Summarise a BEV feature map into a routing descriptor.
+        """Encode a BEV feature map into a fixed-size descriptor.
 
         Args:
             x: BEV feature map ``(B, C, H, W)``.
 
         Returns:
-            Routing descriptor ``(B, out_dim)``.
+            Routing/context descriptor ``(B, out_dim)``.
         """
-        avg = self.avg_pool(x)              # (B, C, P, P)
-        mx  = self.max_pool(x)              # (B, C, P, P)
-        feat = torch.cat([avg, mx], dim=1)  # (B, 2C, P, P)
-        feat = self.spatial_mixer(feat)     # (B, spatial_dim, P, P)
-        feat = feat.flatten(1)              # (B, spatial_dim · P · P)
-        return self.mlp(feat)               # (B, out_dim)
+        x = self.stem(x)         # (B, stem_channels, H, W)
+        x = self.res_blocks(x)   # (B, out_channels, H, W)
+        x = self.pool(x)         # (B, out_channels, 1, 1)
+        return self.proj(x)      # (B, out_dim)
 
 
 # ── Gate output container ─────────────────────────────────────────────────

@@ -6,7 +6,8 @@ from .losses import (
     switch_balance_loss,
 )
 from .routing import (
-    BEVSummaryHead,
+    BasicBEVResBlock,
+    BEVResSummaryEncoder,
     NoisyTopkGate,
     TopkGate,
     ZOD_FIELD_REGISTRY,
@@ -21,7 +22,8 @@ from .modality_specific_moe import ModalitySpecificMoEBlock
 __all__ = [
     'importance_loss', 'load_loss', 'group_balance_loss', 'router_z_loss',
     'switch_balance_loss',
-    'BEVSummaryHead', 'TopkGate', 'NoisyTopkGate',
+    'BasicBEVResBlock', 'BEVResSummaryEncoder',
+    'TopkGate', 'NoisyTopkGate',
     'ZOD_FIELD_REGISTRY', 'extract_context_labels', 'get_context_vocab',
     'BEVResidualExpert', 'make_bev_experts',
     'BEVMoEBlock',

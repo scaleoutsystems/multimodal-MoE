@@ -318,12 +318,14 @@ class BEVFusion(Base3DDetector):
             No ConvFuser.
 
         Variant C  ``self.fusion_layer`` + ``self.bev_moe``
-            (cam_bev, lidar_bev) → ConvFuser → BEVMoEBlock → fused_bev.
+            (cam_bev, lidar_bev) → ConvFuser → backbone → neck →
+            BEVMoEBlock → bbox_head.
             This is the ONLY variant that uses ConvFuser.
 
         Variant D  ``self.bev_moe`` (no camera branch)
-            lidar_bev → BEVMoEBlock → fused_bev.
-            No fusion of any kind.
+            lidar_bev → backbone → neck → BEVMoEBlock → bbox_head.
+            MoE operates on the 512-ch SECONDFPN output (post-neck,
+            pre-head) so experts see semantically rich features.
 
         Baseline  ``self.fusion_layer`` only (no MoE)
             (cam_bev, lidar_bev) → ConvFuser → fused_bev.
@@ -403,14 +405,20 @@ class BEVFusion(Base3DDetector):
                 f'maps ({len(features)})')
             x = features[0]
 
-        # ── 4. Post-fusion MoE (Variant C / D only) ──────────────────
-        if self.bev_moe is not None:
-            x, bev_info = self.bev_moe(x, batch_input_metas)
-            moe_aux_parts.append(bev_info['aux_loss'])
-
-        # ── 5. Backbone + Neck ────────────────────────────────────────
+        # ── 4. Backbone + Neck ────────────────────────────────────────
         x = self.pts_backbone(x)
         x = self.pts_neck(x)
+
+        # ── 5. Post-FPN MoE (Variant C / D) — operates on SECONDFPN ──
+        # BEVMoEBlock receives the 512-ch SECONDFPN output so its
+        # residual-CNN summary encoders see semantically rich, multi-scale
+        # fused features.  The neck returns a 1-tuple; we unpack/repack
+        # around the MoE call so the bbox_head receives the expected format.
+        if self.bev_moe is not None:
+            x_bev = x[0] if isinstance(x, (tuple, list)) else x
+            x_bev, bev_info = self.bev_moe(x_bev, batch_input_metas)
+            moe_aux_parts.append(bev_info['aux_loss'])
+            x = (x_bev,) if isinstance(x, (tuple, list)) else x_bev
 
         if moe_aux_parts:
             self._moe_aux_loss = sum(moe_aux_parts)

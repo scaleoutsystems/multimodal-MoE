@@ -26,10 +26,11 @@ select any of:
     Camera + Camera
     LiDAR + Camera
 
-Router descriptor::
+Each modality is summarised by a :class:`BEVResSummaryEncoder` (stem + 3
+residual blocks + global avg pool → 256-d descriptor)::
 
-    z_L  = lidar_summary(lidar_bev)
-    z_C  = cam_summary(cam_bev)
+    z_L  = lidar_summary(lidar_bev)        # BEVResSummaryEncoder
+    z_C  = cam_summary(cam_bev)            # BEVResSummaryEncoder
     z_MC = torch.cat([z_C, z_L], dim=1)
 
     gate_out   = gate(z_MC)
@@ -93,7 +94,7 @@ from .bev_experts import make_bev_experts
 from .bev_moe import _logit_diagnostics, _noise_diagnostics
 from .losses import (group_balance_loss, importance_loss, load_loss,
                      router_z_loss)
-from .routing import (BEVSummaryHead, NoisyTopkGate, TopkGate,
+from .routing import (BEVResSummaryEncoder, NoisyTopkGate, TopkGate,
                        extract_context_labels, get_context_vocab)
 
 
@@ -115,11 +116,9 @@ class ModalitySpecificMoEBlock(nn.Module):
         z_loss_coef:         Weight for ``router_z_loss(clean_logits)``.
         group_balance_coef:  Weight for the camera-vs-LiDAR group balance loss.
         residual_gain:       Scalar multiplier on routed expert deltas.
-        router_pool_size:    BEVSummaryHead pooling resolution.
-        router_spatial_dim:  BEVSummaryHead spatial-mixer width.
-        router_hidden_dim:   BEVSummaryHead MLP hidden width.
-        router_out_dim:      Output dim per modality summary head.  Gate
-                             sees ``2 · router_out_dim`` as input.
+        router_out_dim:      Output dim per modality BEVResSummaryEncoder.
+                             Gate sees ``2 · router_out_dim`` as input.
+                             Default 256.
         context_aux_cfg:     Same as ``BEVMoEBlock.context_aux_cfg``.
         gate_type:           ``'topk'`` (default) or ``'noisy_topk'``.
         gate_cfg:            Extra kwargs forwarded to ``NoisyTopkGate``.
@@ -139,10 +138,7 @@ class ModalitySpecificMoEBlock(nn.Module):
         z_loss_coef: float = 1e-4,
         group_balance_coef: float = 0.01,
         residual_gain: float = 1.0,
-        router_pool_size: int = 4,
-        router_spatial_dim: int = 128,
-        router_hidden_dim: int = 256,
-        router_out_dim: int = 128,
+        router_out_dim: int = 256,
         context_aux_cfg: Optional[dict] = None,
         gate_type: str = 'topk',
         gate_cfg: Optional[dict] = None,
@@ -170,12 +166,10 @@ class ModalitySpecificMoEBlock(nn.Module):
         self.lidar_experts = make_bev_experts(
             num_lidar_experts, lidar_channels, num_convs)
 
-        self.cam_summary = BEVSummaryHead(
-            cam_channels, router_pool_size, router_spatial_dim,
-            router_hidden_dim, router_out_dim)
-        self.lidar_summary = BEVSummaryHead(
-            lidar_channels, router_pool_size, router_spatial_dim,
-            router_hidden_dim, router_out_dim)
+        self.cam_summary = BEVResSummaryEncoder(
+            channels=cam_channels, out_dim=router_out_dim)
+        self.lidar_summary = BEVResSummaryEncoder(
+            channels=lidar_channels, out_dim=router_out_dim)
 
         joint_dim = self.cam_summary.out_dim + self.lidar_summary.out_dim
 

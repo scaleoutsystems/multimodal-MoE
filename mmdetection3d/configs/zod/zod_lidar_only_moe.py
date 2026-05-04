@@ -3,25 +3,37 @@ custom_imports = dict(
     imports=['projects.BEVFusion.bevfusion'], allow_failed_imports=False)
 
 # ---------------------------------------------------------------------------
-# Variant D — LiDAR-only MoE (context-supervised routing)
+# Variant D — LiDAR-only MoE (context-supervised routing, post-SECONDFPN)
 # ---------------------------------------------------------------------------
 # Architecture:
-#   lidar_bev (256 ch) → BEVMoEBlock → pts_backbone → pts_neck → bbox_head
+#   lidar_bev (256 ch)
+#   → pts_backbone (SECOND)          # [128-ch, 256-ch multi-scale]
+#   → pts_neck (SECONDFPN)           # 512-ch fused BEV
+#   → BEVMoEBlock                    # INSERT HERE (post-neck, pre-head)
+#   → bbox_head (TransFusionHead)
 #
 # No camera branch, no ConvFuser, no fusion of any kind.
 # BEVMoEBlock routes each sample to one of `num_experts` residual-conv
-# experts based on a spatial-aware BEVSummaryHead descriptor.  Context
-# labels (road_type by default) are used only to supervise an auxiliary context-prediction head
-# whose gradient flows back through the BEV summary descriptor (see
-# moe_bev/routing.py for the rationale).
+# experts based on DUAL BEVResSummaryEncoder descriptors:
+#   - router_summary (z_router, 256-d): task/routing branch, shaped by
+#     detection + MoE losses.  stem + 3 residual blocks + global avg pool.
+#   - context_summary (z_ctx, 256-d): context branch, shaped by weighted CE.
+#     Same architecture, separate weights.
+# Gate input = cat([z_router, z_ctx.detach()], dim=1) → 512-d.
+# Context CE gradient only flows through z_ctx, keeping z_router clean.
 #
-# Experts use num_convs=2 to give comparable capacity to variants that flow
-# through ConvFuser (which itself is a single conv layer).
+# Insertion point rationale: post-SECONDFPN features are semantically rich
+# (multi-scale fused) and match the ResNet-feature-vector pattern used in
+# the reference CIFAR MoE project.  Pre-backbone features are low-level
+# geometry; operating there forces the router to make decisions before any
+# semantic processing has occurred.
+#
+# Experts use num_convs=2 and operate on 512-ch input/output to match the
+# SECONDFPN output dimensionality expected by TransFusionHead.
 #
 # Pretrained weights: NuScenes LiDAR-only BEVFusion checkpoint.
-# Same transfer semantics as zod_lidar_only.py — MoE-specific modules
-# (gate, summary head, context head, experts) are randomly initialised
-# since they don't exist in the checkpoint.
+# MoE-specific modules (gate, summary encoders, context head, experts) are
+# randomly initialised since they don't exist in the checkpoint.
 # ---------------------------------------------------------------------------
 
 load_from = '/mnt/tier2/project/p201222/u103958/checkpoints/bevfusion_lidar_voxel0075_second_secfpn_8xb4-cyclic-20e_nus-3d-2628f933.pth'
@@ -51,69 +63,46 @@ num_experts = 5
 
 bev_moe_cfg = dict(
     type='BEVMoEBlock',
-    channels=256,
+    # 512 channels — BEVMoEBlock now sits after SECONDFPN (post-neck,
+    # pre-bbox_head) and receives the concatenated 512-ch FPN output.
+    # Previously 256 (sparse encoder output, pre-backbone).
+    channels=512,
     num_experts=num_experts,
     k=2,
     num_convs=2,
-    # Shazeer importance loss weight.  Paper: 1e-2; we use 2× to keep
-    # balance pressure across the 20-epoch schedule without overpowering
-    # the detection loss.  If experts still collapse, prefer
-    # ExpertRespawnHook over cranking this further.
-    importance_coef=0.02,
-    # Shazeer Gaussian-CDF load loss weight.  Stays active because we
-    # keep NoisyTopkGate: load_loss balances expected noisy top-k
-    # utilisation and provides the exploration-side balance signal that
-    # importance_loss cannot (importance flattens mean softmax; load
-    # flattens the Gaussian-CDF dispatch estimator).  Requires
-    # NoisyTopkGate to produce a non-zero gradient.
+    # Shazeer importance loss.  0.002 allows the clean softmax to develop
+    # differentiated logit gaps; previous runs showed that higher values
+    # collapsed dense_mean_prob to near-uniform, eliminating specialisation.
+    importance_coef=0.002,
+    # Shazeer Gaussian-CDF load loss.  Active for NoisyTopkGate — balances
+    # the noisy exploration dispatch and provides gradient when
+    # importance_loss is zeroed out at eval.
     load_coef=0.005,
-    # Fedus Switch balance loss.  Computed from the *clean*
-    # deterministic top-k (``gate_out.clean_topk_idx``), not the noisy
-    # dispatch top-k.  Rationale: under NoisyTopkGate the noisy f_e is
-    # already ~1/E (noise-spread) so feeding it into Switch gives
-    # essentially no gradient and just pins the loss at the uniform
-    # floor.  Using clean_topk_idx makes the Switch term discipline the
-    # clean router that is actually used at validation — complementary
-    # to load_loss, which continues to balance the noisy exploration
-    # dispatch.
-    switch_balance_coef=0.01,
-    # Mesh-Transformer / ST-MoE router z-loss weight.  Penalises the
-    # squared log-partition of the clean router logits, preventing one
-    # expert logit from dominating without distorting relative ordering.
-    # Always applied to clean_logits, never to ctx_logits.
-    z_loss_coef=5e-4,
-    # Residual-delta dispatch gain.  With Shazeer top-k mixture weights
-    # (Σ_j w_j = 1 per sample) the effective expert contribution
-    # ‖Σ w·Δ‖ is controlled solely by Δ and g; g=1 applies the delta at
-    # full scale.  If grad_norm sustains > 50, drop to 0.5.
+    # Fedus Switch balance loss.  Computed from clean_topk_idx (deterministic
+    # validation-time routing) rather than the noisy training dispatch, so it
+    # disciplines the router that is actually evaluated.  Reduced from 0.10 —
+    # at the previous coefficient the loss dominated balance pressure and
+    # over-regularised the clean router (train routing was near-perfectly
+    # uniform at the cost of meaningful specialisation).  0.02 keeps a gentle
+    # balance constraint without forcing flat dispatch.
+    switch_balance_coef=0.02,
+    # ST-MoE router z-loss.  Penalises squared log-partition of clean logits,
+    # preventing a single expert from dominating without distorting logit rank.
+    z_loss_coef=5e-5,
+    # Residual-delta dispatch gain.  g=1 applies the expert delta at full
+    # scale.  Drop to 0.5 if grad_norm sustains above 50.
     residual_gain=1.0,
-    # BEVSummaryHead capacity — bumped from 4×4/128/256/128 to
-    # 6×6/192/384/192.  The 4×4 pooled summary was losing too much
-    # spatial information for road_type prediction; 6×6 preserves more
-    # near/far × left/right structure while keeping the descriptor head
-    # lightweight (the spatial mixer still runs only on the pooled
-    # grid).  Larger out_dim gives the context head and gate more
-    # signal without turning the router into a heavy perception module.
-    router_pool_size=6,
-    router_spatial_dim=192,
-    router_hidden_dim=384,
-    router_out_dim=192,
-    # Context-supervised routing.  ``target_field`` selects which ZOD
-    # categorical field provides the labels for the auxiliary context
-    # head.  ``loss_coef`` weights the context loss in the total aux
-    # loss.
+    # Summary encoders: BEVResSummaryEncoder (stem + 3 residual blocks +
+    # global avg pool → 256-d descriptor).  Both router_summary and
+    # context_summary use these params; no separate config needed.
+    # Gate input dim = 256 + 256 = 512.
     #
-    # ``loss_type='weighted_ce'`` replaces the previous focal CE for
-    # road_type — focal still collapsed to majority-class ('city')
-    # predictions on ZOD, where class frequencies are [arterial-rural,
-    # arterial-urban, city, highway, smaller-rural] ≈ [7.9k, 19k, 40k,
-    # 8.9k, 4.1k].  ``class_weights='inverse_frequency'`` uses the
-    # module's built-in inverse-frequency weights
-    # [1.13, 0.47, 0.22, 1.01, 2.17] (normalised to mean 1) which are
-    # derived from the ZOD training distribution itself — within 1% of
-    # what you get by counting the train pkl at run time.  Label
-    # smoothing at 0.05 adds mild over-confidence regularisation
-    # without diluting the class-weight signal.
+    # Context-supervised routing.  ``target_field`` selects which ZOD
+    # categorical field provides labels for the auxiliary context head.
+    # ``loss_type='weighted_ce'`` with ``class_weights='inverse_frequency'``
+    # uses built-in inverse-frequency weights for road_type to avoid
+    # collapsing to the majority class ('city').  Label smoothing 0.05
+    # adds mild over-confidence regularisation.
     context_aux_cfg=dict(
         target_field='road_type',
         loss_coef=0.05,
@@ -121,26 +110,17 @@ bev_moe_cfg = dict(
         label_smoothing=0.05,
         class_weights='inverse_frequency',
     ),
-    # Noisy top-k gate (Shazeer et al. 2017): adds learned input-dependent
-    # Gaussian noise during training to encourage load balance.  At eval
-    # the gate is deterministic and load_loss returns zero (signalled
-    # by noise_std=None).  Required for load_loss to receive gradient.
-    #
-    # ``noise_scale=0.5`` halves the sampled gate noise relative to the
-    # paper formulation — diagnostics on the previous run showed
-    # noise_std_mean ≈ 0.32 vs clean_logits_std ≈ 0.19 (ratio ≈ 1.7),
-    # i.e. training-time routing was noise-driven and explained the
-    # train/eval routing mismatch.  Target after this change:
-    # noise_to_clean_std_ratio ≲ 1.
-    # ``noise_epsilon=1e-3`` drops the softplus floor by an order of
-    # magnitude (was 1e-2) so the noise std head can anneal closer to
-    # zero late in training while still keeping the Gaussian-CDF
-    # load_loss well-defined.
+    # Noisy top-k gate.  noise_scale=0.25 keeps noise_to_clean_std_ratio
+    # well below 1 so the clean (deterministic) router governs training
+    # dispatch rather than noise.  temperature=1.5 softens the clean
+    # softmax at val, reducing winner-take-all routing from a single
+    # dominant expert.  noise_epsilon=1e-3 keeps the softplus noise std
+    # well-defined at near-zero late in training.
     gate_type='noisy_topk',
     gate_cfg=dict(
         noise_epsilon=1e-3,
-        noise_scale=0.5,
-        temperature=1.0,
+        noise_scale=0.08,
+        temperature=1.5,
     ),
 )
 
@@ -276,9 +256,9 @@ train_pipeline = [
         with_attr_label=False),
     dict(
         type='GlobalRotScaleTrans',
-        scale_ratio_range=[0.9, 1.1],
-        rot_range=[0, 0],
-        translation_std=0.5),
+        scale_ratio_range=[0.9, 1.1], #prev 1.0, 1.0
+        rot_range=[0, 0], # prev 0, 0
+        translation_std=0.5), # prev 0.0
     dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
     dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
     dict(type='ObjectNameFilter', classes=class_names),
@@ -409,23 +389,37 @@ val_cfg = dict()
 test_cfg = dict()
 
 # ── Optimizer ─────────────────────────────────────────────────────────────
-# Routing-path param groups (gate / summary head / context_head) are
-# small MLPs that need to learn meaningful logit margins for top-k
-# dispatch to specialise.  Weight decay on the gate Linear actively
-# shrinks logit magnitudes, so decay_mult=0.0 stays on all routing
-# groups — LayerNorm standardly gets no decay either.
+# Dual-summary routing design:
 #
-#   bev_moe.gate            — base LR; covers both w_gate and w_noise of
-#                              NoisyTopkGate (substring match).  Shared
-#                              with the Shazeer noise head so the noise
-#                              path receives matched updates.
-#   bev_moe.summary         — 2× LR; the BEV summary descriptor needs to
-#                              differentiate scenes across contexts.
-    #   bev_moe.context_head    — 2× LR; the auxiliary context classifier
-    #                              that supervises the routing descriptor via
-    #                              focal_ce_loss(ctx_logits, road_type).
-    #                              Replaces the old context_encoder param
-    #                              group (which no longer exists).
+#   router_summary   — feeds the gate (task-driven routing descriptor)
+#   context_summary  — feeds context_head (auxiliary context classifier)
+#
+# Routing-path parameters (gate + router_summary) must learn meaningful
+# logit margins for top-k dispatch. Weight decay on these components
+# shrinks logit magnitudes and harms expert specialisation, so
+# decay_mult=0.0 is used for all routing parameters. LayerNorm parameters
+# also conventionally receive no decay.
+#
+# Context-path parameters (context_summary + context_head) form a pure
+# classifier trained with weighted CE. This branch is prone to overfitting
+# (high train accuracy vs lower val accuracy), so we apply light weight
+# decay to improve generalisation without affecting routing dynamics.
+#
+#   bev_moe.gate              — base LR; covers both w_gate and w_noise of
+#                                NoisyTopkGate (substring match). Shared
+#                                with the Shazeer noise head so the noise
+#                                path receives matched updates. No decay.
+#
+#   bev_moe.router_summary    — 2× LR; routing descriptor backbone used by
+#                                the gate. No decay to preserve logit scale.
+#
+#   bev_moe.context_summary   — 2× LR; context feature extractor for
+#                                auxiliary classification. Light decay to
+#                                reduce overfitting (effective wd ≈ 1e-4).
+#
+#   bev_moe.context_head      — 2× LR; auxiliary context classifier trained
+#                                with weighted CE on road_type. Light decay
+#                                improves generalisation.
 #
 # Expert CNN blocks (bev_moe.experts.*) are NOT listed here and therefore
 # fall through to the default AdamW settings (lr=5e-5, weight_decay=0.01).
@@ -435,12 +429,16 @@ optim_wrapper = dict(
     clip_grad=dict(max_norm=10, norm_type=2),
     loss_scale='dynamic',
     paramwise_cfg=dict(
-        custom_keys={
-            'bev_moe.gate':         dict(lr_mult=1.0, decay_mult=0.0),
-            'bev_moe.summary':      dict(lr_mult=2.0, decay_mult=0.0),
-            'bev_moe.context_head': dict(lr_mult=2.0, decay_mult=0.0),
-        },
-    ),
+    custom_keys={
+        # ROUTER (no decay)
+        'bev_moe.gate': dict(lr_mult=1.0, decay_mult=0.01),
+        'bev_moe.router_summary': dict(lr_mult=2.0, decay_mult=0.01),
+
+        # CONTEXT (regularized)
+        'bev_moe.context_summary': dict(lr_mult=2.0, decay_mult=0.1),
+        'bev_moe.context_head': dict(lr_mult=2.0, decay_mult=0.1),
+    },
+    )
 )
 
 auto_scale_lr = dict(enable=False)
