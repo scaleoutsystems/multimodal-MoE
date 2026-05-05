@@ -236,7 +236,8 @@ train_dataloader = dict(
         test_mode=False,
         use_valid_flag=False,
         with_velocity=False,
-        box_type_3d='LiDAR'))
+        box_type_3d='LiDAR',
+        filter_empty_gt=False))
 
 val_dataloader = dict(
     batch_size=2,

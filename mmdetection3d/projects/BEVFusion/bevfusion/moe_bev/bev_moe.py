@@ -141,8 +141,16 @@ After every forward() call, ``self._moe_info`` is written with:
     noise_epsilon        float   — pre-softplus epsilon on the noise std
                                    head (NoisyTopkGate only)
     noise_to_clean_std_ratio
-                         scalar  — noise_std_mean / clean_logits_std
-                                   (target: ≲ 1 under NoisyTopkGate)
+                         scalar  — (noise_scale · noise_std_mean) /
+                                   clean_logits_std.  Multiplying by
+                                   ``noise_scale`` is critical: the actual
+                                   noise injected into noisy_logits is
+                                   ``noise_scale · randn · noise_std``, so
+                                   the effective exploration std is the
+                                   scaled product, not the bare softplus
+                                   output of the noise head.  Target: ≲ 1
+                                   under NoisyTopkGate (≈ 0.5 is a healthy
+                                   exploration regime).
     router_summary_type             str  — 'BEVResSummaryEncoder'.
     router_summary_stem_channels    int  — width of stem and first two res blocks.
     router_summary_out_channels     int  — width of third res block and pooled rep.
@@ -769,8 +777,12 @@ class BEVMoEBlock(nn.Module):
         # values ≲ 1 — when larger the training-time gate is noise-driven
         # and the deterministic validation router sees an essentially
         # different distribution (hence the collapse-on-val failure
-        # mode).  Exposed even when noise_std is None (value is None) so
-        # downstream hooks can still record the key.
+        # mode).  The ratio multiplies ``noise_std_mean`` by the active
+        # ``noise_scale`` because the noise actually injected into
+        # ``noisy_logits`` has std = ``noise_scale · noise_std`` — using
+        # the bare ``noise_std_mean`` over-reports exploration whenever
+        # ``noise_scale ≠ 1`` (e.g. the 4.19 reading on the previous run
+        # corresponded to a real ratio of 0.34 with noise_scale=0.08).
         if gate_out.noise_std is not None:
             moe_info.update(_noise_diagnostics(gate_out.noise_std))
             with torch.no_grad():
@@ -778,8 +790,11 @@ class BEVMoEBlock(nn.Module):
                     gate_out.clean_logits.detach().std(
                         unbiased=False).item())
                 noise_mean = float(moe_info['noise_std_mean'])
+                noise_scale = (float(self.gate.noise_scale)
+                               if isinstance(self.gate, NoisyTopkGate)
+                               else 1.0)
                 moe_info['noise_to_clean_std_ratio'] = round(
-                    noise_mean / (clean_std + 1e-8), 6)
+                    (noise_scale * noise_mean) / (clean_std + 1e-8), 6)
 
         # Gate-config diagnostics (NoisyTopkGate only; echo the active
         # ``noise_scale`` / ``noise_epsilon`` so the training log

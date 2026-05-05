@@ -85,9 +85,45 @@ both signs; a final ReLU leaves dead units at 0, which combined with weight
 decay on the gate prevents logit magnitudes from growing (observed as a
 dead-gate failure mode in earlier runs).
 
+GroupNorm in the descriptor path
+--------------------------------
+The summary encoders use :class:`torch.nn.GroupNorm` for all intermediate
+normalisation layers (stem and residual blocks).  BatchNorm is deliberately
+*not* used here even though it's standard in detection backbones:
+
+* BatchNorm normalises with batch statistics in train mode and EMA running
+  statistics in eval mode.  With small per-GPU batches (4 on this setup) and
+  class-imbalanced sampling, the running stats end up biased toward the
+  dominant scene type seen during training (e.g. 'city' for ZOD road_type).
+* This leaves a residual *direction* offset in the descriptor ``z`` between
+  train and eval that the trailing ``LayerNorm(out_dim)`` cannot remove
+  (LayerNorm only fixes magnitude, not direction).  The gate's linear
+  projection then maps that offset to a constant additive bias on every
+  expert logit — empirically observed as ``clean_logits_mean`` shifting
+  by +0.6 between train and val while ``std`` stays unchanged, which
+  causes whichever expert column is closest to the bias direction to
+  dominate dispatch at validation time.
+* GroupNorm has no running stats and behaves identically in train and
+  eval, which removes this train↔eval descriptor drift entirely.  It also
+  keeps the encoder robust to the small per-GPU batch sizes used here.
+
+GroupNorm group size is fixed at 32 groups across the encoder (`stem_channels
+= 128` → 4 ch/group; `out_channels = 256` → 8 ch/group).  See also
+:func:`_make_group_norm` for the divisibility-safe wrapper used to build
+each instance.
+
+The experts (``BEVResidualExpert``) intentionally keep BatchNorm with a
+small-random-init last gamma (N(0, 0.005)) — they sit on the *output* of the
+gate where dispatch is balanced at train time, so their running stats don't
+suffer the class-imbalance bias the descriptor encoder did.  The tiny gamma
+std breaks expert symmetry from step 1 (so routing gradients carry per-expert
+signal immediately) while keeping the initial expert perturbation at O(0.005),
+safely within FP16 representable range on pretrained FPN features.  See
+``bev_experts._LAST_BN_GAMMA_STD``.
+
 Context target configuration
 -----------------------------
-Each MoE block takes a ``context_aux_cfg`` dict::
+Each MoE block takes a ``context_aux_cfg`` dict:
 
     context_aux_cfg = dict(
         target_field='road_type',   # key in ZOD_FIELD_REGISTRY
@@ -113,19 +149,48 @@ import torch.nn.functional as F
 from torch import Tensor
 
 
+# ── Normalisation helper ──────────────────────────────────────────────────
+
+def _make_group_norm(num_channels: int, num_groups: int = 32) -> nn.GroupNorm:
+    """Create a :class:`GroupNorm` whose group count divides ``num_channels``.
+
+    Falls back to the largest divisor of ``num_channels`` not exceeding
+    ``num_groups`` when 32 doesn't divide evenly (defensive against
+    non-power-of-two channel counts that callers might use).
+    """
+    # in practice we have num_channels = 512, num_groups = 32
+    # --> group size = 512/32 = 16
+    # G=32 or so sits in a sweet spot. It's not so coarse that 
+    # outlier channels dominate (Layer Norm), not so fine that
+    # you lose cross-channel information (Instance Norm).
+    g = min(num_groups, num_channels)
+    while num_channels % g != 0 and g > 1:
+        g -= 1
+    return nn.GroupNorm(num_groups=g, num_channels=num_channels)
+
+
 # ── BasicBEVResBlock ──────────────────────────────────────────────────────
 
 class BasicBEVResBlock(nn.Module):
     """Two-layer residual conv block for BEV feature maps.
 
     Main path:
-        Conv2d(in_channels → out_channels, 3×3, pad=1) → BN → ReLU
-        Conv2d(out_channels → out_channels, 3×3, pad=1) → BN
+        Conv2d(in_channels → out_channels, 3×3, pad=1) → GroupNorm → ReLU
+        Conv2d(out_channels → out_channels, 3×3, pad=1) → GroupNorm
 
     Residual path (identity when in_channels == out_channels, 1×1 conv
-    + BN otherwise).
+    + GroupNorm otherwise).
 
     Output: ReLU(main + residual)
+
+    Normalisation
+    -------------
+    Uses :class:`GroupNorm` rather than :class:`BatchNorm2d` because this
+    block sits inside the router/context descriptor path where the
+    train --> eval mode-switch in BN running statistics produces a
+    train-vs-validation descriptor drift that downstream LayerNorm cannot
+    correct (it normalises descriptor magnitude but not direction).  See
+    the module docstring for details.
 
     Args:
         in_channels:  Number of input channels.
@@ -136,22 +201,22 @@ class BasicBEVResBlock(nn.Module):
         super().__init__()
         self.conv1 = nn.Conv2d(
             in_channels, out_channels, kernel_size=3, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.gn1 = _make_group_norm(out_channels)
         self.conv2 = nn.Conv2d(
             out_channels, out_channels, kernel_size=3, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.gn2 = _make_group_norm(out_channels)
 
         if in_channels == out_channels:
             self.shortcut: nn.Module = nn.Identity()
         else:
             self.shortcut = nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=False),
-                nn.BatchNorm2d(out_channels),
+                _make_group_norm(out_channels),
             )
 
     def forward(self, x: Tensor) -> Tensor:
-        out = F.relu(self.bn1(self.conv1(x)), inplace=True)
-        out = self.bn2(self.conv2(out))
+        out = F.relu(self.gn1(self.conv1(x)), inplace=True)
+        out = self.gn2(self.conv2(out))
         return F.relu(out + self.shortcut(x), inplace=True)
 
 
@@ -162,7 +227,7 @@ class BEVResSummaryEncoder(nn.Module):
 
     Architecture
     ------------
-    1. **Stem**: Conv2d(C → stem_channels, 3×3) → BN → ReLU — projects
+    1. **Stem**: Conv2d(C → stem_channels, 3×3) → GroupNorm → ReLU — projects
        input channels without changing spatial resolution.
 
     2. **Residual blocks** (3 × :class:`BasicBEVResBlock`):
@@ -183,6 +248,11 @@ class BEVResSummaryEncoder(nn.Module):
     Rationale: spatial reasoning first → global pooling → descriptor
     vector.  This follows the same pattern as ResNet feature extraction
     used in the CIFAR MoE reference experiment.
+
+    All intermediate normalisation is GroupNorm (no running statistics)
+    so the descriptor is identical in train and eval mode.  See the
+    module docstring "GroupNorm in the descriptor path" section for the
+    full rationale.
 
     Args:
         channels:      Number of input BEV channels ``C``.
@@ -209,7 +279,7 @@ class BEVResSummaryEncoder(nn.Module):
         self.stem = nn.Sequential(
             nn.Conv2d(channels, stem_channels, kernel_size=3,
                       padding=1, bias=False),
-            nn.BatchNorm2d(stem_channels),
+            _make_group_norm(stem_channels),
             nn.ReLU(inplace=True),
         )
         self.res_blocks = nn.Sequential(
@@ -378,13 +448,34 @@ class TopkGate(nn.Module):
         feat_dim:    Dimension of the BEV summary descriptor (gate input).
         num_experts: Number of experts to route over.
         k:           Top-k experts selected per sample.
+        temperature: Softmax temperature applied to both ``full_softmax_probs``
+                     (consumed by ``importance_loss``) and ``topk_weights``
+                     (dispatch mixing coefficients).  T > 1 keeps the dispatch
+                     weights more balanced between the k selected experts,
+                     maximising the softmax Jacobian term ``w₁·w₂`` that
+                     carries the per-expert task-loss gradient through the gate.
+                     With T=1 and a logit spread of 2 (typical after ep0), the
+                     top-2 weights are ~[0.88, 0.12]; with T=2 they become
+                     ~[0.73, 0.27]; with T=4 they are ~[0.62, 0.38].  A more
+                     balanced second weight means more gradient reaching the
+                     second expert at each step, fighting the winner-take-all
+                     collapse observed in run 4542759 (E0 top-1 = 100% at ep0
+                     end).  Default 1.0 for backward compatibility.
     """
 
-    def __init__(self, feat_dim: int, num_experts: int, k: int = 2):
+    def __init__(
+        self,
+        feat_dim: int,
+        num_experts: int,
+        k: int = 2,
+        temperature: float = 1.0,
+    ):
         super().__init__()
         assert 1 <= k <= num_experts, f'k must be in [1, num_experts], got {k}'
+        assert temperature > 0.0, 'temperature must be positive'
         self.num_experts = num_experts
         self.k = k
+        self.temperature = temperature
         self.gate = nn.Linear(feat_dim, num_experts)
 
     def forward(self, feat: Tensor) -> GateOutput:
@@ -399,10 +490,12 @@ class TopkGate(nn.Module):
         """
         logits = self.gate(feat)                                       # (B, E)
 
-        full_softmax_probs = torch.softmax(logits, dim=-1)             # (B, E)
+        full_softmax_probs = F.softmax(
+            logits / self.temperature, dim=-1)                         # (B, E)
 
         topk_vals, topk_idx = torch.topk(logits, self.k, dim=-1)       # (B, k)
-        topk_weights = F.softmax(topk_vals, dim=-1)                    # (B, k)
+        topk_weights = F.softmax(
+            topk_vals / self.temperature, dim=-1)                      # (B, k)
 
         sparse_softmax_probs = torch.zeros_like(logits)
         sparse_softmax_probs.scatter_(
@@ -490,6 +583,27 @@ class NoisyTopkGate(nn.Module):
                        0.5) to reduce training noise when the learned
                        per-expert noise std is large relative to the
                        clean-logit std.
+        max_noise_to_clean_ratio: Optional hard upper-bound on the per-element
+                       ratio ``noise_scale * noise_std / clean_logits.std()``.
+                       When the learned ``noise_std`` inflates beyond this
+                       multiple of the clean-logit spread (e.g. run 4540532
+                       reached a ratio of 1.4–1.8 at epoch 1), the gate
+                       essentially performs random top-k selection at training
+                       time while the deterministic clean router gets nearly
+                       no useful gradient.  Setting this to e.g. 0.5 clamps
+                       ``noise_std`` to ``0.5 * clean_logits.detach().std()
+                       / noise_scale`` before sampling, preventing the failure
+                       mode without disabling adaptive noise entirely.
+                       ``None`` (default) disables the clamp for backward
+                       compatibility.
+        noise_bias_init: If not ``None``, initialise the bias of ``w_noise``
+                       to this constant value.  A negative value (e.g. −2.0)
+                       starts the noise std at ``softplus(−2 + ε) ≈ 0.13``
+                       at zero input, which keeps early-training noise small
+                       and avoids the epoch-0 spike seen in run 4540532
+                       where ``noise_std_mean`` jumped from 1.44 → 2.62 in
+                       the first epoch.  ``None`` (default) keeps PyTorch's
+                       default uniform initialisation.
     """
 
     def __init__(
@@ -500,23 +614,32 @@ class NoisyTopkGate(nn.Module):
         temperature: float = 1.0,
         noise_epsilon: float = 1e-3,
         noise_scale: float = 1.0,
+        max_noise_to_clean_ratio: Optional[float] = None,
+        noise_bias_init: Optional[float] = None,
     ):
         super().__init__()
         assert 1 <= k <= num_experts, f'k must be in [1, num_experts], got {k}'
         assert temperature > 0.0, 'temperature must be positive'
         assert noise_scale >= 0.0, 'noise_scale must be non-negative'
+        if max_noise_to_clean_ratio is not None:
+            assert max_noise_to_clean_ratio > 0.0, \
+                'max_noise_to_clean_ratio must be positive'
 
         self.num_experts = num_experts
         self.k = k
         self.temperature = temperature
         self.noise_epsilon = float(noise_epsilon)
         self.noise_scale = float(noise_scale)
+        self.max_noise_to_clean_ratio = max_noise_to_clean_ratio
 
         self.w_gate  = nn.Linear(feat_dim, num_experts)
         # Shazeer's second linear head producing per-sample per-expert noise
         # pre-activation.  Same shape as ``w_gate``; bias kept so the
         # network can learn a baseline noise level independent of input.
         self.w_noise = nn.Linear(feat_dim, num_experts)
+
+        if noise_bias_init is not None:
+            nn.init.constant_(self.w_noise.bias, noise_bias_init)
 
     def forward(self, feat: Tensor) -> GateOutput:
         """Route based on the BEV summary descriptor ``feat``.
@@ -535,6 +658,17 @@ class NoisyTopkGate(nn.Module):
             # Shazeer input-dependent noise: std = softplus(W_noise·z + ε).
             raw = self.w_noise(feat) + self.noise_epsilon              # (B, E)
             noise_std = F.softplus(raw)                                # (B, E)
+
+            # Optional hard clamp: prevent noise_std from exceeding
+            # max_noise_to_clean_ratio * clean_logits.std() / noise_scale.
+            # Guards against the failure mode (run 4540532) where the optimiser
+            # inflated noise_std to ~2.6 (ratio 1.4–1.8) rather than flattening
+            # clean logits, rendering training-time top-k effectively random.
+            if self.max_noise_to_clean_ratio is not None and self.noise_scale > 0.0:
+                clean_std = clean_logits.detach().std(dim=-1, keepdim=True).clamp(min=1e-6)
+                max_std = self.max_noise_to_clean_ratio * clean_std / self.noise_scale
+                noise_std = noise_std.clamp(max=max_std)
+
             # ``noise_scale`` globally scales the sampled noise so the
             # exploration term stays comparable to clean-logit variation
             # even when the learned per-expert ``noise_std`` drifts large.

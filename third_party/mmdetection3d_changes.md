@@ -93,6 +93,43 @@ if aux is not None and aux.numel() > 0 and aux.item() > 0:
 
 ---
 
+### 6. `projects/BEVFusion/bevfusion/utils.py`
+
+**Change – Empty-GT branch in `HungarianAssigner3D.assign`**:
+When `num_gts == 0` (the sample has no ground-truth boxes), the original
+upstream code returns `AssignResult(num_gts, assigned_gt_inds, None,
+labels=assigned_labels)` — i.e. `max_overlaps=None`. Replaced the `None`
+with an explicit zero tensor of shape `(num_bboxes,)`:
+
+```python
+max_overlaps = bboxes.new_zeros((num_bboxes,))
+return AssignResult(
+    num_gts, assigned_gt_inds, max_overlaps, labels=assigned_labels)
+```
+
+**Why**: `transfusion_head.get_targets` aggregates per-sample assignment
+results via `multi_apply` and then does
+`torch.cat([res.max_overlaps for res in assign_result_list])`
+(see `transfusion_head.py:650`). With `max_overlaps=None` for any
+empty-GT sample in the batch, `torch.cat` raises
+`TypeError: expected Tensor as element 0 in argument 0, but got NoneType`
+and training crashes on the first iteration. This only manifests when
+the dataloader retains scenes with no GT objects, i.e. when the dataset
+is configured with `filter_empty_gt=False` (used by the MoE configs so
+the context-routing branch sees the full road_type distribution rather
+than the post-filter pedestrian-only subset). The semantically correct
+value when `num_gts == 0` is "every prediction has zero overlap with
+any GT" — a zero tensor — which is also consistent with the populated
+branch that produces `max_overlaps = torch.zeros_like(iou.max(1).values)`
+followed by index-fills.
+
+The rest of the empty-GT path is already safe: `len(pos_inds) > 0`
+guards the bbox-target population, `loss_cls`/`loss_bbox` use
+`avg_factor=max(num_pos, 1)`, and the heatmap is initialised to zeros
+with the GT-loop trivially skipping when there are no boxes.
+
+---
+
 ### 7. `projects/BEVFusion/bevfusion/transfusion_head.py` (4 changes)
 
 **Change A – Fix heatmap target placement in `get_targets_single`**:

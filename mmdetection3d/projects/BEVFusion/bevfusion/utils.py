@@ -267,12 +267,23 @@ class HungarianAssigner3D(BaseAssigner):
                                            dtype=torch.long)
         assigned_labels = bboxes.new_full((num_bboxes, ), -1, dtype=torch.long)
         if num_gts == 0 or num_bboxes == 0:
-            # No ground truth or boxes, return empty assignment
+            # No ground truth or boxes, return empty assignment.
+            # ``max_overlaps`` is the IoU between each prediction and its
+            # matched GT; with no GTs the correct value is zero everywhere.
+            # Returning ``None`` here breaks ``transfusion_head.get_targets``
+            # (which calls ``torch.cat`` over per-sample max_overlaps)
+            # whenever any sample in the batch has zero GT boxes — this only
+            # happens when the dataloader keeps empty-GT scenes (i.e.
+            # ``filter_empty_gt=False``).
             if num_gts == 0:
                 # No ground truth, assign all to background
                 assigned_gt_inds[:] = 0
+            max_overlaps = bboxes.new_zeros((num_bboxes, ))
             return AssignResult(
-                num_gts, assigned_gt_inds, None, labels=assigned_labels)
+                num_gts,
+                assigned_gt_inds,
+                max_overlaps,
+                labels=assigned_labels)
 
         # 2. compute the weighted costs
         # Hard code here to be compatible with the interface of

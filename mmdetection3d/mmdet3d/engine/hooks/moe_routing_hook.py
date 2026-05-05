@@ -72,8 +72,12 @@ Context-supervised auxiliary diagnostics:
     noise_scale               NoisyTopkGate global noise multiplier (train-time
                               only; most recent value seen).
     noise_epsilon             NoisyTopkGate softplus epsilon on the std head.
-    noise_to_clean_std_ratio  Mean of ``noise_std_mean / clean_logits_std``
-                              across accumulated iterations.  Target: ≲ 1.
+    noise_to_clean_std_ratio  Mean of ``(noise_scale · noise_std_mean) /
+                              clean_logits_std`` across accumulated iterations.
+                              Multiplying by ``noise_scale`` is intentional:
+                              the actual injected noise std is the scaled
+                              product, not the bare softplus output of the
+                              noise head.  Target: ≲ 1 (≈ 0.5 is healthy).
 
 Outputs (under ``<work_dir>/moe_routing/``):
 

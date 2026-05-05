@@ -63,65 +63,81 @@ num_experts = 5
 
 bev_moe_cfg = dict(
     type='BEVMoEBlock',
-    # 512 channels — BEVMoEBlock now sits after SECONDFPN (post-neck,
+    # 512 channels — BEVMoEBlock sits after SECONDFPN (post-neck,
     # pre-bbox_head) and receives the concatenated 512-ch FPN output.
-    # Previously 256 (sparse encoder output, pre-backbone).
     channels=512,
     num_experts=num_experts,
-    k=2,
+    k=3,
     num_convs=2,
-    # Shazeer importance loss.  0.002 allows the clean softmax to develop
-    # differentiated logit gaps; previous runs showed that higher values
-    # collapsed dense_mean_prob to near-uniform, eliminating specialisation.
+    # Shazeer importance loss.  Restored to 0.002 (run 4542759 post-mortem).
+    # In run 4542759 (TopkGate, γ=0.005) E0 collapsed to top-1=100% by end
+    # of epoch 0: the per-expert task-loss signal from γ=0.005 perturbations
+    # (~0.5% of feature scale) was too small relative to the balance gradient
+    # at 5e-4, so the gate took the lazy one-expert solution immediately.
+    # With γ raised to 0.05 (10× stronger per-expert signal) and importance
+    # back to 2e-3, the restraining force is now better matched to the per-
+    # expert task signal.
     importance_coef=0.002,
-    # Shazeer Gaussian-CDF load loss.  Active for NoisyTopkGate — balances
-    # the noisy exploration dispatch and provides gradient when
-    # importance_loss is zeroed out at eval.
-    load_coef=0.005,
-    # Fedus Switch balance loss.  Computed from clean_topk_idx (deterministic
-    # validation-time routing) rather than the noisy training dispatch, so it
-    # disciplines the router that is actually evaluated.  Reduced from 0.10 —
-    # at the previous coefficient the loss dominated balance pressure and
-    # over-regularised the clean router (train routing was near-perfectly
-    # uniform at the cost of meaningful specialisation).  0.02 keeps a gentle
-    # balance constraint without forcing flat dispatch.
-    switch_balance_coef=0.02,
+    # Shazeer Gaussian-CDF load loss.  No-op for deterministic TopkGate.
+    load_coef=0.0,
+    # Fedus Switch balance loss.  Raised 0.002 → 0.01 (run 4542759
+    # post-mortem).  At 2e-3 the loss was too weak to prevent the
+    # winner-take-all collapse of TopkGate early in training.  1e-2
+    # matches run 4540532's value, but without the NoisyTopkGate noise
+    # inflating f_e artificially — the clean deterministic f_e now
+    # reflects true routing imbalance and the gradient bites harder.
+    switch_balance_coef=0.01,
     # ST-MoE router z-loss.  Penalises squared log-partition of clean logits,
     # preventing a single expert from dominating without distorting logit rank.
-    z_loss_coef=5e-5,
-    # Residual-delta dispatch gain.  g=1 applies the expert delta at full
-    # scale.  Drop to 0.5 if grad_norm sustains above 50.
+    # Raised 5e-5 → 1e-3 (run 4543230 post-mortem).  In 4543230 clean_logits_std
+    # grew unboundedly across epochs (0.59 → 0.73 → 1.08 over ep1-3), causing
+    # the dispatch softmax to sharpen and the second/third top-k experts to
+    # progressively lose gradient share.  At 5e-5 the per-logit z-loss
+    # gradient was ~10⁻⁵, while the task gradient through the gate was ~10⁻³,
+    # so z-loss was 100× too weak to anchor the logit scale.  1e-3 puts z-loss
+    # on the same order as the task gradient — caps clean_logits_std around
+    # ~1.0 and keeps top-k dispatch weights at roughly [0.5, 0.3, 0.2] for
+    # k=3 instead of collapsing to a single dominant expert.
+    z_loss_coef=1e-3,
+    # Residual-delta dispatch gain.  Small-random gamma init (see bev_experts.py)
+    # means block(x) ≈ ε·delta at init; residual_gain=1.0 leaves the dispatch
+    # weight unscaled once experts diverge.
     residual_gain=1.0,
-    # Summary encoders: BEVResSummaryEncoder (stem + 3 residual blocks +
-    # global avg pool → 256-d descriptor).  Both router_summary and
-    # context_summary use these params; no separate config needed.
-    # Gate input dim = 256 + 256 = 512.
-    #
-    # Context-supervised routing.  ``target_field`` selects which ZOD
-    # categorical field provides labels for the auxiliary context head.
-    # ``loss_type='weighted_ce'`` with ``class_weights='inverse_frequency'``
-    # uses built-in inverse-frequency weights for road_type to avoid
-    # collapsing to the majority class ('city').  Label smoothing 0.05
-    # adds mild over-confidence regularisation.
+    # Context-supervised routing.  loss_coef raised 0.10 → 0.20 (Fix #3).
+    # With filter_empty_gt=False (Fix #2) the context head now sees balanced
+    # road_type labels including highway/rural — doubling the loss weight
+    # pushes the z_ctx descriptor to encode more discriminative context
+    # structure for the gate to read via z_ctx.detach().  label_smoothing=0.05
+    # prevents saturation; class_weights='inverse_frequency' corrects for the
+    # remaining ~5× city dominance in the training split even after Fix #2.
     context_aux_cfg=dict(
         target_field='road_type',
-        loss_coef=0.05,
+        loss_coef=0.20,
         loss_type='weighted_ce',
         label_smoothing=0.05,
         class_weights='inverse_frequency',
     ),
-    # Noisy top-k gate.  noise_scale=0.25 keeps noise_to_clean_std_ratio
-    # well below 1 so the clean (deterministic) router governs training
-    # dispatch rather than noise.  temperature=1.5 softens the clean
-    # softmax at val, reducing winner-take-all routing from a single
-    # dominant expert.  noise_epsilon=1e-3 keeps the softplus noise std
-    # well-defined at near-zero late in training.
-    gate_type='noisy_topk',
-    gate_cfg=dict(
-        noise_epsilon=1e-3,
-        noise_scale=0.08,
-        temperature=1.5,
-    ),
+    # Deterministic TopkGate (Fix #1, run 4540532 analysis).
+    # Replaces NoisyTopkGate whose learned noise_std head grew to ~2.6 by
+    # epoch 1, making the noise/clean_logits_std ratio 1.4–1.8 throughout
+    # training.  The training-time top-k was effectively random, the clean
+    # deterministic router used at val received no useful gradient, and every
+    # val epoch the dominant expert flipped because the clean logit spread
+    # was only 0.13–0.40 (small enough that per-update drift changed the
+    # top-1 winner).
+    # TopkGate with temperature=2.0 (run 4542759 post-mortem).
+    # At T=1 with logit spread of 2+ (typical after ep0), the top-2
+    # dispatch weights are ~[0.88, 0.12] — the second expert gets only
+    # 12% weight, so its task-loss gradient is 7× smaller than the
+    # top-1 expert's, accelerating winner-take-all collapse.
+    # At T=2 the weights become ~[0.73, 0.27], keeping the w₁·w₂ term
+    # in the gate's specialisation gradient (∂L/∂v₁ = w₁·w₂·⟨...⟩)
+    # at 0.20 vs 0.11 at T=1 — nearly 2× more gradient reaching the
+    # gate from the same logit spread.  Temperature does not change
+    # which experts are selected (top-k on raw logits), only how the
+    # dispatch weights are mixed.
+    gate_type='topk',
+    gate_cfg=dict(temperature=2.0),
 )
 
 # ── Model ─────────────────────────────────────────────────────────────────
@@ -254,11 +270,17 @@ train_pipeline = [
         with_bbox_3d=True,
         with_label_3d=True,
         with_attr_label=False),
+    # Limited spatial augmentation:
+    #   - mild scale jitter (±10%)
+    #   - rotation disabled to reduce train/val covariate shift on the
+    #     routing distribution (rot_range=[0, 0])
+    #   - small isotropic translation (std=0.5 m)
+    # Re-enable rotation once routing is stable on val.
     dict(
         type='GlobalRotScaleTrans',
-        scale_ratio_range=[0.9, 1.1], #prev 1.0, 1.0
-        rot_range=[0, 0], # prev 0, 0
-        translation_std=0.5), # prev 0.0
+        scale_ratio_range=[0.9, 1.1],
+        rot_range=[0, 0],
+        translation_std=0.5),
     dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
     dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
     dict(type='ObjectNameFilter', classes=class_names),
@@ -306,7 +328,20 @@ train_dataloader = dict(
         test_mode=False,
         use_valid_flag=False,
         with_velocity=False,
-        box_type_3d='LiDAR'))
+        box_type_3d='LiDAR',
+        # Fix #2 (run 4540532 analysis): NuScenesDataset default is
+        # filter_empty_gt=True, which drops every frame with no ground-truth
+        # pedestrian.  In the ZOD training split this removed ~98% of highway
+        # and ~88% of arterial-rural samples, so those road_type classes were
+        # effectively absent from training (0.18% highway observed vs 11.13%
+        # in the pkl; 1.15% arterial-rural vs 9.90%).  The context auxiliary
+        # head never saw highway frames and predicted highway=0 across all 8
+        # val epochs of run 4540532.  Setting False retains all frames:
+        # pedestrian-free scenes still contribute a meaningful gradient via
+        # heatmap/focal "no-object" supervision and ctx_aux_loss, and the
+        # router now sees the full scene-type distribution matching val.
+        filter_empty_gt=False,
+    ))
 
 val_dataloader = dict(
     batch_size=2,
@@ -395,31 +430,38 @@ test_cfg = dict()
 #   context_summary  — feeds context_head (auxiliary context classifier)
 #
 # Routing-path parameters (gate + router_summary) must learn meaningful
-# logit margins for top-k dispatch. Weight decay on these components
-# shrinks logit magnitudes and harms expert specialisation, so
-# decay_mult=0.0 is used for all routing parameters. LayerNorm parameters
-# also conventionally receive no decay.
+# logit margins for top-k dispatch. Heavy weight decay on these components
+# shrinks logit magnitudes and harms expert specialisation, so we use a
+# very small decay (decay_mult=0.01 → effective wd ≈ 1e-4) — just enough
+# to prevent unbounded logit growth without flattening the gate.
 #
 # Context-path parameters (context_summary + context_head) form a pure
-# classifier trained with weighted CE. This branch is prone to overfitting
-# (high train accuracy vs lower val accuracy), so we apply light weight
-# decay to improve generalisation without affecting routing dynamics.
+# classifier trained with weighted CE.  decay_mult=0.05 (effective wd
+# ≈ 5e-4) — half the default.  Run 4540062 (post BN→GN fix) showed the
+# context head completely collapsed at val: ctx_pred_hist=[0,0,2500,0,0]
+# (predicted "city" for every sample), ctx_aux_acc=0.51 (≈ city base
+# rate).  With deterministic GN descriptors and decay_mult=0.1 there's
+# no opposing force keeping the descriptor encoder discriminative —
+# weight decay shrinks the encoder's weights, the descriptor degenerates
+# to near-constant, and the head's best constant prediction is the
+# majority class.  Lighter decay lets the encoder + head retain enough
+# capacity to fit per-sample road_type while the auxiliary CE provides
+# the input-dependent signal.
 #
-#   bev_moe.gate              — base LR; covers both w_gate and w_noise of
-#                                NoisyTopkGate (substring match). Shared
-#                                with the Shazeer noise head so the noise
-#                                path receives matched updates. No decay.
+    #   bev_moe.gate              — base LR; covers the TopkGate linear layer
+    #                                (substring match on 'bev_moe.gate').
+    #                                decay_mult=0.01 (effective wd ≈ 1e-4).
 #
 #   bev_moe.router_summary    — 2× LR; routing descriptor backbone used by
-#                                the gate. No decay to preserve logit scale.
+#                                the gate.  decay_mult=0.01.
 #
 #   bev_moe.context_summary   — 2× LR; context feature extractor for
-#                                auxiliary classification. Light decay to
-#                                reduce overfitting (effective wd ≈ 1e-4).
+#                                auxiliary classification.  decay_mult=0.05
+#                                (effective wd ≈ 5e-4).
 #
 #   bev_moe.context_head      — 2× LR; auxiliary context classifier trained
-#                                with weighted CE on road_type. Light decay
-#                                improves generalisation.
+#                                with weighted CE on road_type.
+#                                decay_mult=0.05.
 #
 # Expert CNN blocks (bev_moe.experts.*) are NOT listed here and therefore
 # fall through to the default AdamW settings (lr=5e-5, weight_decay=0.01).
@@ -431,12 +473,38 @@ optim_wrapper = dict(
     paramwise_cfg=dict(
     custom_keys={
         # ROUTER (no decay)
+        # router_summary lr_mult lowered 2.0 → 1.0 (run 4543230 post-mortem).
+        # At 2.0 the router input encoder updated twice as fast as the rest of
+        # the model, so the gate's input descriptor distribution was a moving
+        # target — every epoch the gate had to relearn what the descriptors
+        # mean, driving the routing oscillation observed in 4543230 (highway
+        # primary went E0 → E4 → E4, arterial-urban went E2 → E2/E3 → E0/E2,
+        # E3 collapsed from 24.6% to 7.4% top-1 in one epoch).  At 1.0 the
+        # router descriptor evolves at the same pace as the experts and
+        # detection head, so the gate has time to settle on stable
+        # assignments.  bev_moe.gate stays at 1.0 (default).
         'bev_moe.gate': dict(lr_mult=1.0, decay_mult=0.01),
-        'bev_moe.router_summary': dict(lr_mult=2.0, decay_mult=0.01),
+        'bev_moe.router_summary': dict(lr_mult=1.0, decay_mult=0.01),
 
-        # CONTEXT (regularized)
-        'bev_moe.context_summary': dict(lr_mult=2.0, decay_mult=0.1),
-        'bev_moe.context_head': dict(lr_mult=2.0, decay_mult=0.1),
+        # CONTEXT (lighter decay — see header comment.  GN-based
+        # descriptors lack the batch-stats stochasticity that previously
+        # kept the encoder discriminative under heavy decay, so the
+        # encoder + head need extra capacity to avoid collapsing to
+        # majority-class predictions.)
+        # lr_mult lowered 2.0 → 1.0 (run 4543230 post-mortem).  The gate
+        # input is z_gate = cat([z_router, z_ctx.detach()]) — even though
+        # z_ctx is stop-gradient for the gate, its values shift fast at
+        # lr_mult=2.0 as the context branch learns road type, presenting
+        # the gate with a non-stationary input distribution.  Combined
+        # with router_summary at lr_mult=1.0, both halves of z_gate now
+        # evolve at the same pace as the rest of the model, eliminating
+        # the moving-target effect that drove the routing oscillation
+        # observed in 4543230 (clean_logits_std growing 0.59 → 1.08 over
+        # ep1-3 with shifting per-road-type assignments).  Mild slow-down
+        # of ctx_aux_acc growth is acceptable — the 0.20 loss_coef
+        # already provides substantial supervision.
+        'bev_moe.context_summary': dict(lr_mult=1.0, decay_mult=0.05),
+        'bev_moe.context_head':    dict(lr_mult=1.0, decay_mult=0.05),
     },
     )
 )
