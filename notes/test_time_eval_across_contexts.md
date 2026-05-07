@@ -2,11 +2,11 @@
 
 ## Models
 
-- **LiDAR-only checkpoint:** `outputs/runs/zod_lidar_only/zod-lidar-only_4454825/best_mAP_0.50_epoch_18.pth`
+- **LiDAR-only checkpoint:** `outputs/runs/zod_lidar_only/zod-lidar-only_4543546/best_mAP_0.50_epoch_19.pth`
 - **LiDAR-only config:** `mmdetection3d/configs/zod/zod_lidar_only.py`
 - **Camera-only checkpoint:** `outputs/runs/zod_camera_only/zod-cam-only_4469392/best_mAP_0.50_epoch_11.pth`
 - **Camera-only config:** `mmdetection3d/configs/zod/zod_camera_only.py`
-- **Fusion checkpoint:** `outputs/runs/zod_bevfusion_dualinit/bevfusion-dualinit_4481497/best_mAP_0.50_epoch_12.pth`
+- **Fusion checkpoint:** `outputs/runs/zod_bevfusion_dualinit/bevfusion-dualinit_4543552/best_mAP_0.50_epoch_11.pth`
 - **Fusion config:** `mmdetection3d/configs/zod/zod_bevfusion_dualinit.py`
 
 ---
@@ -29,9 +29,9 @@ This is especially useful because:
 
 | Model | AP@0.50 | AP@0.5m |
 |---|---:|---:|
-| LiDAR-only | 0.5468 | 0.7829 |
+| LiDAR-only | 0.5207 | 0.8125 |
 | Camera-only | 0.0047 | 0.2101 |
-| Fusion | 0.5748 | 0.7893 |
+| Fusion | 0.5785 | 0.8277 |
 
 ### Quick read
 - **Fusion** is the best overall model on **AP@0.50**.
@@ -48,8 +48,8 @@ night: 1875
 
 | Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
 |---|---:|---:|---:|---:|---:|---:|
-| day | 0.5483 | 0.7936 | 0.0046 | 0.2105 | 0.5750 | 0.7959 |
-| night | 0.5611 | 0.7117 | 0.0067 | 0.2123 | 0.6000 | 0.7268 |
+| day | 0.5205 | 0.8192 | 0.0046 | 0.2105 | 0.5759 | 0.8305 |
+| night | 0.5568 | 0.7664 | 0.0067 | 0.2123 | 0.6294 | 0.7926 |
 
 ### Quick read
 - **LiDAR-only** and **Fusion** are slightly better on **AP@0.50** at night, but worse on **AP@0.5m**.
@@ -69,11 +69,11 @@ smaller_rural: 513
 
 | Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
 |---|---:|---:|---:|---:|---:|---:|
-| arterial_rural | 0.3395 | 0.4333 | 0.0005 | 0.0414 | 0.3911 | 0.4969 |
-| arterial_urban | 0.5367 | 0.7596 | 0.0042 | 0.2057 | 0.5619 | 0.7582 |
-| city | 0.5554 | 0.7993 | 0.0049 | 0.2139 | 0.5832 | 0.8054 |
-| highway | 0.1060 | 0.1184 | 0.0000 | 0.0025 | 0.1595 | 0.1654 |
-| smaller_rural | 0.3653 | 0.6472 | 0.0006 | 0.1679 | 0.4047 | 0.6906 |
+| arterial_rural | 0.4420 | 0.5934 | 0.0005 | 0.0414 | 0.4500 | 0.5875 |
+| arterial_urban | 0.5272 | 0.7924 | 0.0042 | 0.2057 | 0.5760 | 0.8116 |
+| city | 0.5217 | 0.8204 | 0.0049 | 0.2139 | 0.5818 | 0.8343 |
+| highway | 0.1434 | 0.1577 | 0.0000 | 0.0025 | 0.1980 | 0.3218 |
+| smaller_rural | 0.3392 | 0.7358 | 0.0006 | 0.1679 | 0.4339 | 0.7700 |
 
 ### Quick read
 - **Road type is the strongest context signal** across all models.
@@ -96,13 +96,13 @@ fog: small subset
 
 | Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
 |---|---:|---:|---:|---:|---:|---:|
-| clear_day | 0.5385 | 0.7731 | 0.0043 | 0.1979 | 0.5663 | 0.7736 |
-| clear_night | 0.5089 | 0.7350 | 0.0033 | 0.1743 | 0.5837 | 0.7603 |
-| cloudy | 0.5553 | 0.8059 | 0.0050 | 0.2084 | 0.5793 | 0.8057 |
-| fog | 0.5584 | 0.7461 | 0.0110 | 0.2555 | 0.5812 | 0.7451 |
-| partly_cloudy_day | 0.5624 | 0.8047 | 0.0039 | 0.2123 | 0.5872 | 0.8080 |
-| partly_cloudy_night | 0.5847 | 0.7389 | 0.0056 | 0.2240 | 0.5855 | 0.7401 |
-| precipitation | 0.5035 | 0.7462 | 0.0090 | 0.2221 | 0.5520 | 0.7640 |
+| clear_day | 0.5116 | 0.8046 | 0.0043 | 0.1979 | 0.5608 | 0.8143 |
+| clear_night | 0.5292 | 0.7795 | 0.0033 | 0.1743 | 0.5833 | 0.8095 |
+| cloudy | 0.5359 | 0.8281 | 0.0050 | 0.2084 | 0.5834 | 0.8421 |
+| fog | 0.5208 | 0.7953 | 0.0110 | 0.2555 | 0.6288 | 0.8104 |
+| partly_cloudy_day | 0.5387 | 0.8266 | 0.0039 | 0.2123 | 0.5819 | 0.8351 |
+| partly_cloudy_night | 0.5492 | 0.7780 | 0.0056 | 0.2240 | 0.6034 | 0.7931 |
+| precipitation | 0.4580 | 0.7905 | 0.0090 | 0.2221 | 0.5761 | 0.8187 |
 
 ### Quick read
 - Weather matters, but less than **road type**.
@@ -120,8 +120,8 @@ cloud_like: 5928
 
 | Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
 |---|---:|---:|---:|---:|---:|---:|
-| clear_like | 0.5337 | 0.7657 | 0.0041 | 0.1955 | 0.5656 | 0.7706 |
-| cloud_like | 0.5598 | 0.7963 | 0.0043 | 0.2125 | 0.5836 | 0.8008 |
+| clear_like | 0.5113 | 0.8005 | 0.0041 | 0.1955 | 0.5624 | 0.8136 |
+| cloud_like | 0.5370 | 0.8213 | 0.0043 | 0.2125 | 0.5838 | 0.8345 |
 
 ### Quick read
 - All three models do slightly better in **cloud_like** than **clear_like**.
