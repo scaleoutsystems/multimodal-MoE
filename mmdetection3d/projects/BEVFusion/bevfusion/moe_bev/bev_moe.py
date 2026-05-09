@@ -9,42 +9,64 @@ BEVMoEBlock is a single-input MoE block used for:
   For modality-specific experts (joint gate over cam + lidar expert pools),
   use ModalitySpecificMoEBlock instead.
 
-Dual-summary design (residual-CNN encoders)
---------------------------------------------
-Two independent ``BEVResSummaryEncoder`` branches (stem + 3 residual conv
-blocks + global average pooling) produce separate descriptors:
+Single-summary design (z_ctx-driven gate)
+------------------------------------------
+A single ``BEVResSummaryEncoder`` branch (stem + 3 residual conv blocks +
+avg + max grid pooling at a small ``P × P``) produces the descriptor
+consumed by the gate:
 
-    z_router  — task / routing branch; optimised by detection + MoE losses.
-    z_ctx     — context branch; optimised by context CE loss only.
+    z_ctx     — context branch; optimised by the context auxiliary CE.
 
-The gate receives a concatenation of both, but with ``z_ctx`` stop-grad
-so detection/router gradients cannot corrupt the context descriptor:
+The gate consumes ``z_ctx`` with stop-gradient so the context descriptor's
+shape is fixed by context CE alone, while the gate's own ``Linear`` weights
+remain task-driven via the dispatch path:
 
-    z_router  = self.router_summary(x_bev)   # (B, 256)
-    z_ctx     = self.context_summary(x_bev)  # (B, 256)
+    z_ctx      = self.context_summary(x_bev)             # (B, 256)
 
-    z_gate    = torch.cat([z_router, z_ctx.detach()], dim=1)  # (B, 512)
-    gate_out  = self.gate(z_gate)            # NoisyTopkGate — dispatch
-    ctx_logits = self.context_head(z_ctx)    # MLP head on z_ctx (full grad)
+    z_gate     = z_ctx.detach()                         # (B, 256), stop-gradient
+    gate_out   = self.gate(z_gate)                       # task-driven Linear → top-k
+    ctx_logits = self.context_head(z_ctx)                # MLP head on z_ctx (full grad)
 
-Each encoder learns: spatial structure first (residual conv blocks at full
-BEV resolution) → global compression (AdaptiveAvgPool2d(1)) → projected
-descriptor.  This is the same principle as ResNet feature extraction used
-in the reference CIFAR MoE experiment.
+The encoder learns: spatial structure first (residual conv blocks at full
+BEV resolution) → coarse spatial summary (avg + max grid pooling to a
+``(P, P)`` map, concatenated along the channel axis) → projected
+descriptor.  Replacing the previous ``AdaptiveAvgPool2d(1)`` step with
+avg + max grid pooling preserves coarse BEV layout (front/back occupancy,
+sparse-vs-dense scenes, highway vs urban geometry) which is intended to
+improve routing/context separability across driving regimes without any
+other architectural change.
+
+Why a single descriptor (history)
+---------------------------------
+An earlier dual-summary design carried a separate ``router_summary``
+branch (z_router) so the gate received ``cat([z_router, z_ctx.detach()])``.
+In practice z_router was overwhelmingly shaped by the auxiliary balance
+losses (``importance_loss``, ``load_loss``, ``switch_balance_loss``,
+``router_z_loss``) — its detection-task gradient travelled through the
+discrete top-k softmax and was much weaker than the direct gate-Linear
+update path.  z_router therefore acted mostly as a freshly-initialised
+noise channel into the gate input.  Removing it halves the descriptor
+parameters, eliminates that noise channel, and forces routing to be a
+function of the context-discriminative descriptor.  Detection-task
+gradient still drives expert specialisation through ``self.gate`` (its
+own ``Linear`` layer is updated via the softmax → top-k weights → expert
+outputs → detection loss path), so the router remains task-driven; what
+changes is its *input space*, which is now anchored to ``z_ctx``.
 
 This design lets:
 
 - ``z_ctx`` learn road_type cleanly under weighted CE without detection
   gradients competing inside the same descriptor.
-- The router read context information through ``z_ctx.detach()`` — the gate
+- The gate read context information through ``z_ctx.detach()`` — it
   *sees* context but cannot differentiate through it.
-- ``z_router`` remain free to learn task/routing-specific structure.
+- The gate's ``Linear`` weights still receive task gradient via the
+  dispatch path, so expert specialisation remains task-driven.
 
 Context-supervised routing
 --------------------------
-Context labels are NOT concatenated into the gate input.  The block's
-``context_head`` (a small MLP — ``Linear → ReLU → LayerNorm → Dropout →
-Linear``) consumes ``z_ctx`` exclusively and is supervised by one of:
+Context labels are NOT fed to the gate.  The block's ``context_head``
+(a small MLP — ``Linear → ReLU → LayerNorm → Dropout → Linear``) consumes
+``z_ctx`` exclusively and is supervised by one of:
 
     'ce'          — plain ``F.cross_entropy`` with optional label smoothing.
     'weighted_ce' — ``F.cross_entropy`` with per-class weights; the
@@ -62,11 +84,10 @@ Linear``) consumes ``z_ctx`` exclusively and is supervised by one of:
 
 For the full pattern (LiDAR-only NoisyTopkGate setup, post-SECONDFPN)::
 
-    # x_bev is (B, 512, H, W) from SECONDFPN
-    z_router   = self.router_summary(x_bev)   # BEVResSummaryEncoder
-    z_ctx      = self.context_summary(x_bev)  # BEVResSummaryEncoder
-    z_gate     = torch.cat([z_router, z_ctx.detach()], dim=1)
-    gate_out   = self.gate(z_gate)            # NoisyTopkGate — dispatch
+    # x_bev is e.g. (B, 256, H, W) from pts_middle_encoder (pre_backbone)
+    z_ctx      = self.context_summary(x_bev)             # BEVResSummaryEncoder
+    z_gate     = z_ctx.detach()                         # stop-gradient
+    gate_out   = self.gate(z_gate)                       # TopkGate — dispatch
     ctx_logits = self.context_head(z_ctx)     # MLP head on z_ctx
     # loss_type='weighted_ce' (default in this file):
     ctx_loss   = F.cross_entropy(ctx_logits, ctx_label,
@@ -94,6 +115,42 @@ Experts output ``x + delta``.  Dispatch is implemented as
 with ``Σ_j w_j = 1`` (Shazeer top-k) and ``g = residual_gain`` a plain
 scalar (default 1.0).  See module history below for why the dependency on
 ``num_experts`` was removed.
+
+Dense (``gate_type='dense'``) dispatch
+--------------------------------------
+When ``gate_type='dense'`` the block bypasses the top-k cliff entirely
+and dispatches every expert on every sample, mixing them by the full
+pre-top-k softmax probabilities::
+
+    x_out = x_bev + g · Σ_{e=1..E}  p_e · (expert_e(x_bev) − x_bev)
+
+with ``p_e = full_softmax_probs[:, e]`` (Σ_e p_e = 1 by construction).
+This removes the three top-k pathologies that drove the LiDAR-only AP gap
+in runs 4552697 / 4554362 (see canvas
+``canvases/lidar-moe-ap-gap-diagnosis.canvas.tsx``):
+
+  1. Gradient starvation — every expert receives a non-zero detection
+     gradient on every sample (weight = ``p_e``, never zero).
+  2. Discontinuous expert switching — small logit changes produce small
+     mixing-weight changes; no top-k membership flips.
+  3. Train/val routing mismatch — the same softmax weights drive
+     dispatch in train and eval (no noisy-vs-clean discrepancy).
+
+Under dense, ``switch_balance_loss`` becomes a constant (``α·E·1`` with
+all experts always selected) and should be disabled by setting
+``switch_balance_coef=0``.  ``importance_loss`` and ``router_z_loss``
+still bite — they regularise the soft balance and the logit scale and
+remain useful.  ``ctx_gate_warmup`` is also pointless (the temperature
+schedule was a fix for cliff brittleness) so leave it disabled.
+
+For diagnostic compatibility the dense path still populates the usual
+``topk_idx`` / ``topk_weights`` fields on ``moe_info`` with the experts
+sorted descending by their dense probability, so ``MoERoutingHook``,
+``ExpertRespawnHook`` and the context-routing hooks see meaningful
+``top1_selection_freq``-style metrics (now equal to the dense argmax
+frequency).  ``topk_selection_freq_per_expert`` becomes 1.0 for every
+expert (every expert is "in top-k" when k = E) — read it together with
+``dense_mean_prob_per_expert`` for the real signal.
 
 moe_info contract
 -----------------
@@ -151,23 +208,22 @@ After every forward() call, ``self._moe_info`` is written with:
                                    output of the noise head.  Target: ≲ 1
                                    under NoisyTopkGate (≈ 0.5 is a healthy
                                    exploration regime).
-    router_summary_type             str  — 'BEVResSummaryEncoder'.
-    router_summary_stem_channels    int  — width of stem and first two res blocks.
-    router_summary_out_channels     int  — width of third res block and pooled rep.
-    router_summary_out_dim          int  — projected descriptor dimension (256).
-    router_summary_num_res_blocks   int  — number of residual blocks (3).
-    router_summary_dropout          float
     context_summary_type            str  — 'BEVResSummaryEncoder'.
-    context_summary_stem_channels   int
-    context_summary_out_channels    int
-    context_summary_out_dim         int
-    context_summary_num_res_blocks  int
+    context_summary_stem_channels   int  — width of stem and first two res blocks.
+    context_summary_out_channels    int  — width of third res block and pooled rep.
+    context_summary_out_dim         int  — projected descriptor dimension (256).
+    context_summary_num_res_blocks  int  — number of residual blocks (3).
     context_summary_dropout         float
-    gate_feat_dim            int  — 512 (= router_out_dim + context_out_dim).
+    gate_feat_dim            int  — context_summary.out_dim (256); the gate
+                                    consumes z_ctx.detach() directly.
     z_ctx_detached_for_gate  bool — always True in this design.
+    gate_input                str  — 'z_ctx_detach' (single-descriptor gate).
     context_head_type        str  — 'mlp' (MLP head on z_ctx).
     moe_insertion_point      str  — 'post_secondfpn'.
     moe_input_channels       int  — input channel count (512 for Variant D).
+    gate_type                str  — 'topk' | 'noisy_topk' | 'dense'.
+    dense_dispatch           bool — True when every expert always runs
+                                    (gate_type='dense'); False under top-k.
 """
 from __future__ import annotations
 
@@ -298,21 +354,50 @@ class BEVMoEBlock(nn.Module):
                               ``class_weights`` are ignored.  Pass
                               ``None`` as the whole config to disable
                               context supervision.
-        gate_type:            ``'topk'`` (deterministic) or ``'noisy_topk'``
-                              (Shazeer noisy gate).  Default ``'topk'``.
+        gate_type:            ``'topk'`` (deterministic top-k),
+                              ``'noisy_topk'`` (Shazeer noisy top-k), or
+                              ``'dense'`` (every expert always runs,
+                              mixed by ``full_softmax_probs``).  When
+                              ``'dense'``, ``k`` is forced to
+                              ``num_experts`` and the top-k cliff is
+                              bypassed; see the "Dense dispatch" section
+                              of this module's docstring.  Default
+                              ``'topk'``.
         gate_cfg:             Extra kwargs forwarded to NoisyTopkGate
                               (``temperature``, ``noise_epsilon``,
-                              ``noise_scale``).
+                              ``noise_scale``).  The ``temperature`` value in
+                              this dict is the *post-warmup* steady-state
+                              temperature (usually 1.0).
+        ctx_gate_warmup_epochs: Number of epochs over which the gate's
+                              softmax temperature is linearly annealed from
+                              ``ctx_gate_temp_high`` down to 1.0.  During
+                              epoch ``e`` the gate receives::
+
+                                  T(e) = temp_high + (1 - temp_high)
+                                         * min(1, e / ctx_gate_warmup_epochs)
+
+                              High temperature → flat softmax → routing stays
+                              balanced while ``z_ctx`` is still weak.  After
+                              ``ctx_gate_warmup_epochs`` epochs the temperature
+                              is 1.0 and routing is fully normal.  Balance
+                              losses remain active throughout.  Set to 0
+                              (default) to disable (temperature always stays
+                              at whatever ``gate_cfg.temperature`` specifies).
+                              Call ``set_epoch(epoch)`` each epoch (e.g. from
+                              :class:`MoERoutingHook`) to advance the
+                              schedule.
+        ctx_gate_temp_high:   Starting temperature for the warmup schedule.
+                              Default 5.0.  Ignored when
+                              ``ctx_gate_warmup_epochs == 0``.
     """
 
-    # Shared architecture dimensions for both BEVResSummaryEncoder branches.
-    # Both router_summary and context_summary are built with these params.
+    # Architecture dimensions for the context_summary BEVResSummaryEncoder.
+    # The gate consumes z_ctx.detach() directly, so its input dim equals
+    # _SUMMARY_OUT_DIM (no separate router descriptor / no concat).
     _SUMMARY_STEM_CHANNELS  = 128
     _SUMMARY_OUT_CHANNELS   = 256
     _SUMMARY_OUT_DIM        = 256
     _SUMMARY_DROPOUT        = 0.2
-    # Gate input = concat([z_router, z_ctx.detach()]) = 256 + 256.
-    _GATE_FEAT_DIM          = _SUMMARY_OUT_DIM * 2  # 512
 
     def __init__(
         self,
@@ -328,6 +413,8 @@ class BEVMoEBlock(nn.Module):
         context_aux_cfg: Optional[dict] = None,
         gate_type: str = 'topk',
         gate_cfg: Optional[dict] = None,
+        ctx_gate_warmup_epochs: int = 0,
+        ctx_gate_temp_high: float = 5.0,
     ):
         super().__init__()
         self.channels = channels
@@ -338,31 +425,32 @@ class BEVMoEBlock(nn.Module):
         self.switch_balance_coef = float(switch_balance_coef)
         self.z_loss_coef = float(z_loss_coef)
         self.residual_gain = float(residual_gain)
+        self.ctx_gate_warmup_epochs = int(ctx_gate_warmup_epochs)
+        self.ctx_gate_temp_high = float(ctx_gate_temp_high)
+        self._current_epoch: int = 0
 
         self.experts = make_bev_experts(num_experts, channels, num_convs)
 
-        # ── Dual BEVResSummaryEncoder branches ────────────────────────
-        # Both encoders share the same architecture but have separate
-        # weights; they are trained by independent loss signals.
+        # ── Single BEVResSummaryEncoder branch ────────────────────────
+        # context_summary is the *only* descriptor encoder; it is trained
+        # by the auxiliary context CE.  The gate consumes z_ctx.detach()
+        # so context-CE gradients never reach the gate's Linear and the
+        # gate's task signal travels exclusively through dispatch (its
+        # Linear weights → softmax → top-k weights → expert outputs →
+        # detection loss).
         #
-        # router_summary:  optimised by detection + MoE routing losses.
-        # context_summary: optimised by context CE loss only.
-        #
-        # Each encoder: stem conv → 3 residual blocks → global avg pool
-        # → Linear → LayerNorm.  Spatial structure is learned at full BEV
-        # resolution before global compression.
-        #
-        # The gate receives cat([z_router, z_ctx.detach()]) so the router
-        # can read context structure without context CE corrupting z_router.
-        _enc_kwargs = dict(
+        # Architecture: stem conv → 3 residual blocks → avg + max grid
+        # pooling at (P, P) (concatenated along channel axis) → Linear
+        # → LayerNorm.  Spatial structure is learned at full BEV
+        # resolution and then summarised at a fixed (P, P) grid rather
+        # than being collapsed to a single global average vector.
+        self.context_summary = BEVResSummaryEncoder(
             channels=channels,
             stem_channels=self._SUMMARY_STEM_CHANNELS,
             out_channels=self._SUMMARY_OUT_CHANNELS,
             out_dim=self._SUMMARY_OUT_DIM,
             dropout=self._SUMMARY_DROPOUT,
         )
-        self.router_summary  = BEVResSummaryEncoder(**_enc_kwargs)
-        self.context_summary = BEVResSummaryEncoder(**_enc_kwargs)
 
         # ── Context auxiliary classification head ─────────────────────
         # Configured via ``context_aux_cfg``; see ``_build_context_head``
@@ -386,10 +474,30 @@ class BEVMoEBlock(nn.Module):
         if context_aux_cfg is not None:
             self._build_context_head(context_aux_cfg)
 
-        # Gate input = cat([z_router, z_ctx.detach()]) = 512.
-        gate_feat_dim = self._GATE_FEAT_DIM
+        # Gate input = z_ctx.detach(); its dim equals context_summary.out_dim.
+        gate_feat_dim = self.context_summary.out_dim
         extra_gate_kwargs = gate_cfg or {}
-        if gate_type == 'noisy_topk':
+        gate_type_norm = str(gate_type).lower()
+        if gate_type_norm not in ('topk', 'noisy_topk', 'dense'):
+            raise ValueError(
+                "BEVMoEBlock.gate_type must be 'topk', 'noisy_topk' or "
+                f"'dense', got '{gate_type}'.")
+        # Dense dispatch: every expert always runs, weighted by the full
+        # pre-top-k softmax.  We still construct a TopkGate with
+        # k=num_experts so that GateOutput.topk_idx / topk_weights carry
+        # the experts sorted by dense probability for downstream
+        # diagnostics; the dispatch math itself uses full_softmax_probs
+        # directly (see forward()).
+        self._dense_dispatch = (gate_type_norm == 'dense')
+        if self._dense_dispatch:
+            self.k = num_experts
+            self.gate = TopkGate(
+                feat_dim=gate_feat_dim,
+                num_experts=num_experts,
+                k=num_experts,
+                **extra_gate_kwargs,
+            )
+        elif gate_type_norm == 'noisy_topk':
             self.gate = NoisyTopkGate(
                 feat_dim=gate_feat_dim,
                 num_experts=num_experts,
@@ -401,20 +509,49 @@ class BEVMoEBlock(nn.Module):
                 feat_dim=gate_feat_dim,
                 num_experts=num_experts,
                 k=k,
+                **extra_gate_kwargs,
             )
+        self.gate_type = gate_type_norm
 
-        # Sanity check: gate must consume concat([z_router, z_ctx]).
+        # Prime the gate at the warmup starting temperature so that the very
+        # first forward pass (before before_train_epoch fires) is already warm.
+        if self.ctx_gate_warmup_epochs > 0 and self.ctx_gate_temp_high > 1.0:
+            self.gate.set_temperature(self.ctx_gate_temp_high)
+
+        # Sanity check: gate must consume z_ctx.detach() directly.
         gate_in = (self.gate.gate.in_features
                    if isinstance(self.gate, TopkGate)
                    else self.gate.w_gate.in_features)
-        expected_gate_in = (self.router_summary.out_dim
-                            + self.context_summary.out_dim)
+        expected_gate_in = self.context_summary.out_dim
         assert gate_in == expected_gate_in, (
             f'BEVMoEBlock: gate input dim ({gate_in}) must equal '
-            f'router_summary.out_dim + context_summary.out_dim '
-            f'({expected_gate_in}).')
+            f'context_summary.out_dim ({expected_gate_in}).')
 
         self._moe_info: Optional[Dict[str, Any]] = None
+
+    # ── Epoch schedule ─────────────────────────────────────────────────
+
+    def set_epoch(self, epoch: int) -> None:
+        """Advance the temperature-annealing schedule to ``epoch``.
+
+        Should be called at the start of each training epoch (e.g. from
+        :class:`MoERoutingHook`).  Has no effect when
+        ``ctx_gate_warmup_epochs == 0`` (warmup disabled).
+        """
+        self._current_epoch = int(epoch)
+
+    @property
+    def router_temperature(self) -> float:
+        """Current gate softmax temperature for the active epoch.
+
+        Linearly decays from ``ctx_gate_temp_high`` at epoch 0 to 1.0 at
+        epoch ``ctx_gate_warmup_epochs``.  Returns 1.0 unconditionally when
+        ``ctx_gate_warmup_epochs <= 0`` or ``ctx_gate_temp_high <= 1.0``.
+        """
+        if self.ctx_gate_warmup_epochs <= 0 or self.ctx_gate_temp_high <= 1.0:
+            return 1.0
+        alpha = min(1.0, self._current_epoch / self.ctx_gate_warmup_epochs)
+        return self.ctx_gate_temp_high + (1.0 - self.ctx_gate_temp_high) * alpha
 
     # ── Construction helpers ───────────────────────────────────────────
 
@@ -589,30 +726,52 @@ class BEVMoEBlock(nn.Module):
         """
         B = x_bev.shape[0]
 
-        # ── Step 1: Build dual BEV descriptors ────────────────────────
-        # z_router: task/routing branch — shaped by detection + MoE losses.
-        # z_ctx:    context branch — shaped by context CE only.
-        # z_gate:   cat([z_router, z_ctx.detach()]) fed to the gate so the
-        #           router reads context structure without context CE gradients
-        #           corrupting z_router.  z_ctx is NOT detached for context_head.
-        z_router = self.router_summary(x_bev)   # (B, 256)
-        z_ctx    = self.context_summary(x_bev)  # (B, 256)
-        z_gate   = torch.cat([z_router, z_ctx.detach()], dim=1)  # (B, 512)
+        # ── Step 1: Build BEV context descriptor ──────────────────────
+        # z_ctx:  context branch — shaped by the context auxiliary CE.
+        # z_gate: z_ctx.detach() — stop-gradient so detection-loss
+        #         gradients from the gate cannot update context_summary.
+        #         The gate's own Linear weights are still task-driven via
+        #         the dispatch path (top-k weights → experts → det loss).
+        # z_ctx itself is NOT detached for context_head (full grad there).
+        z_ctx  = self.context_summary(x_bev)   # (B, 256)
+        z_gate = z_ctx.detach()                # (B, 256), stop-gradient
 
         # ── Step 2: Gate → top-k expert selection ─────────────────────
+        # Apply temperature annealing: T decays from ctx_gate_temp_high
+        # (e.g. 5.0) to 1.0 over ctx_gate_warmup_epochs.  High T keeps
+        # the softmax flat so routing stays balanced while z_ctx is still
+        # weak in early epochs.  Balance losses remain active throughout.
+        if self.ctx_gate_warmup_epochs > 0:
+            self.gate.set_temperature(self.router_temperature)
         gate_out = self.gate(z_gate)
 
         # ── Step 3: Dispatch to selected experts ──────────────────────
+        # Dense path: every expert always runs, weighted by the full
+        # pre-top-k softmax (no top-k cliff, no gradient starvation, no
+        # train/val routing mismatch).  See module docstring "Dense
+        # dispatch" section.  The Shazeer top-k path is preserved below
+        # for ``gate_type ∈ {'topk', 'noisy_topk'}``.
         x_out = x_bev.clone()
-        for b in range(B):
-            xb = x_bev[b:b + 1]
-            delta_sum = torch.zeros_like(xb)
-            for j in range(self.k):
-                eidx   = gate_out.topk_idx[b, j].item()
-                weight = gate_out.topk_weights[b, j]
-                expert_out = self.experts[eidx](xb)
-                delta_sum = delta_sum + weight * (expert_out - xb)
-            x_out[b] = (xb + self.residual_gain * delta_sum)[0]
+        if self._dense_dispatch:
+            probs = gate_out.full_softmax_probs                       # (B, E)
+            for b in range(B):
+                xb = x_bev[b:b + 1]
+                delta_sum = torch.zeros_like(xb)
+                for e in range(self.num_experts):
+                    weight = probs[b, e]
+                    expert_out = self.experts[e](xb)
+                    delta_sum = delta_sum + weight * (expert_out - xb)
+                x_out[b] = (xb + self.residual_gain * delta_sum)[0]
+        else:
+            for b in range(B):
+                xb = x_bev[b:b + 1]
+                delta_sum = torch.zeros_like(xb)
+                for j in range(self.k):
+                    eidx   = gate_out.topk_idx[b, j].item()
+                    weight = gate_out.topk_weights[b, j]
+                    expert_out = self.experts[eidx](xb)
+                    delta_sum = delta_sum + weight * (expert_out - xb)
+                x_out[b] = (xb + self.residual_gain * delta_sum)[0]
 
         # ── Step 4: Auxiliary losses ──────────────────────────────────
         imp_loss = importance_loss(
@@ -629,7 +788,17 @@ class BEVMoEBlock(nn.Module):
         # Under :class:`TopkGate` and under :class:`NoisyTopkGate` in
         # eval, ``clean_topk_idx`` equals ``topk_idx`` so this is a no-op
         # relative to the classical Switch formulation.
-        if self.switch_balance_coef > 0.0:
+        #
+        # In dense dispatch (``gate_type='dense'``, k=E) the switch loss
+        # collapses to the constant α (every expert is "selected" on
+        # every sample so f_e = 1/E uniformly, giving E·Σ(1/E)·P_e = 1).
+        # The gradient through P_e is a uniform additive bias on every
+        # logit and provides no specialisation signal — so we
+        # short-circuit the term to zero regardless of the configured
+        # coefficient and rely on ``importance_loss`` for soft balance.
+        if self._dense_dispatch:
+            sw_loss = z_ctx.new_zeros(())
+        elif self.switch_balance_coef > 0.0:
             clean_idx = gate_out.clean_topk_idx
             if clean_idx is None:                         # legacy safety
                 clean_idx = gate_out.topk_idx
@@ -640,12 +809,12 @@ class BEVMoEBlock(nn.Module):
                 self.switch_balance_coef,
             )
         else:
-            sw_loss = z_router.new_zeros(())
+            sw_loss = z_ctx.new_zeros(())
 
         # Context auxiliary classification ----------------------------------
-        ctx_loss_raw = z_router.new_zeros(())
-        ctx_loss_weighted = z_router.new_zeros(())
-        ctx_acc = z_router.new_zeros(())
+        ctx_loss_raw = z_ctx.new_zeros(())
+        ctx_loss_weighted = z_ctx.new_zeros(())
+        ctx_acc = z_ctx.new_zeros(())
         ctx_pred_hist: List[int] = []
         ctx_label_hist: List[int] = []
         ctx_logits_mean_abs = 0.0
@@ -743,24 +912,22 @@ class BEVMoEBlock(nn.Module):
                                      if self._ctx_class_weights_list is not None
                                      else None),
             'focal_gamma':          self._ctx_focal_gamma,
-            # Dual BEVResSummaryEncoder config.
-            'router_summary_type':             'BEVResSummaryEncoder',
-            'router_summary_stem_channels':    self.router_summary.stem_channels,
-            'router_summary_out_channels':     self.router_summary.out_channels,
-            'router_summary_out_dim':          self.router_summary.out_dim,
-            'router_summary_num_res_blocks':   self.router_summary.num_res_blocks,
-            'router_summary_dropout':          self.router_summary.dropout,
+            # Single BEVResSummaryEncoder config (z_ctx-only gate input).
             'context_summary_type':            'BEVResSummaryEncoder',
             'context_summary_stem_channels':   self.context_summary.stem_channels,
             'context_summary_out_channels':    self.context_summary.out_channels,
             'context_summary_out_dim':         self.context_summary.out_dim,
             'context_summary_num_res_blocks':  self.context_summary.num_res_blocks,
             'context_summary_dropout':         self.context_summary.dropout,
-            'gate_feat_dim':                   self._GATE_FEAT_DIM,
+            'gate_feat_dim':                   self.context_summary.out_dim,
             'z_ctx_detached_for_gate':         True,
+            'gate_input':                      'z_ctx_detach',
             'context_head_type':               'mlp',
-            'moe_insertion_point':             'post_secondfpn',
             'moe_input_channels':              self.channels,
+            'ctx_gate_warmup_epochs':          self.ctx_gate_warmup_epochs,
+            'router_temperature':              self.router_temperature,
+            'gate_type':                       self.gate_type,
+            'dense_dispatch':                  self._dense_dispatch,
         }
 
         # Router-scale diagnostics from clean / noisy logits.

@@ -79,12 +79,22 @@ input_modality = dict(use_lidar=True, use_camera=False)
 backend_args = None
 
 # ── MoE configuration ────────────────────────────────────────────────────
-# 3 experts, dense softmax dispatch (k = num_experts = 3).  Ablation of
-# the 4-expert run (4557330): routing in that run converged to a clean
-# 3-way split (urban→E1, highway→E2, rural→E3) with expert_0 chronically
-# underutilised (<10% top-1 freq by epoch 4).  This run removes the dead
-# expert and tests whether forcing the gate to commit to exactly 3
-# specialists improves AP or routing stability.
+# 3 experts, dense softmax dispatch (k = num_experts = 3).
+# Corrected version of run 4560094 — same 3-expert capacity, but with
+# clip_grad max_norm restored to 10 and eta_min phase-1 restored to 5e-4
+# (matching the baseline 4543546), and all lr_mult=1.0 (already correct
+# in 4560094 but clipping was limiting second-half gains).
+#
+# Routing evidence from 4560094 (confirmed at ep8) and 4557330:
+#   - ZOD has 3 natural semantic regimes:
+#       E0 = rural  (smaller-rural + arterial-rural)
+#       E1 = highway (93% top-1 by ep8)
+#       E2 = urban   (city + arterial-urban)
+#   - 4557330 (4 experts) confirmed: E0 was chronically dead (4–6%
+#     top-1 across all 16 epochs).  A 4th expert finds no role.
+#   - arterial-urban correctly sits between E0/E2 (~50/50), reflecting
+#     its genuinely ambiguous semantic position.
+# 3 experts is the right inductive bias for this dataset.
 num_experts = 3
 
 bev_moe_cfg = dict(
@@ -109,7 +119,7 @@ bev_moe_cfg = dict(
     # sum-of-probs across experts).  Kept at 0.001 (per 4551963 post-
     # mortem) — small enough not to crush nascent specialisation, large
     # enough to prevent collapse onto a single expert.
-    importance_coef=0.001,
+    importance_coef=0.02,
     # Shazeer Gaussian-CDF load loss — no-op under TopkGate (no noise
     # to integrate over) and irrelevant under dense (every expert is
     # always selected).  Left at 0.
@@ -433,7 +443,7 @@ lr = 5e-5
 param_scheduler = [
     dict(
         type='CosineAnnealingLR',
-        T_max=8, eta_min=lr * 8,
+        T_max=8, eta_min=lr * 10,
         begin=0, end=8, by_epoch=True, convert_to_iter_based=True),
     dict(
         type='CosineAnnealingLR',
@@ -498,21 +508,23 @@ test_cfg = dict()
 # relative to the feature distribution it was routing over, causing AP
 # oscillation (0.255→0.214→0.250→0.239→0.228 across epochs 5-9).
 #
-# Fixes applied for this run:
-#   1. bbox_head raised to 1.0× — matches baseline treatment; head can
-#      learn box regression / classification at the same gradient scale
-#      as 4543546.
-#   2. bev_moe.gate lowered to 0.3× — at peak LR (2e-4) this gives the
-#      gate 6e-5, comparable to the backbone (2e-5) and preventing the
-#      gate from chasing a moving target during warmup.
-#   3. Warmup peak lowered lr*10 → lr*8 (5e-4 → 4e-4) — modest reduction
-#      to cut gate noise during warmup; bbox_head gets 4e-4 (vs 1.5e-4
-#      in 4557330 and 5e-4 in baseline), gate gets 1.2e-4 (vs 5e-4).
+# Fixes relative to 4557330:
+#   1. bbox_head/pts_backbone/pts_neck all raised to 1.0× — matches
+#      baseline (4543546) treatment.  The 0.1×/0.3× suppression in 4557330
+#      was the root cause of underperformance: backbone at 5e-6 effective
+#      LR was essentially frozen, forcing the MoE to route over static
+#      features.  The gate at 1.0× then over-updated relative to the frozen
+#      backbone, causing AP oscillation across epochs 5-9.
+#   2. clip_grad max_norm raised 2 → 10 — matches baseline.  max_norm=2
+#      was bundled with the LR suppression as a joint stability package for
+#      the top-k sparse runs; the dense gate has smooth soft-weighted
+#      gradients and does not need it.  Keeping 2 while restoring lr_mult=1.0
+#      would have partially cancelled the LR restoration on large-gradient
+#      steps.
+#   3. Warmup eta_min restored lr*8 → lr*10 (4e-4 → 5e-4) — matches
+#      baseline scheduler exactly.
 #
-#   pts_backbone, pts_neck — lr_mult=1.0 (NuScenes→ZOD gap large enough
-#                            to warrant full adaptation; post_neck MoE
-#                            placement means no routing perturbation
-#                            flows back through these layers).
+#   pts_backbone, pts_neck — lr_mult=1.0.
 #   bbox_head              — lr_mult=1.0.
 #   bev_moe.gate           — lr_mult=1.0, decay_mult=0.01 (light wd to
 #                            prevent logit magnitude collapse).
@@ -523,7 +535,7 @@ test_cfg = dict()
 optim_wrapper = dict(
     type='AmpOptimWrapper',
     optimizer=dict(type='AdamW', lr=lr, weight_decay=0.01),
-    clip_grad=dict(max_norm=2, norm_type=2),
+    clip_grad=dict(max_norm=10, norm_type=2),
     loss_scale='dynamic',
     paramwise_cfg=dict(
         custom_keys={

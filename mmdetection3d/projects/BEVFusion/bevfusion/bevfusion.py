@@ -41,8 +41,27 @@ class BEVFusion(Base3DDetector):
         This is the ONLY variant that uses ConvFuser.
 
     Variant D ``bev_moe_cfg`` (no camera branch)
-        LiDAR-only — BEVMoEBlock directly on the LiDAR BEV.
+        LiDAR-only — BEVMoEBlock on the LiDAR BEV.
         No fusion of any kind.
+
+    **MoE insertion point** — controlled by ``bev_moe_position``:
+
+    ``'post_neck'`` (default)
+        BEVMoEBlock is placed after ``pts_neck`` (SECONDFPN), operating
+        on the 512-ch concatenated FPN output, immediately before the
+        detection head.  Experts see semantically rich multi-scale
+        features but any init-time perturbation lands directly on the
+        TransFusionHead's expected input distribution.
+
+    ``'pre_backbone'``
+        BEVMoEBlock is placed before ``pts_backbone``, on the raw BEV
+        from ``pts_middle_encoder`` (256-ch for the standard SECOND
+        setup).  Both the backbone and the neck (SECONDFPN) renormalise
+        the expert output via their BN layers before it reaches the
+        head, so init-time feature perturbations are absorbed and the
+        heatmap-loss spike at epoch 0 is eliminated without having to
+        reduce ``_LAST_BN_GAMMA_STD``.  ``bev_moe_cfg.channels`` must
+        match the middle-encoder output channels (typically 256).
     """
 
     def __init__(
@@ -66,6 +85,9 @@ class BEVFusion(Base3DDetector):
         modality_specific_moe_cfg: Optional[dict] = None,
         # Variant C/D – post-fusion / LiDAR-only MoE:
         bev_moe_cfg: Optional[dict] = None,
+        # Insertion point for bev_moe: 'post_neck' (after SECONDFPN,
+        # default) or 'pre_backbone' (before pts_backbone, before neck).
+        bev_moe_position: str = 'post_neck',
         **kwargs,
     ) -> None:
         voxelize_cfg = data_preprocessor.pop('voxelize_cfg')
@@ -111,6 +133,12 @@ class BEVFusion(Base3DDetector):
 
         # Variant C/D – post-fusion or LiDAR-only BEVMoEBlock.
         self.bev_moe = MODELS.build(bev_moe_cfg) if bev_moe_cfg else None
+
+        if bev_moe_position not in ('post_neck', 'pre_backbone'):
+            raise ValueError(
+                f"bev_moe_position must be 'post_neck' or 'pre_backbone', "
+                f"got '{bev_moe_position}'.")
+        self.bev_moe_position = bev_moe_position
 
         # Accumulator for MoE auxiliary losses; populated in extract_feat(),
         # consumed in loss(), then reset on the next forward.
@@ -318,17 +346,23 @@ class BEVFusion(Base3DDetector):
             No ConvFuser.
 
         Variant C  ``self.fusion_layer`` + ``self.bev_moe``
-            (cam_bev, lidar_bev) → ConvFuser → backbone → neck →
-            BEVMoEBlock → bbox_head.
+            (cam_bev, lidar_bev) → ConvFuser → [MoE if pre_backbone] →
+            backbone → neck → [MoE if post_neck] → bbox_head.
             This is the ONLY variant that uses ConvFuser.
 
         Variant D  ``self.bev_moe`` (no camera branch)
-            lidar_bev → backbone → neck → BEVMoEBlock → bbox_head.
-            MoE operates on the 512-ch SECONDFPN output (post-neck,
-            pre-head) so experts see semantically rich features.
+            lidar_bev → [MoE if pre_backbone] → backbone → neck →
+            [MoE if post_neck] → bbox_head.
 
         Baseline  ``self.fusion_layer`` only (no MoE)
             (cam_bev, lidar_bev) → ConvFuser → fused_bev.
+
+        The insertion point is controlled by ``self.bev_moe_position``:
+        ``'post_neck'`` (default) applies MoE after SECONDFPN on the
+        512-ch output; ``'pre_backbone'`` applies it before pts_backbone
+        on the middle-encoder output (typically 256-ch), letting both
+        backbone and neck absorb the init-time perturbation before it
+        reaches the detection head.
         """
         self._moe_aux_loss = None
         moe_aux_parts: List[Tensor] = []
@@ -405,16 +439,27 @@ class BEVFusion(Base3DDetector):
                 f'maps ({len(features)})')
             x = features[0]
 
-        # ── 4. Backbone + Neck ────────────────────────────────────────
+        # ── 4a. Pre-backbone MoE (bev_moe_position='pre_backbone') ───
+        # BEVMoEBlock operates on the middle-encoder BEV (typically
+        # 256-ch) BEFORE pts_backbone.  Both backbone and neck renormalise
+        # the expert output via their BN layers before it reaches the
+        # detection head, so init-time perturbations are absorbed and the
+        # heatmap-loss spike observed in post-neck placement is avoided.
+        if self.bev_moe is not None and self.bev_moe_position == 'pre_backbone':
+            x_bev, bev_info = self.bev_moe(x, batch_input_metas)
+            moe_aux_parts.append(bev_info['aux_loss'])
+            x = x_bev
+
+        # ── 4b. Backbone + Neck ───────────────────────────────────────
         x = self.pts_backbone(x)
         x = self.pts_neck(x)
 
-        # ── 5. Post-FPN MoE (Variant C / D) — operates on SECONDFPN ──
+        # ── 5. Post-neck MoE (bev_moe_position='post_neck', default) ──
         # BEVMoEBlock receives the 512-ch SECONDFPN output so its
         # residual-CNN summary encoders see semantically rich, multi-scale
         # fused features.  The neck returns a 1-tuple; we unpack/repack
         # around the MoE call so the bbox_head receives the expected format.
-        if self.bev_moe is not None:
+        if self.bev_moe is not None and self.bev_moe_position == 'post_neck':
             x_bev = x[0] if isinstance(x, (tuple, list)) else x
             x_bev, bev_info = self.bev_moe(x_bev, batch_input_metas)
             moe_aux_parts.append(bev_info['aux_loss'])

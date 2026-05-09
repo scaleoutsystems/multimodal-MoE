@@ -432,6 +432,7 @@ class MoERoutingHook(Hook):
                 'noise_scale', 'noise_epsilon',
                 'noise_to_clean_std_ratio',
                 'ctx_logits_mean_abs',
+                'router_temperature',
             ):
                 v = info.get(src_key)
                 if v is None:
@@ -439,6 +440,18 @@ class MoERoutingHook(Hook):
                 stats = acc['logit_stats'].setdefault(src_key, [0.0, 0])
                 stats[0] += float(v)
                 stats[1] += 1
+
+    def before_train_epoch(self, runner) -> None:
+        """Advance the router temperature-annealing schedule on all MoE blocks."""
+        epoch = runner.epoch
+        model = runner.model
+        if is_model_wrapper(model):
+            model = model.module
+        for block_name in ('bev_moe', 'joint_modality_moe',
+                           'modality_specific_moe'):
+            block = getattr(model, block_name, None)
+            if block is not None and hasattr(block, 'set_epoch'):
+                block.set_epoch(epoch)
 
     def after_train_iter(self, runner, batch_idx, data_batch=None,
                          outputs=None) -> None:

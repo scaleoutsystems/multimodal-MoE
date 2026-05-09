@@ -26,13 +26,18 @@ while biasing the descriptor toward context-relevant BEV structure.
 
 All variants use :class:`BEVResSummaryEncoder` for descriptor extraction.
 
-Variant D (LiDAR-only, ``BEVMoEBlock``) uses two independent branches::
+Variant D (LiDAR-only, ``BEVMoEBlock``) uses a single context-CE encoder
+and feeds ``z_ctx.detach()`` straight to the gate::
 
-    z_router   = router_summary(x_bev)            # task / routing branch
     z_ctx      = context_summary(x_bev)           # context-CE branch
-    z_gate     = cat([z_router, z_ctx.detach()])  # gate sees both; no ctx grad
-    gate_out   = gate(z_gate)
+    z_gate     = z_ctx.detach()                   # fixed input space for gate
+    gate_out   = gate(z_gate)                     # task-driven Linear → top-k
     ctx_logits = context_head(z_ctx)              # full grad through z_ctx
+
+The gate's ``Linear`` weights still receive task gradient via the dispatch
+path (top-k weights → expert outputs → detection loss), so the *router*
+is task-driven; what's anchored to context is the *input space* of the
+gate, not the routing decision itself.
 
 Variants A/B (joint/modality-specific) use one encoder per modality::
 
@@ -76,6 +81,29 @@ Default ``k = 2`` is intentional:
 
 Do not hard-code ``num_experts == num_context_classes`` and do not switch to
 top-1 "context-class" routing — expert dispatch is task-driven.
+
+Dense dispatch (``gate_type='dense'``)
+--------------------------------------
+When the router's dense softmax probabilities are bunched within a few
+percent of uniform (typical of small-E setups with mild specialisation),
+top-k dispatch acts as a discontinuous cliff: tiny logit perturbations
+flip top-k membership, the bottom experts get zero detection gradient on
+that sample, and validation routing oscillates because of the
+noisy-vs-clean / train-vs-val mismatch around the cliff.  ``BEVMoEBlock``
+exposes ``gate_type='dense'`` to bypass the cliff by mixing all experts
+with their full softmax probabilities (``k`` is forced to ``num_experts``
+internally).  Trade-offs:
+
+* **Pro**: every expert always receives gradient (weight ``p_e``, never
+  zero), no discontinuous switching, identical routing in train and val.
+* **Con**: ``num_experts`` × the FLOPs of a single-expert forward —
+  budget for that or reduce E if compute is tight.
+
+Under dense, ``importance_loss`` and ``router_z_loss`` still bite (soft
+balance and logit-scale anchoring); ``switch_balance_loss`` becomes a
+useless constant α and ``BEVMoEBlock`` short-circuits it to zero
+regardless of the configured coefficient.  ``load_loss`` is a no-op
+under :class:`TopkGate` either way (no Gaussian noise to integrate).
 
 LayerNorm as final activation
 ------------------------------
@@ -236,18 +264,39 @@ class BEVResSummaryEncoder(nn.Module):
            BasicBEVResBlock(stem_channels, out_channels)
        The last block widens channels if ``stem_channels != out_channels``.
        Spatial structure is preserved (no pooling/striding) so all three
-       blocks learn spatial patterns before global compression.
+       blocks learn spatial patterns before grid pooling.
 
-    3. **Pooling / vectorisation**:
-           AdaptiveAvgPool2d(1)      → (B, out_channels, 1, 1)
-           Flatten                  → (B, out_channels)
-           Linear(out_channels → out_dim) → (B, out_dim)
-           LayerNorm(out_dim)       → signed, unit-variance descriptor
-           Dropout(dropout)         → regularisation
+    3. **Avg + max grid pooling / vectorisation** (replaces the previous
+       global average pooling):
+           AdaptiveAvgPool2d((P, P))   → (B, out_channels, P, P)
+           AdaptiveMaxPool2d((P, P))   → (B, out_channels, P, P)
+           cat along channel dim       → (B, 2·out_channels, P, P)
+           Flatten                    → (B, 2·out_channels·P·P)
+           Linear(2·out_channels·P·P → out_dim) → (B, out_dim)
+           LayerNorm(out_dim)         → signed, unit-variance descriptor
+           Dropout(dropout)           → regularisation
 
-    Rationale: spatial reasoning first → global pooling → descriptor
-    vector.  This follows the same pattern as ResNet feature extraction
-    used in the CIFAR MoE reference experiment.
+    Rationale
+    ---------
+    The previous design used a single ``AdaptiveAvgPool2d(1)`` which
+    collapses the entire BEV feature map into one vector per channel
+    before projection.  That global compression discards routing-
+    relevant spatial structure such as front/back occupancy patterns,
+    sparse-vs-dense scene layout, long-range highway geometry, urban
+    clutter distribution, and coarse spatial context differences
+    between road types.  Replacing the GAP step with avg + max grid
+    pooling at a small ``P × P`` (default 4 × 4) keeps the residual
+    CNN exactly as-is while preserving a coarse, fixed-size spatial
+    summary of the BEV.  Concatenating both pooled tensors along the
+    channel axis lets the projection see *average activation* and
+    *peak activation* per cell, which together carry both density and
+    salience cues that a single mean over the map cannot express.
+
+    The intent is to improve routing/context separability for different
+    driving regimes (highway vs city vs rural) without adding any
+    attention pooling, extra CNN stages, stride/downsampling changes,
+    transformer layers, or metadata fusion — only the pooling and
+    projection input dimension change.
 
     All intermediate normalisation is GroupNorm (no running statistics)
     so the descriptor is identical in train and eval mode.  See the
@@ -265,6 +314,14 @@ class BEVResSummaryEncoder(nn.Module):
                        dim per branch).  Exposed as ``self.out_dim``.
                        Default 256.
         dropout:       Dropout probability after LayerNorm.  Default 0.2.
+        pool_size:     Spatial side length ``P`` of the avg + max grid
+                       pooling output.  The descriptor is computed from
+                       a ``(B, 2·out_channels, P, P)`` tensor.  Default
+                       4 (i.e. a 4 × 4 grid summary, 16 spatial cells).
+                       Set to 1 to recover a near-GAP behaviour (avg+max
+                       over the whole map, still doubled by the max
+                       branch).  Larger values preserve more spatial
+                       layout at the cost of a wider projection Linear.
     """
 
     def __init__(
@@ -274,8 +331,11 @@ class BEVResSummaryEncoder(nn.Module):
         out_channels: int = 256,
         out_dim: int = 256,
         dropout: float = 0.2,
+        pool_size: int = 4,
     ) -> None:
         super().__init__()
+        assert pool_size >= 1, f'pool_size must be ≥ 1, got {pool_size}'
+
         self.stem = nn.Sequential(
             nn.Conv2d(channels, stem_channels, kernel_size=3,
                       padding=1, bias=False),
@@ -287,10 +347,21 @@ class BEVResSummaryEncoder(nn.Module):
             BasicBEVResBlock(stem_channels, stem_channels),
             BasicBEVResBlock(stem_channels, out_channels),
         )
-        self.pool = nn.AdaptiveAvgPool2d(1)
+
+        # Avg + max grid pooling: produces two (B, out_channels, P, P)
+        # tensors concatenated along the channel axis.  The avg branch
+        # carries mean activation per cell (density / occupancy cue);
+        # the max branch carries peak activation per cell (salience /
+        # presence cue).  Together they give the projection both kinds
+        # of spatial summary at a fixed (P × P) resolution.
+        self.avg_pool = nn.AdaptiveAvgPool2d((pool_size, pool_size))
+        self.max_pool = nn.AdaptiveMaxPool2d((pool_size, pool_size))
+
+        # Projection input width: 2 · out_channels (avg ⊕ max) · P · P.
+        pooled_dim = 2 * out_channels * pool_size * pool_size
         self.proj = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(out_channels, out_dim),
+            nn.Linear(pooled_dim, out_dim),
             nn.LayerNorm(out_dim),
             nn.Dropout(dropout),
         )
@@ -300,9 +371,18 @@ class BEVResSummaryEncoder(nn.Module):
         self.out_channels = out_channels
         self.num_res_blocks = 3
         self.dropout = dropout
+        self.pool_size = pool_size
+        self.pooled_dim = pooled_dim
 
     def forward(self, x: Tensor) -> Tensor:
         """Encode a BEV feature map into a fixed-size descriptor.
+
+        Spatial structure is preserved through the residual conv blocks
+        and then summarised by avg + max grid pooling at a fixed
+        ``(pool_size, pool_size)`` resolution; no global average pooling
+        is used.  Concatenating along the channel axis keeps the
+        per-cell mean and per-cell max signals jointly available to the
+        projection MLP.
 
         Args:
             x: BEV feature map ``(B, C, H, W)``.
@@ -312,7 +392,12 @@ class BEVResSummaryEncoder(nn.Module):
         """
         x = self.stem(x)         # (B, stem_channels, H, W)
         x = self.res_blocks(x)   # (B, out_channels, H, W)
-        x = self.pool(x)         # (B, out_channels, 1, 1)
+
+        x_avg = self.avg_pool(x)  # (B, out_channels, P, P)
+        x_max = self.max_pool(x)  # (B, out_channels, P, P)
+
+        x = torch.cat([x_avg, x_max], dim=1)  # (B, 2·out_channels, P, P)
+
         return self.proj(x)      # (B, out_dim)
 
 
@@ -475,8 +560,17 @@ class TopkGate(nn.Module):
         assert temperature > 0.0, 'temperature must be positive'
         self.num_experts = num_experts
         self.k = k
-        self.temperature = temperature
+        self.temperature = float(temperature)
         self.gate = nn.Linear(feat_dim, num_experts)
+
+    def set_temperature(self, temperature: float) -> None:
+        """Update the active softmax temperature (used for warmup schedules).
+
+        Called by :class:`BEVMoEBlock` each forward pass to apply a
+        linearly-decaying temperature that keeps routing high-entropy while
+        the context descriptor is still weak in early epochs.
+        """
+        self.temperature = max(1e-6, float(temperature))
 
     def forward(self, feat: Tensor) -> GateOutput:
         """Route based on the BEV summary descriptor ``feat``.
@@ -627,7 +721,7 @@ class NoisyTopkGate(nn.Module):
 
         self.num_experts = num_experts
         self.k = k
-        self.temperature = temperature
+        self.temperature = float(temperature)
         self.noise_epsilon = float(noise_epsilon)
         self.noise_scale = float(noise_scale)
         self.max_noise_to_clean_ratio = max_noise_to_clean_ratio
@@ -640,6 +734,15 @@ class NoisyTopkGate(nn.Module):
 
         if noise_bias_init is not None:
             nn.init.constant_(self.w_noise.bias, noise_bias_init)
+
+    def set_temperature(self, temperature: float) -> None:
+        """Update the active softmax temperature (used for warmup schedules).
+
+        Called by :class:`BEVMoEBlock` each forward pass to apply a
+        linearly-decaying temperature that keeps routing high-entropy while
+        the context descriptor is still weak in early epochs.
+        """
+        self.temperature = max(1e-6, float(temperature))
 
     def forward(self, feat: Tensor) -> GateOutput:
         """Route based on the BEV summary descriptor ``feat``.
