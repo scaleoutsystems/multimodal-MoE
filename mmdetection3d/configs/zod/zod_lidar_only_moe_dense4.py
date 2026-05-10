@@ -112,7 +112,7 @@ bev_moe_cfg = dict(
     # sum-of-probs across experts).  Kept at 0.001 (per 4551963 post-
     # mortem) — small enough not to crush nascent specialisation, large
     # enough to prevent collapse onto a single expert.
-    importance_coef=0.02,
+    importance_coef=0.005,
     # Shazeer Gaussian-CDF load loss — no-op under TopkGate (no noise
     # to integrate over) and irrelevant under dense (every expert is
     # always selected).  Left at 0.
@@ -136,16 +136,22 @@ bev_moe_cfg = dict(
     # means block(x) ≈ ε·delta at init; residual_gain=1.0 leaves the dispatch
     # weight unscaled once experts diverge.
     residual_gain=1.0,
-    # Context-supervised routing — kept at loss_coef=0.10 (the better of
-    # the two settings tried, per canvas).  ctx_aux_acc was 0.71 at val
-    # in 4552697 with this coefficient; the per-class accuracies show
-    # the road_type signal is being learned (highway 92%, city 60%).
-    # The dense regime doesn't change the role of ctx_aux — it still
-    # shapes z_ctx (the gate input) into a context-discriminative
-    # descriptor while leaving expert specialisation task-driven.
+    # Context-supervised routing — reduced loss_coef from 0.10 → 0.03.
+    # In the 4562173 / 4562168 dense runs ctx CE sat at ~1.1 mid-training,
+    # so loss_coef=0.10 was contributing ~0.11 to total loss — about 8%
+    # of the total budget shaped by road_type rather than detection (see
+    # canvas dense-moe-vs-baseline-4562173-4562168 §5).  Lowering to 0.03
+    # cuts that to ~2.5% while still providing enough gradient to keep
+    # z_ctx context-discriminative: ctx_aux_acc was 0.71 at val with
+    # coef=0.10 and the per-class signal is strong (highway 92%, city
+    # 60%), so we have headroom to reduce coef without losing the
+    # routing signal.  Combined with _SUMMARY_POOL_SIZE=2 in
+    # BEVMoEBlock, total context_summary footprint shrinks from ~4M to
+    # ~2.6M params and its share of the optimiser budget shrinks from
+    # ~8% to ~2.5% — leaving more capacity for the detection task.
     context_aux_cfg=dict(
         target_field='road_type',
-        loss_coef=0.10,
+        loss_coef=0.03,
         loss_type='weighted_ce',
         label_smoothing=0.05,
         class_weights='inverse_frequency',

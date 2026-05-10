@@ -12,8 +12,8 @@ BEVMoEBlock is a single-input MoE block used for:
 Single-summary design (z_ctx-driven gate)
 ------------------------------------------
 A single ``BEVResSummaryEncoder`` branch (stem + 3 residual conv blocks +
-avg + max grid pooling at a small ``P × P``) produces the descriptor
-consumed by the gate:
+avg + max grid pooling at a small ``P × P``, default ``P = 2``) produces
+the descriptor consumed by the gate:
 
     z_ctx     — context branch; optimised by the context auxiliary CE.
 
@@ -214,11 +214,16 @@ After every forward() call, ``self._moe_info`` is written with:
     context_summary_out_dim         int  — projected descriptor dimension (256).
     context_summary_num_res_blocks  int  — number of residual blocks (3).
     context_summary_dropout         float
+    context_summary_pool_size       int  — avg+max grid pool side length P
+                                           (current default 2 → 4-cell summary).
     gate_feat_dim            int  — context_summary.out_dim (256); the gate
-                                    consumes z_ctx.detach() directly.
-    z_ctx_detached_for_gate  bool — always True in this design.
-    gate_input                str  — 'z_ctx_detach' (single-descriptor gate).
-    context_head_type        str  — 'mlp' (MLP head on z_ctx).
+                                    consumes either z_ctx.detach() or z_ctx
+                                    depending on gate_input_detach.
+    z_ctx_detached_for_gate  bool — value of self.gate_input_detach.
+    gate_input                str  — 'z_ctx_detach' (context-supervised
+                                    routing) or 'z_ctx' (task-driven routing).
+    context_head_type        str  — 'mlp' (when a context_head is configured)
+                                    or 'none' (when context_aux_cfg=None).
     moe_insertion_point      str  — 'post_secondfpn'.
     moe_input_channels       int  — input channel count (512 for Variant D).
     gate_type                str  — 'topk' | 'noisy_topk' | 'dense'.
@@ -389,6 +394,30 @@ class BEVMoEBlock(nn.Module):
         ctx_gate_temp_high:   Starting temperature for the warmup schedule.
                               Default 5.0.  Ignored when
                               ``ctx_gate_warmup_epochs == 0``.
+        gate_input_detach:    If ``True`` (default, context-supervised
+                              routing) the gate consumes ``z_ctx.detach()``
+                              and the BEVResSummaryEncoder is shaped only
+                              by the auxiliary context CE — detection
+                              gradient never reaches it.  If ``False``
+                              (task-driven routing) the gate consumes
+                              ``z_ctx`` directly so detection-loss
+                              gradient flows back through the gate's
+                              softmax → expert dispatch → expert outputs
+                              all the way into ``context_summary``.  The
+                              encoder learns whatever feature the routing
+                              decision needs to depend on for the task,
+                              with no auxiliary supervision.
+
+                              Validation: when ``gate_input_detach=True``
+                              you must also pass a ``context_aux_cfg`` —
+                              otherwise the encoder receives no gradient
+                              at all and stays at its random init for
+                              the whole run.  Conversely setting
+                              ``gate_input_detach=False`` together with a
+                              ``context_aux_cfg`` is allowed (encoder
+                              gets gradient from both sources) but is
+                              effectively a hybrid mode and not the
+                              intended use of this flag.
     """
 
     # Architecture dimensions for the context_summary BEVResSummaryEncoder.
@@ -398,6 +427,18 @@ class BEVMoEBlock(nn.Module):
     _SUMMARY_OUT_CHANNELS   = 256
     _SUMMARY_OUT_DIM        = 256
     _SUMMARY_DROPOUT        = 0.2
+    # Avg+max grid pool side length P.  Was 4 (16-cell summary, projection
+    # Linear ≈ 2.1M params); reduced to 2 (4-cell summary, projection
+    # Linear ≈ 524K params, ~1.6M fewer parameters in context_summary).
+    # The 2×2 grid still preserves the front/back × left/right gross
+    # spatial layout that drove the routing-separability win when GAP
+    # was replaced with grid pooling, but cuts the projection's share
+    # of context_summary capacity by 4×.  Empirically (canvas dense-moe-
+    # vs-baseline-4562173-4562168 §5) the routing decision is dominated
+    # by aggregate channel statistics within each spatial cell rather
+    # than fine-grained 4×4 spatial layout, so the smaller summary
+    # carries essentially the same routing signal at lower cost.
+    _SUMMARY_POOL_SIZE      = 2
 
     def __init__(
         self,
@@ -415,6 +456,7 @@ class BEVMoEBlock(nn.Module):
         gate_cfg: Optional[dict] = None,
         ctx_gate_warmup_epochs: int = 0,
         ctx_gate_temp_high: float = 5.0,
+        gate_input_detach: bool = True,
     ):
         super().__init__()
         self.channels = channels
@@ -427,6 +469,24 @@ class BEVMoEBlock(nn.Module):
         self.residual_gain = float(residual_gain)
         self.ctx_gate_warmup_epochs = int(ctx_gate_warmup_epochs)
         self.ctx_gate_temp_high = float(ctx_gate_temp_high)
+        # Whether to stop-gradient on the gate's input (default True =
+        # historical context-supervised design; False = task-driven
+        # routing where the BEVResSummaryEncoder is shaped by detection
+        # loss flowing back through the gate → expert dispatch path).
+        # Validation below ensures the encoder always has *some* gradient
+        # source — either the auxiliary CE (detach=True path) or the
+        # detection-via-gate path (detach=False path).
+        self.gate_input_detach = bool(gate_input_detach)
+        if self.gate_input_detach and context_aux_cfg is None:
+            raise ValueError(
+                'BEVMoEBlock: gate_input_detach=True with context_aux_cfg='
+                'None means the BEVResSummaryEncoder receives no gradient '
+                'from any source (context CE is disabled and detection '
+                'gradient is blocked at the detach).  The encoder would '
+                'remain at its random initialisation throughout training. '
+                'Either set gate_input_detach=False (task-driven routing) '
+                'or provide a context_aux_cfg (context-supervised '
+                'routing).')
         self._current_epoch: int = 0
 
         self.experts = make_bev_experts(num_experts, channels, num_convs)
@@ -450,6 +510,7 @@ class BEVMoEBlock(nn.Module):
             out_channels=self._SUMMARY_OUT_CHANNELS,
             out_dim=self._SUMMARY_OUT_DIM,
             dropout=self._SUMMARY_DROPOUT,
+            pool_size=self._SUMMARY_POOL_SIZE,
         )
 
         # ── Context auxiliary classification head ─────────────────────
@@ -727,14 +788,32 @@ class BEVMoEBlock(nn.Module):
         B = x_bev.shape[0]
 
         # ── Step 1: Build BEV context descriptor ──────────────────────
-        # z_ctx:  context branch — shaped by the context auxiliary CE.
-        # z_gate: z_ctx.detach() — stop-gradient so detection-loss
-        #         gradients from the gate cannot update context_summary.
-        #         The gate's own Linear weights are still task-driven via
-        #         the dispatch path (top-k weights → experts → det loss).
-        # z_ctx itself is NOT detached for context_head (full grad there).
+        # z_ctx:  context branch — its gradient sources depend on the
+        #         training mode:
+        #           * gate_input_detach=True  (default, context-
+        #             supervised): z_ctx is shaped by the auxiliary
+        #             context CE only; detection-loss gradient is
+        #             blocked from reaching context_summary by the
+        #             detach below.
+        #           * gate_input_detach=False (task-driven): z_ctx is
+        #             shaped by the detection loss flowing back through
+        #             gate → expert dispatch → expert outputs.  The
+        #             encoder learns whatever feature the routing
+        #             decision needs to depend on, with no auxiliary
+        #             supervision.
+        # z_gate: feeds the gate.  Detached when gate_input_detach=True
+        #         so the gate's input space is fixed by context CE
+        #         alone (gate Linear is still task-driven via dispatch).
+        #         Same tensor as z_ctx when gate_input_detach=False so
+        #         detection gradient flows all the way back into
+        #         context_summary.
+        # z_ctx itself is NOT detached for context_head (full grad there
+        # whenever a context_head exists).
         z_ctx  = self.context_summary(x_bev)   # (B, 256)
-        z_gate = z_ctx.detach()                # (B, 256), stop-gradient
+        if self.gate_input_detach:
+            z_gate = z_ctx.detach()            # (B, 256), stop-gradient
+        else:
+            z_gate = z_ctx                     # (B, 256), full grad through gate
 
         # ── Step 2: Gate → top-k expert selection ─────────────────────
         # Apply temperature annealing: T decays from ctx_gate_temp_high
@@ -751,18 +830,40 @@ class BEVMoEBlock(nn.Module):
         # train/val routing mismatch).  See module docstring "Dense
         # dispatch" section.  The Shazeer top-k path is preserved below
         # for ``gate_type ∈ {'topk', 'noisy_topk'}``.
-        x_out = x_bev.clone()
+        #
+        # Batched-vectorised dense mixing: each expert is called *once*
+        # per step on the full ``(B, C, H, W)`` input rather than once
+        # per sample with batch_size=1.  This restores normal BN batch
+        # statistics (per-sample loops were effectively InstanceNorm in
+        # train and updated running stats with effective momentum
+        # ``B × configured_momentum`` — both producing a real train↔eval
+        # mismatch *inside* the experts, see canvas dense-moe-vs-baseline-
+        # 4562173-4562168 §4).  It also drops wall-clock per step ~1/B
+        # because we skip ``B − 1`` redundant per-sample forward passes
+        # per expert.  The math is identical to the previous loop:
+        #
+        #     x_out = x_bev + g · Σ_e probs[:, e] · (expert_e(x_bev) − x_bev)
         if self._dense_dispatch:
             probs = gate_out.full_softmax_probs                       # (B, E)
-            for b in range(B):
-                xb = x_bev[b:b + 1]
-                delta_sum = torch.zeros_like(xb)
-                for e in range(self.num_experts):
-                    weight = probs[b, e]
-                    expert_out = self.experts[e](xb)
-                    delta_sum = delta_sum + weight * (expert_out - xb)
-                x_out[b] = (xb + self.residual_gain * delta_sum)[0]
+            delta_sum = torch.zeros_like(x_bev)
+            for e in range(self.num_experts):
+                # delta_e ∈ (B, C, H, W); expert_e(x_bev) sees full batch
+                # so its BN behaves exactly like any other batched layer.
+                delta_e = self.experts[e](x_bev) - x_bev
+                # probs[:, e] ∈ (B,) → broadcast to (B, 1, 1, 1) for
+                # per-sample dispatch weighting on the spatial map.
+                w = probs[:, e].view(-1, 1, 1, 1).to(delta_e.dtype)
+                delta_sum = delta_sum + w * delta_e
+            x_out = x_bev + self.residual_gain * delta_sum
         else:
+            # Top-k path (k < E): different samples can route to
+            # different expert subsets, so a fully-batched implementation
+            # would have to run *every* expert on *every* sample
+            # (defeating the point of top-k).  We keep the per-sample
+            # loop for correctness, accepting the BN-batch-size-1 quirk
+            # because all current production runs use ``gate_type=
+            # 'dense'``.  Treat this branch as legacy / ablation only.
+            x_out = x_bev.clone()
             for b in range(B):
                 xb = x_bev[b:b + 1]
                 delta_sum = torch.zeros_like(xb)
@@ -919,10 +1020,15 @@ class BEVMoEBlock(nn.Module):
             'context_summary_out_dim':         self.context_summary.out_dim,
             'context_summary_num_res_blocks':  self.context_summary.num_res_blocks,
             'context_summary_dropout':         self.context_summary.dropout,
+            'context_summary_pool_size':       self.context_summary.pool_size,
             'gate_feat_dim':                   self.context_summary.out_dim,
-            'z_ctx_detached_for_gate':         True,
-            'gate_input':                      'z_ctx_detach',
-            'context_head_type':               'mlp',
+            'z_ctx_detached_for_gate':         self.gate_input_detach,
+            'gate_input':                      ('z_ctx_detach'
+                                                if self.gate_input_detach
+                                                else 'z_ctx'),
+            'context_head_type':               ('mlp'
+                                                if self.context_head is not None
+                                                else 'none'),
             'moe_input_channels':              self.channels,
             'ctx_gate_warmup_epochs':          self.ctx_gate_warmup_epochs,
             'router_temperature':              self.router_temperature,
