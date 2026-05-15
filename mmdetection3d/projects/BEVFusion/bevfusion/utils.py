@@ -300,6 +300,17 @@ class HungarianAssigner3D(BaseAssigner):
 
         # 3. do Hungarian matching on CPU using linear_sum_assignment
         cost = cost.detach().cpu()
+        # Defensive sanitization: AMP forward passes occasionally produce
+        # NaN/Inf predictions on pathological batches, which then propagate
+        # into the cost matrix and crash scipy's linear_sum_assignment with
+        # "matrix contains invalid numeric entries". Replacing the offending
+        # entries with a large finite cost yields a best-effort assignment;
+        # the resulting gradients will still be non-finite and AMP's dynamic
+        # loss scaler will skip the optimizer step, so training continues
+        # instead of the entire job dying on a single bad batch.
+        if not torch.isfinite(cost).all():
+            cost = torch.nan_to_num(
+                cost, nan=1e8, posinf=1e8, neginf=-1e8)
         if linear_sum_assignment is None:
             raise ImportError('Please run "pip install scipy" '
                               'to install scipy first.')
