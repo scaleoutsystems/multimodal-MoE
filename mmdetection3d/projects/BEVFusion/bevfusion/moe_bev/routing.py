@@ -584,6 +584,13 @@ class TopkGate(nn.Module):
         """
         logits = self.gate(feat)                                       # (B, E)
 
+        # Guard against NaN/inf logits (can arise if gate weights are
+        # corrupted by a gradient update that slipped through GradScaler
+        # in a multi-GPU DDP run).  Clamping to ±30 keeps softmax
+        # numerically safe while preserving relative expert ordering.
+        logits = torch.nan_to_num(logits, nan=0.0, posinf=30.0, neginf=-30.0)
+        logits = logits.clamp(-30.0, 30.0)
+
         full_softmax_probs = F.softmax(
             logits / self.temperature, dim=-1)                         # (B, E)
 

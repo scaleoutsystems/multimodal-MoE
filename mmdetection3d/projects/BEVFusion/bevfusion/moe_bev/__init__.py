@@ -14,7 +14,8 @@ from .routing import (
     extract_context_labels,
     get_context_vocab,
 )
-from .bev_experts import BEVResidualExpert, make_bev_experts
+from .bev_experts import (BEVBottleneckResidualExpert, BEVResidualExpert,
+                           make_bev_experts)
 from .bev_moe import BEVMoEBlock
 from .joint_modality_moe import JointModalityExpert, JointModalityMoEBlock
 from .modality_specific_moe import ModalitySpecificMoEBlock
@@ -25,7 +26,7 @@ __all__ = [
     'BasicBEVResBlock', 'BEVResSummaryEncoder',
     'TopkGate', 'NoisyTopkGate',
     'ZOD_FIELD_REGISTRY', 'extract_context_labels', 'get_context_vocab',
-    'BEVResidualExpert', 'make_bev_experts',
+    'BEVBottleneckResidualExpert', 'BEVResidualExpert', 'make_bev_experts',
     'BEVMoEBlock',
     'JointModalityExpert', 'JointModalityMoEBlock',
     'ModalitySpecificMoEBlock',

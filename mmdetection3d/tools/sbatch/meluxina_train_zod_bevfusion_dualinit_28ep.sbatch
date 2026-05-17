@@ -1,21 +1,25 @@
 #!/bin/bash
 # =============================================================================
-# Meluxina Slurm: Variant A — Joint-Modality MoE / ZOD (4× A100, single node)
+# Meluxina Slurm: BEVFusion dual-init baseline / ZOD — 28 epochs (4× A100, single node)
 # =============================================================================
-# Camera + LiDAR BEVFusion with JointModalityMoEBlock replacing ConvFuser.
-# Each expert independently fuses cam_bev + lidar_bev → fused_bev via the
-# bottleneck fusion pathway (1×1 + 3×3 + 1×1, hidden_channels=128).  Dual-init
-# warm-start (DualCheckpointInitHook) is inherited from
-# zod_bevfusion_dualinit_28ep.py; only the MoE block is randomly initialised.
+# Iso-budget version of the dual-init baseline shared with the MoE
+# variants (zod_moe_modality_specific / zod_moe_joint_modality /
+# zod_moe_fusion_then), all configured to 28 epochs.
+#
+# 28 epochs is the largest unified epoch budget that fits every variant
+# (non-MoE *and* every MoE variant) within the 48-hour wall-time limit:
+#   * dual-init, no MoE                        ≈ 39 h
+#   * dual-init + dense-4 BEV MoE              ≈ 43 h
+#   * dual-init + modality-specific / joint    ≈ 45 h  (≥2.5 h margin)
 #
 # Submit:
-#   sbatch ~/projects/multimodal-MoE/mmdetection3d/tools/sbatch/run_moe_joint_modality.sbatch
+#   sbatch ~/projects/multimodal-MoE/mmdetection3d/tools/sbatch/meluxina_train_zod_bevfusion_dualinit_28ep.sbatch
 #
 # Watch progress:
-#   tail -f ~/projects/multimodal-MoE/outputs/runs/slurm_logs/moe-joint-modality-<JOBID>.out
+#   tail -f ~/projects/multimodal-MoE/outputs/runs/slurm_logs/bevfusion-dualinit-28ep-<JOBID>.out
 # =============================================================================
 
-#SBATCH --job-name=moe-joint-modality
+#SBATCH --job-name=bevfusion-dualinit-28ep
 #SBATCH --account=p201222
 #SBATCH --qos=default
 #SBATCH --partition=gpu
@@ -26,7 +30,7 @@
 #SBATCH --gpus-per-task=1
 #SBATCH --cpus-per-task=8
 #SBATCH --constraint=40ga100
-#SBATCH --time=48:00:00
+#SBATCH --time=42:00:00
 #SBATCH --output=/home/users/%u/projects/multimodal-MoE/outputs/runs/slurm_logs/%x-%j.out
 #SBATCH --error=/home/users/%u/projects/multimodal-MoE/outputs/runs/slurm_logs/%x-%j.err
 
@@ -63,7 +67,6 @@ export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export NCCL_DEBUG="${NCCL_DEBUG:-WARN}"
 
-# ── Python env ────────────────────────────────────────────────────────────
 CONDA_ENV_NAME="${CONDA_ENV_NAME:-multimodal-moe}"
 CONDA_ROOT="${CONDA_ROOT:-}"
 if [[ -z "${CONDA_ROOT}" ]]; then
@@ -89,37 +92,32 @@ export CONDA_PREFIX="${ENV_PREFIX}"
 export CONDA_DEFAULT_ENV="${CONDA_ENV_NAME}"
 export PATH="${ENV_PREFIX}/bin:${PATH}"
 echo "Using PYTHON=${PYTHON}"
-
-# ── Sanity check: MoE + camera modules + dual-init hook are registered ───
 "${PYTHON}" -c "
 import sys
 print('python', sys.executable)
 import torch
 print('torch', torch.__version__)
 import projects.BEVFusion.bevfusion  # noqa: F401
-import mmdet3d.engine.hooks  # noqa: F401
+import mmdet3d.engine.hooks  # ensure all custom hooks are registered  # noqa: F401
 from mmdet3d.registry import MODELS, HOOKS
-assert 'BEVFusion' in MODELS.module_dict, 'BEVFusion not registered'
-assert 'JointModalityMoEBlock' in MODELS.module_dict, \
-    'JointModalityMoEBlock not registered'
-assert 'JointModalityExpert' in MODELS.module_dict, \
-    'JointModalityExpert not registered'
-for cls_name in ('DepthLSSTransform', 'GeneralizedLSSFPN'):
+assert 'BEVFusion' in MODELS.module_dict, (
+    'BEVFusion not in mmdet3d registry (custom import chain failed — often bev_pool_ext missing; '
+    'camera+LiDAR BEVFusion needs bev_pool_ext CUDA extension built)'
+)
+print('BEVFusion registered OK')
+for cls_name in ('DepthLSSTransform', 'ConvFuser', 'GeneralizedLSSFPN'):
     assert cls_name in MODELS.module_dict, f'{cls_name} not registered'
-print('Camera-side modules + JointModalityMoEBlock registered OK')
-for hook_name in ('DualCheckpointInitHook', 'MoERoutingHook',
-                   'ContextRoutingStatsHook',
-                   'ContextExpertUsageVisualizationHook'):
-    assert hook_name in HOOKS.module_dict, f'{hook_name} not registered'
-print('Dual-init + MoE hooks registered OK')
+print('Camera-side modules registered OK')
+assert 'DualCheckpointInitHook' in HOOKS.module_dict, (
+    'DualCheckpointInitHook not registered — check mmdet3d/engine/hooks/__init__.py')
+print('DualCheckpointInitHook registered OK')
 " || {
-  echo 'ERROR: env sanity check failed (MoE / camera / dual-init).' >&2
+  echo "ERROR: env sanity check failed (torch / BEVFusion / DualCheckpointInitHook import)." >&2
   exit 1
 }
 
-# ── Launch ────────────────────────────────────────────────────────────────
-CONFIG="${CONFIG:-configs/zod/zod_moe_joint_modality.py}"
-DEFAULT_WORK_PARENT="${MOE_ROOT}/outputs/runs/zod_moe_joint_modality"
+CONFIG="${CONFIG:-configs/zod/zod_bevfusion_dualinit_28ep.py}"
+DEFAULT_WORK_PARENT="${MOE_ROOT}/outputs/runs/zod_bevfusion_dualinit_28ep"
 WORK_DIR="${WORK_DIR:-${DEFAULT_WORK_PARENT}/${SLURM_JOB_NAME}_${SLURM_JOB_ID}}"
 mkdir -p "${WORK_DIR}"
 

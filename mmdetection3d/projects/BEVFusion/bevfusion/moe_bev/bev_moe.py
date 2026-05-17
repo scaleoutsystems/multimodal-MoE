@@ -320,7 +320,20 @@ class BEVMoEBlock(nn.Module):
         channels:             Number of BEV feature channels (input == output).
         num_experts:          Number of expert modules.
         k:                    Top-k experts selected per sample (default 2).
-        num_convs:            Conv layers inside each BEVResidualExpert.
+        num_convs:            Conv layers inside each legacy
+                              ``BEVResidualExpert``.  Ignored when
+                              ``expert_type='bottleneck'`` (default), which
+                              has a fixed reduce/spatial/expand structure.
+        expert_type:          ``'bottleneck'`` (default,
+                              :class:`BEVBottleneckResidualExpert`,
+                              identity-init residual adapter, ~12× cheaper
+                              under dense dispatch) or ``'full'`` (legacy
+                              :class:`BEVResidualExpert` operating at the
+                              full channel count ``C``).
+        expert_hidden_channels:
+                              Bottleneck width for the bottleneck expert.
+                              Default 128.  Ignored when
+                              ``expert_type='full'``.
         importance_coef:      Weight α for the Shazeer importance loss.
         load_coef:            Weight α for the Shazeer load loss.
         switch_balance_coef:  Weight α for the Switch balance loss, computed
@@ -457,6 +470,8 @@ class BEVMoEBlock(nn.Module):
         ctx_gate_warmup_epochs: int = 0,
         ctx_gate_temp_high: float = 5.0,
         gate_input_detach: bool = True,
+        expert_type: str = 'bottleneck',
+        expert_hidden_channels: int = 128,
     ):
         super().__init__()
         self.channels = channels
@@ -489,7 +504,13 @@ class BEVMoEBlock(nn.Module):
                 'routing).')
         self._current_epoch: int = 0
 
-        self.experts = make_bev_experts(num_experts, channels, num_convs)
+        self.expert_type = str(expert_type).lower()
+        self.expert_hidden_channels = int(expert_hidden_channels)
+        self.experts = make_bev_experts(
+            num_experts, channels,
+            num_convs=num_convs,
+            expert_type=self.expert_type,
+            hidden_channels=self.expert_hidden_channels)
 
         # ── Single BEVResSummaryEncoder branch ────────────────────────
         # context_summary is the *only* descriptor encoder; it is trained
@@ -785,6 +806,33 @@ class BEVMoEBlock(nn.Module):
             x_out:    BEV feature map (B, C, H, W) after expert processing.
             moe_info: Diagnostics dict (see module docstring).
         """
+        # ── Step 0: NaN/Inf guard on the incoming BEV feature map ─────
+        # A single transient fp16 overflow in an upstream layer (SECONDFPN
+        # under AmpOptimWrapper with dynamic loss-scale at the high end of
+        # its range) can emit non-finite values into x_bev.  Without a
+        # guard here, those NaN/Inf:
+        #   1) propagate through the experts' BN, updating the running
+        #      stats buffers with NaN (running_mean/var are buffer-
+        #      updated during forward regardless of whether the optimizer
+        #      step is later skipped by GradScaler; the bevfusion.py
+        #      after-backward _repair_bn_stats helper undoes this only
+        #      for batches whose *total* loss was non-finite),
+        #   2) flow through context_summary → LayerNorm in the context
+        #      head, producing NaN ctx_logits and a NaN
+        #      ``moe_ctx_aux_loss_weighted`` term that contaminates the
+        #      total loss for the rest of the run.
+        # Replacing non-finite values with zero is a no-op on healthy
+        # iters and matches the existing point-cloud sanitisation in
+        # BEVFusion.extract_pts_feat.
+        if not torch.isfinite(x_bev).all():
+            import logging as _logging
+            _logging.getLogger('mmengine').warning(
+                'BEVMoEBlock: NaN/Inf in input x_bev '
+                f'({(~torch.isfinite(x_bev)).sum().item()} bad values) — '
+                'replacing with zeros before MoE forward.')
+            x_bev = torch.nan_to_num(
+                x_bev, nan=0.0, posinf=0.0, neginf=0.0)
+
         B = x_bev.shape[0]
 
         # ── Step 1: Build BEV context descriptor ──────────────────────
@@ -932,6 +980,29 @@ class BEVMoEBlock(nn.Module):
                 f'context_head produced unexpected shape '
                 f'{tuple(ctx_logits.shape)}; expected '
                 f'(B, num_context_classes)')
+
+            # Defensive NaN/Inf guard immediately before CE.  Even with
+            # the Step-0 input guard above, the context_head's own
+            # Linear/LayerNorm/Dropout stack can on rare batches emit
+            # non-finite logits under fp16 — e.g. when an upstream
+            # parameter is on the borderline of overflow.  A single NaN
+            # in ctx_logits makes F.cross_entropy return NaN, which then
+            # poisons the total loss for the iter (and is logged as
+            # ``moe_ctx_aux_loss_weighted: nan`` while the detection
+            # losses still appear finite, the exact signature observed
+            # in run 4577584).  Replace any non-finite logit with 0
+            # before the CE; GradScaler still skips the optimizer step
+            # via its own gradient-finiteness check, so this is a no-op
+            # for healthy iters and only changes the *logged* value for
+            # iters that would otherwise have produced NaN.
+            if not torch.isfinite(ctx_logits).all():
+                import logging as _logging
+                _logging.getLogger('mmengine').warning(
+                    'BEVMoEBlock: NaN/Inf in ctx_logits — replacing '
+                    'with zeros before context-aux CE.')
+                ctx_logits = torch.nan_to_num(
+                    ctx_logits, nan=0.0, posinf=0.0, neginf=0.0)
+
             ctx_labels = extract_context_labels(
                 batch_input_metas,
                 self._ctx_target_field,

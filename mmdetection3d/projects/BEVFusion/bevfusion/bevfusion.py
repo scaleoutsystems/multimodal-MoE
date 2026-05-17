@@ -171,6 +171,7 @@ class BEVFusion(Base3DDetector):
             of all losses, and the second is log_vars which will be sent to
             the logger.
         """
+        import logging as _logging
         log_vars = []
         for loss_name, loss_value in losses.items():
             if isinstance(loss_value, torch.Tensor):
@@ -187,6 +188,29 @@ class BEVFusion(Base3DDetector):
         log_vars.insert(0, ['loss', loss])
         log_vars = OrderedDict(log_vars)  # type: ignore
 
+        # NaN guard: if any loss component is NaN/Inf, set a flag so that
+        # train_step() can repair BN running stats AFTER backward completes.
+        #
+        # The repair cannot happen here: PyTorch's CuDNN BN kernel saves
+        # running_mean and running_var as part of the backward graph, so any
+        # in-place operation on them between forward and backward raises
+        # "RuntimeError: one of the variables needed for gradient computation
+        # has been modified by an inplace operation".  Moving the repair to
+        # after update_params() (i.e. after backward) avoids this.
+        #
+        # The NaN loss is left untouched so AmpOptimWrapper's GradScaler
+        # detects it, skips the optimizer step, and halves the loss scale.
+        if not torch.isfinite(loss):
+            nan_keys = [
+                k for k, v in log_vars.items()
+                if isinstance(v, torch.Tensor) and not torch.isfinite(v).all()
+            ]
+            _logging.getLogger('mmengine').warning(
+                f'NaN/Inf detected in losses {nan_keys} — GradScaler will '
+                'skip the weight update; BN stats will be repaired after '
+                'backward in train_step().')
+            self._repair_bn_stats_after_backward = True
+
         for loss_name, loss_value in log_vars.items():
             # reduce loss when distributed training
             if dist.is_available() and dist.is_initialized():
@@ -195,6 +219,78 @@ class BEVFusion(Base3DDetector):
             log_vars[loss_name] = loss_value.item()
 
         return loss, log_vars  # type: ignore
+
+    def _repair_bn_stats(self) -> None:
+        """Replace any NaN/Inf values in BN running stats with safe defaults.
+
+        Called from train_step() after backward completes, so the repair
+        happens outside the autograd graph window (CuDNN BN saves
+        running_mean/running_var for its backward kernel; in-place ops on
+        those tensors between forward and backward raise a version mismatch
+        RuntimeError).
+        """
+        for m in self.modules():
+            if getattr(m, 'running_mean', None) is not None:
+                m.running_mean.nan_to_num_(nan=0.0, posinf=0.0, neginf=0.0)
+            if getattr(m, 'running_var', None) is not None:
+                m.running_var.nan_to_num_(nan=1.0, posinf=1.0, neginf=1.0)
+
+    def train_step(self, data, optim_wrapper):
+        """Override to repair BN stats after backward when a NaN batch fires.
+
+        Three independent triggers schedule a repair (any one is sufficient):
+
+        1. ``parse_losses`` saw a non-finite *total* loss this iter and set
+           ``_repair_bn_stats_after_backward`` (original behaviour).
+        2. Any parameter has a non-finite ``.grad`` after backward.  GradScaler
+           will have skipped the optimizer step, so weights are still clean, but
+           the forward that produced the NaN gradient also wrote NaN/Inf into
+           every BN ``running_mean`` / ``running_var`` it touched in-place.
+           Run 4577584 epoch 19 sat in this state for ~1100 iters with finite
+           loss but ``grad_norm: nan`` while BN buffers silently rotted, then
+           validation collapsed to mAP=0 because eval() mode uses those buffers.
+        3. Any BN buffer is already non-finite at the end of this iter (defence
+           in depth: catches whatever path slipped through triggers 1 and 2).
+
+        Triggers 2 and 3 are O(num_params + num_bn_buffers) reductions
+        per iter, well below 1ms on this model.
+        """
+        log_vars = super().train_step(data, optim_wrapper)
+
+        needs_repair = getattr(self, '_repair_bn_stats_after_backward', False)
+
+        if not needs_repair:
+            for p in self.parameters():
+                g = p.grad
+                if g is not None and not torch.isfinite(g).all():
+                    import logging as _logging
+                    _logging.getLogger('mmengine').warning(
+                        'NaN/Inf detected in parameter gradients — '
+                        'GradScaler will skip the weight update; BN stats '
+                        'will be repaired now to prevent silent poisoning '
+                        'of running_mean/running_var.')
+                    needs_repair = True
+                    break
+
+        if not needs_repair:
+            for m in self.modules():
+                for _buf_name in ('running_mean', 'running_var'):
+                    v = getattr(m, _buf_name, None)
+                    if v is not None and not torch.isfinite(v).all():
+                        import logging as _logging
+                        _logging.getLogger('mmengine').warning(
+                            f'Non-finite values found in BN {_buf_name} '
+                            f'of {type(m).__name__} — repairing now to '
+                            'prevent eval()-mode mAP collapse.')
+                        needs_repair = True
+                        break
+                if needs_repair:
+                    break
+
+        if needs_repair:
+            self._repair_bn_stats()
+            self._repair_bn_stats_after_backward = False
+        return log_vars
 
     def init_weights(self) -> None:
         if self.img_backbone is not None:
@@ -251,6 +347,22 @@ class BEVFusion(Base3DDetector):
         points = batch_inputs_dict['points']
         with torch.autocast('cuda', enabled=False):
             points = [point.float() for point in points]
+            # Sanitise point clouds: replace any NaN/Inf values with zero
+            # before voxelization.  A single defective lidar frame (e.g. a
+            # scan containing NaN coordinates from sensor dropout) is enough
+            # to produce a NaN sparse feature that propagates through the
+            # entire forward pass and poisons all loss components.
+            sanitised = []
+            for i, p in enumerate(points):
+                if not torch.isfinite(p).all():
+                    import logging as _log
+                    _log.getLogger('mmengine').warning(
+                        f'NaN/Inf in point cloud sample {i} '
+                        f'({(~torch.isfinite(p)).sum().item()} bad values) '
+                        '— replacing with zeros before voxelization.')
+                    p = torch.nan_to_num(p, nan=0.0, posinf=0.0, neginf=0.0)
+                sanitised.append(p)
+            points = sanitised
             feats, coords, sizes = self.voxelize(points)
             batch_size = coords[-1, 0] + 1
             # mmcv voxelizer outputs coords as (batch, Z, Y, X)

@@ -1,12 +1,13 @@
 #!/bin/bash
 # =============================================================================
-# Meluxina Slurm: Variant B — ModalitySpecificMoE / ZOD (4× A100, single node)
+# Meluxina Slurm: Variant B — Modality-Specific MoE / ZOD (4× A100, single node)
 # =============================================================================
-# Camera + LiDAR BEVFusion with ConvFuser REPLACED by ModalitySpecificMoEBlock.
-# Two dedicated expert pools (3 cam + 3 lidar) with a joint top-2 gate over
-# the combined 6-expert pool.  Includes group_balance_loss to keep cam vs
-# LiDAR mass balanced.  Dual-init warm-start (DualCheckpointInitHook) is
-# inherited verbatim from zod_bevfusion_dualinit.py; only the MoE block is
+# Camera + LiDAR BEVFusion with ModalitySpecificMoEBlock replacing ConvFuser.
+# Camera and LiDAR each have their own expert pool of bottleneck residual
+# experts (BEVBottleneckResidualExpert, hidden_channels=128); a single dense
+# gate routes across both pools; outputs are concat → 1×1 + 3×3 fused into the
+# downstream BEV representation.  Dual-init warm-start (DualCheckpointInitHook)
+# is inherited from zod_bevfusion_dualinit_28ep.py; only the MoE block is
 # randomly initialised.
 #
 # Submit:
@@ -101,7 +102,10 @@ import projects.BEVFusion.bevfusion  # noqa: F401
 import mmdet3d.engine.hooks  # noqa: F401
 from mmdet3d.registry import MODELS, HOOKS
 assert 'BEVFusion' in MODELS.module_dict, 'BEVFusion not registered'
-assert 'ModalitySpecificMoEBlock' in MODELS.module_dict, 'ModalitySpecificMoEBlock not registered'
+assert 'ModalitySpecificMoEBlock' in MODELS.module_dict, \
+    'ModalitySpecificMoEBlock not registered'
+assert 'BEVBottleneckResidualExpert' in MODELS.module_dict, \
+    'BEVBottleneckResidualExpert not registered'
 for cls_name in ('DepthLSSTransform', 'GeneralizedLSSFPN'):
     assert cls_name in MODELS.module_dict, f'{cls_name} not registered'
 print('Camera-side modules + ModalitySpecificMoEBlock registered OK')

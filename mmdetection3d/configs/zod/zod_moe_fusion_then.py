@@ -1,4 +1,4 @@
-"""Variant C — Fusion-then-MoE on top of zod_bevfusion_dualinit.
+"""Variant C — Fusion-then-MoE on top of zod_bevfusion_dualinit (28 epoch).
 
 Architecture
 ------------
@@ -8,98 +8,153 @@ Architecture
                        ├─ ConvFuser ─→ fused_bev (256 ch)
     lidar_bev (256ch) ─┘                       │
                                                 ▼
-                                        BEVMoEBlock (single)
+                                          pts_backbone
                                                 │
                                                 ▼
-                                          pts_backbone → pts_neck → bbox_head
+                                       pts_neck / SECONDFPN (out=512 ch)
+                                                │
+                                                ▼
+                                     BEVMoEBlock (post-neck, 512 ch)
+                                                │
+                                                ▼
+                                          TransFusionHead
 
-This is the only MoE variant that keeps ``ConvFuser``.  The MoE block
-operates on the post-fusion 256-channel BEV; experts share a single
-pool with no modality grouping and therefore no group_balance_loss.
+Strict design copy
+------------------
+The MoE configuration here exactly mirrors the stable LiDAR-only MoE
+40-epoch run 4577584 (dense soft-MoE, 4 experts, context-supervised
+routing on ``road_type`` with weighted CE / inverse-frequency / label
+smoothing).  The only differences from that run are the model
+configuration — keep ``ConvFuser`` so cam+lidar BEVs are fused before
+the backbone — and the training horizon (28 epochs instead of 40, to
+fit two Variant-C runs in the 48 h Meluxina wall-time budget).
 
-Strict delta vs ``zod_bevfusion_dualinit.py``
----------------------------------------------
-* dataset / dataloaders                        — UNCHANGED (only
-  ``Pack3DDetInputs.meta_keys`` is extended with ``'context'`` so the
-  MoE block can read the road_type label from ``batch_input_metas``).
-* training schedule / optimizer                — UNCHANGED.
-* dual-init logic / DualCheckpointInitHook    — UNCHANGED (fusion_layer
-  remains randomly initialised — same as the base config).
-* backbone / neck definitions / bbox_head     — UNCHANGED.
-* model.fusion_layer (ConvFuser)              — UNCHANGED (kept).
-* Added: ``model.bev_moe_cfg`` (BEVMoEBlock with 5 experts, top-2,
-  context-supervised routing on ``road_type``).
-* Added: MoE diagnostic hooks (MoERoutingHook, ContextRoutingStatsHook,
-  ContextExpertUsageVisualizationHook, ExpertRespawnHook).
-* Added: ``model_wrapper_cfg = dict(find_unused_parameters=True)`` —
-  required for DDP under top-k sparse expert dispatch.
+Insertion point: ``bev_moe_position='post_neck'`` (after SECONDFPN,
+just before the TransFusionHead).  BEV channel count after SECONDFPN
+is 512 (in_channels=[128, 256] → out_channels=[256, 256] →
+concatenated 512), matching the LiDAR-only MoE configuration.
 
 Auxiliary losses entering the optimisation total
 ------------------------------------------------
-* importance_loss      (Shazeer)
-* load_loss            (Shazeer; only non-zero when NoisyTopkGate is
-                        in training mode)
-* router_z_loss        (z_loss_coef · log-Z² over clean_logits)
-* ctx_aux_loss_weighted = ctx_aux_coef · CE(ctx_logits, road_type)
+* importance_coef · importance_loss         (Shazeer)
+* load_coef · load_loss                     (0 under dense routing)
+* z_loss_coef · router_z_loss               (clean-logit log-Z²)
+* switch_balance_coef · switch_balance_loss (0)
+* ctx_loss_coef · CE_weighted(ctx_logits, road_type)
+                                            (inverse frequency, ε-smooth)
 
-No group_balance_loss for this variant — there is no modality grouping
-on the post-fusion BEV.
+No group_balance_loss for this variant — the MoE block sees a single
+post-fusion 512-channel BEV with no modality grouping.
 """
-_base_ = ['./zod_bevfusion_dualinit.py']
+_base_ = ['./zod_bevfusion_dualinit_28ep.py']
 
 # ─────────────────────────────────────────────────────────────────────────
-# MoE block — single pool of 5 residual-conv experts on the fused BEV.
+# MoE block — copy lidar_only_moe 4577584's bev_moe_cfg verbatim.
+# Channel count is 512 (post-SECONDFPN output), which matches both
+# variants.
 # ─────────────────────────────────────────────────────────────────────────
-num_experts = 5
+num_experts = 4
 
 bev_moe_cfg = dict(
     type='BEVMoEBlock',
-    # ConvFuser outputs 256 channels (in_channels=[80, 256], out=256), so
-    # the MoE block runs on 256-channel BEV with input == output channels.
-    channels=256,
+    # SECONDFPN concatenates two 256-ch streams → 512 channels post-neck.
+    # Matches the LiDAR-only MoE 4577584 channel count.
+    channels=512,
     num_experts=num_experts,
-    k=2,
-    num_convs=1,
-    # Shazeer auxiliary loss weights (matched to zod_lidar_only_moe).
-    importance_coef=0.02,
-    load_coef=0.002,
-    # Mesh-Transformer / ST-MoE router z-regulariser on clean_logits.
-    z_loss_coef=1e-4,
+    # Dense Soft-MoE: every expert always runs.  k is forced to
+    # num_experts internally; keeping the explicit value mirrors the
+    # 4577584 config exactly.
+    k=num_experts,
+    num_convs=2,
+    gate_type='dense',
+    gate_cfg=dict(temperature=1.0),
+    gate_input_detach=True,
+    # Routing + auxiliary loss coefficients, copied from 4577584.
+    importance_coef=0.005,
+    load_coef=0.0,
+    z_loss_coef=0.002,
+    switch_balance_coef=0.0,
     residual_gain=1.0,
-    # BEVSummaryHead defaults — gate input dim = router_out_dim (no
-    # context concatenation).
-    router_pool_size=4,
-    router_spatial_dim=128,
-    router_hidden_dim=256,
-    router_out_dim=128,
-    # Context supervision via auxiliary CE on road_type.  Loss only
-    # shapes the BEV summary descriptor; it never enters the gate input.
+    # No temperature warmup — 4577584 uses ctx_gate_warmup_epochs=0.
+    ctx_gate_warmup_epochs=0,
+    ctx_gate_temp_high=1.0,
+    # Context supervision on road_type with weighted CE + inverse-
+    # frequency class weights + label smoothing (copy of 4577584).
     context_aux_cfg=dict(
         target_field='road_type',
-        loss_coef=0.05,
-        label_smoothing=0.0,
+        loss_coef=0.03,
+        loss_type='weighted_ce',
+        class_weights='inverse_frequency',
+        label_smoothing=0.05,
     ),
-    # NoisyTopkGate: load_loss is only computable when noise_std is
-    # populated (training time only).  Eval forwards return noise_std=None
-    # and load_loss returns 0 — exactly the requested behaviour.
-    gate_type='noisy_topk',
-    gate_cfg=dict(noise_epsilon=1e-2, temperature=1.0),
 )
 
 # ─────────────────────────────────────────────────────────────────────────
-# Model — extend the base with bev_moe_cfg; keep fusion_layer (ConvFuser).
+# Model — extend the base with bev_moe_cfg + bev_moe_position.
+# fusion_layer (ConvFuser) is inherited from the base and KEPT — this is
+# the only multimodal variant that retains ConvFuser.
 # ─────────────────────────────────────────────────────────────────────────
-model = dict(bev_moe_cfg=bev_moe_cfg)
+model = dict(
+    bev_moe_cfg=bev_moe_cfg,
+    bev_moe_position='post_neck',
+)
 
-# DDP under top-k sparse routing leaves idle experts without gradient.
-# Tell DDP to tolerate unused params instead of crashing on iter 2.
-model_wrapper_cfg = dict(find_unused_parameters=True)
+model_wrapper_cfg = dict(
+    find_unused_parameters=True, type='MMDistributedDataParallel')
 
 # ─────────────────────────────────────────────────────────────────────────
-# Pipelines — identical to the base except 'context' is added to
-# Pack3DDetInputs.meta_keys so BEVMoEBlock can resolve road_type labels
-# from batch_input_metas (extract_context_labels reads meta['context']).
-# Everything else (augmentations, ranges, modes) is preserved exactly.
+# Optimiser + LR schedule — copy lidar_only_moe 4577584, compressed to
+# 28 epochs.  Original schedule: 8-epoch cosine warm-up to lr=5e-4, then
+# 32-epoch cosine decay to ~5e-9.  Compressed: 8-epoch warm-up unchanged,
+# 20-epoch cosine decay (8 → 28).  Same applies to momentum.
+# Budget was originally cut to 24 ep when the full-channel experts forced
+# bs=2+accum=2 and threatened the 48 h wall-time; the new bottleneck
+# experts (~6× cheaper) let us restore the planned 28-epoch schedule with
+# comfortable margin.
+# AmpOptimWrapper, AdamW (lr=5e-5, wd=0.01), clip_grad max_norm=10.
+# paramwise_cfg lowers weight decay on context-summary / context-head /
+# gate so the routing branch can adapt fast without ramping into the
+# default L2.
+# ─────────────────────────────────────────────────────────────────────────
+lr = 5e-5
+
+optim_wrapper = dict(
+    type='AmpOptimWrapper',
+    loss_scale='dynamic',
+    clip_grad=dict(max_norm=10, norm_type=2),
+    optimizer=dict(type='AdamW', lr=lr, weight_decay=0.01),
+    paramwise_cfg=dict(
+        custom_keys={
+            'bbox_head':               dict(lr_mult=1.0),
+            'bev_moe.context_head':    dict(decay_mult=0.05, lr_mult=1.0),
+            'bev_moe.context_summary': dict(decay_mult=0.05, lr_mult=1.0),
+            'bev_moe.gate':            dict(decay_mult=0.01, lr_mult=1.0),
+            'pts_backbone':            dict(lr_mult=1.0),
+            'pts_neck':                dict(lr_mult=1.0),
+        }),
+)
+
+param_scheduler = [
+    dict(type='CosineAnnealingLR',
+         T_max=8, begin=0, end=8,
+         eta_min=5e-4, by_epoch=True, convert_to_iter_based=True),
+    dict(type='CosineAnnealingLR',
+         T_max=20, begin=8, end=28,
+         eta_min=5e-9, by_epoch=True, convert_to_iter_based=True),
+    dict(type='CosineAnnealingMomentum',
+         T_max=8, begin=0, end=8,
+         eta_min=0.8947368421052632, by_epoch=True,
+         convert_to_iter_based=True),
+    dict(type='CosineAnnealingMomentum',
+         T_max=20, begin=8, end=28,
+         eta_min=1, by_epoch=True, convert_to_iter_based=True),
+]
+
+train_cfg = dict(by_epoch=True, max_epochs=28, val_interval=1)
+
+# ─────────────────────────────────────────────────────────────────────────
+# Pipelines — base config + 'context' meta key for the MoE block to
+# resolve road_type labels.  Everything else is preserved exactly.
 # ─────────────────────────────────────────────────────────────────────────
 voxel_size = [0.075, 0.075, 0.2]
 point_cloud_range = [0.0, -54.0, -5.0, 108.0, 54.0, 3.0]
@@ -142,7 +197,7 @@ train_pipeline = [
     dict(type='ObjectNameFilter', classes=class_names),
     dict(
         type='GridMask',
-        use_h=True, use_w=True, max_epoch=10, rotate=1, offset=False,
+        use_h=True, use_w=True, max_epoch=28, rotate=1, offset=False,
         ratio=0.5, mode=1, prob=0.0, fixed_prob=True),
     dict(type='PointShuffle'),
     dict(
@@ -191,30 +246,32 @@ test_pipeline = [
         ])
 ]
 
-# Re-bind the pipeline lists into each dataloader's dataset config.
-# mmengine merge: list values overwrite atomically, so only `pipeline`
-# is replaced; data_root, ann_file, etc. are inherited from the base.
-train_dataloader = dict(dataset=dict(pipeline=train_pipeline))
+# Reduce per-GPU batch size from 4 → 2 to fit the larger fusion+MoE graph
+# (BEVFusion + BEVMoEBlock OOMs at batch=4 on 40 GB A100s).
+# Gradient accumulation of 2 keeps effective global batch at 4 GPU × 2 × 2 = 16,
+# matching the dualinit baseline.
+train_dataloader = dict(batch_size=2, dataset=dict(pipeline=train_pipeline))
 val_dataloader   = dict(dataset=dict(pipeline=test_pipeline))
 test_dataloader  = dict(dataset=dict(pipeline=test_pipeline))
 
+optim_wrapper = dict(
+    type='AmpOptimWrapper',
+    accumulative_counts=2,
+)
+
 # ─────────────────────────────────────────────────────────────────────────
-# Hooks — preserve the full set from the base config and append MoE
-# diagnostic + respawn hooks.  Lists are atomic in mmengine merging, so
-# this list fully replaces the base list (we copy every entry verbatim).
+# Hooks — preserve the base visualisation/diagnostic hooks (incl. the
+# camera-branch-specific BEVCameraFeatureVisualizationHook and depth
+# diagnostics that don't exist in the LiDAR-only-MoE run) and add the
+# MoE-specific hooks copied from 4577584.
 # ─────────────────────────────────────────────────────────────────────────
-_VIS_EPOCHS = (1, 3, 5, 7, 10, 12)
+_VIS_EPOCHS = (1, 5, 10, 15, 20, 25, 28)
 
 custom_hooks = [
-    # Dual-checkpoint init — UNCHANGED from base.  fusion_layer (ConvFuser)
-    # and the MoE block both initialise from random; everything else
-    # warm-starts as in the dual-init baseline.
     dict(
         type='DualCheckpointInitHook',
         lidar_ckpt=(
-            '/home/users/u103958/projects/multimodal-MoE/outputs/runs/'
-            'zod_lidar_only/zod-lidar-only_4454825/'
-            'best_mAP_0.50_epoch_18.pth'),
+            '/home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4570893/best_mAP_0.50_epoch_30.pth'),
         camera_ckpt=(
             '/home/users/u103958/projects/multimodal-MoE/outputs/runs/'
             'zod_camera_only/zod-cam-only_4469392/'
@@ -225,7 +282,6 @@ custom_hooks = [
         camera_modules=[
             'img_backbone', 'img_neck', 'view_transform',
         ]),
-    # ── Base visualisation / diagnostic hooks (unchanged) ──────────────
     dict(type='BEVFeatureVisualizationHook',         vis_epochs=_VIS_EPOCHS),
     dict(type='BEVPredictionVisualizationHook',      score_thr=0.15,
          vis_epochs=_VIS_EPOCHS),
@@ -239,10 +295,7 @@ custom_hooks = [
     dict(type='ValidationCurveHook',
          metric_keys=('mAP_0.50', 'mAP_0.5m'),
          filename='val_curve_ap_0_50_0_5m'),
-    # ── MoE-specific diagnostic + maintenance hooks ────────────────────
-    # ExpertRespawnHook fires before MoERoutingHook each end-of-epoch
-    # (priorities NORMAL=50 < BELOW_NORMAL=60), so the next epoch's
-    # routing plot already reflects any respawn surgery.
+    # ── MoE-specific diagnostic + maintenance hooks (copied from 4577584).
     dict(
         type='ExpertRespawnHook',
         num_experts=num_experts,

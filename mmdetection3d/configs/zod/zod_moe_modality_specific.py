@@ -1,86 +1,76 @@
-"""Variant B — ModalitySpecificMoE on top of zod_bevfusion_dualinit.
+"""Variant B — ModalitySpecificMoE on top of zod_bevfusion_dualinit (28 epoch).
 
 Architecture
 ------------
 ::
 
     cam_bev (80 ch)  ─→ cam_summary  ─→ z_C ─┐
-                                              ├─ concat ─→ gate (over joint pool)
-    lidar_bev (256ch) → lidar_summary ─→ z_L ─┘                       │
-                                                                       ▼
-        cam_bev   → cam_experts[0..2]  ─┐                  top-k expert dispatch
-                                         ├─→ concat → 1×1 → 3×3 → fused (256 ch)
-        lidar_bev → lidar_experts[0..2] ─┘                              │
-                                                                        ▼
-                                              pts_backbone → pts_neck → bbox_head
+                                              ├─ concat → z_MC
+    lidar_bev (256ch) → lidar_summary ─→ z_L ─┘     │
+                                                    │ (.detach() for gate)
+                          ┌─── gate ──── z_MC.detach() ┐
+                          ▼                            ▼
+                  full softmax (4 experts)        context_head
+                          │                            │
+                          │                        ctx_logits
+                          ▼
+                  dense modality residuals
+                  ─────────────────────────────
+                  cam_out   = cam_bev   + g·Σ_{e∈cam}   p_e·(cam_e(cam_bev)   − cam_bev)
+                  lidar_out = lidar_bev + g·Σ_{e∈lidar} p_e·(lidar_e(lidar_bev) − lidar_bev)
+                                          │
+                                          ▼
+                                   fusion_proj
+                          (concat → 1×1 → 3×3 → fused_bev 256 ch)
+                                          │
+                                          ▼
+                       pts_backbone → pts_neck → bbox_head
 
-Two dedicated expert pools (3 camera, 3 LiDAR) with a single joint gate
-of size ``E = 6``.  Top-2 over the joint pool lets the router pick
+Expert pools (4 experts total, dense routing):
 
-    LiDAR + LiDAR    Camera + Camera    LiDAR + Camera
+    expert 0:  camera expert 0
+    expert 1:  camera expert 1
+    expert 2:  LiDAR  expert 0
+    expert 3:  LiDAR  expert 1
 
-combinations.  ``ConvFuser`` is removed; the block performs its own
-two-step concat → 1×1 → 3×3 fusion after expert dispatch.
+Strict design copy
+------------------
+Routing is identical to LiDAR-only MoE run 4577584 (dense soft-MoE,
+4 experts, context-supervised routing on ``road_type`` with weighted
+CE + inverse frequency + label smoothing).  ConvFuser is REMOVED — the
+block performs its own two-step concat → 1×1 → 3×3 fusion after expert
+dispatch.
 
-Routing
-~~~~~~~
-Same descriptor-level conditioning as Variant A::
+This is the only multimodal MoE variant that emits a
+``group_balance_loss`` (coefficient 0.002).  It penalises drift between
+the camera and LiDAR group masses on the dense soft router belief::
 
-    z = concat(z_C, z_L)              # (B, 256)
-    gate(z) → top-k over the joint 6-expert pool
-    context_head(z) → CE on road_type
+    cam_mass   = probs[:, 0:2].sum(dim=1).mean()
+    lidar_mass = probs[:, 2:4].sum(dim=1).mean()
 
-Group balance loss
-~~~~~~~~~~~~~~~~~~
-This is the only variant that uses ``group_balance_loss`` — it
-penalises imbalance between the camera and LiDAR groups in the soft
-router belief, preventing the router from collapsing onto a single
-modality's experts.
+    L_gb = group_balance_coef · ((cam_mass − 0.5)² + (lidar_mass − 0.5)²)
 
-Strict delta vs ``zod_bevfusion_dualinit.py``
----------------------------------------------
-* dataset / dataloaders                        — UNCHANGED (only
-  ``Pack3DDetInputs.meta_keys`` is extended with ``'context'``).
-* training schedule / optimizer                — UNCHANGED.
-* dual-init logic / DualCheckpointInitHook    — UNCHANGED.
-* backbone / neck definitions / bbox_head     — UNCHANGED.
-* model.fusion_layer                          — REMOVED (set to None);
-  modality_specific_moe performs its own fusion via concat + 1×1 + 3×3.
-* Added: ``model.modality_specific_moe_cfg`` (3 cam + 3 lidar experts,
-  top-2, group_balance_coef=0.01, context-supervised on ``road_type``).
-* Added: MoE diagnostic hooks (with enable_hook_c=True for
-  modality-group mass tracking) + ExpertRespawnHook.
-* Added: ``model_wrapper_cfg = dict(find_unused_parameters=True)``.
+The 0.002 weight is intentionally tiny — it discourages full modality
+collapse without forcing hard equality.
 
 Auxiliary losses entering the optimisation total
 ------------------------------------------------
-* importance_loss
-* load_loss            (NoisyTopkGate; only non-zero in train mode)
-* router_z_loss
-* group_balance_loss   (cam vs lidar group mass balance)
-* ctx_aux_loss_weighted = ctx_aux_coef · CE(ctx_logits, road_type)
-
-Expert IDs
-----------
-The block hard-codes::
-
-    cam_expert_ids   = [0, 1, 2]
-    lidar_expert_ids = [3, 4, 5]
-
-These are derived from ``num_cam_experts=3`` / ``num_lidar_experts=3``
-inside ``ModalitySpecificMoEBlock.__init__`` and are exposed via
-``moe_info['cam_expert_ids']`` / ``moe_info['lidar_expert_ids']`` so
-the downstream hooks (MoERoutingHook with ``enable_hook_c=True``) can
-group routing statistics by modality.
+* importance_coef · importance_loss
+* load_coef · load_loss                (0 under dense routing)
+* z_loss_coef · router_z_loss
+* group_balance_coef · group_balance_loss
+* ctx_loss_coef · CE_weighted(ctx_logits, road_type)
 """
-_base_ = ['./zod_bevfusion_dualinit.py']
+_base_ = ['./zod_bevfusion_dualinit_28ep.py']
 
 # ─────────────────────────────────────────────────────────────────────────
-# MoE block — separate cam/lidar expert pools with a joint gate.
+# MoE block — 2 cam + 2 lidar dense experts replacing ConvFuser.
+# Routing hyperparameters mirror LiDAR-only MoE 4577584 exactly; the only
+# addition for this variant is the small group_balance_coef.
 # ─────────────────────────────────────────────────────────────────────────
-num_cam_experts   = 3
-num_lidar_experts = 3
-num_experts       = num_cam_experts + num_lidar_experts   # 6
+num_cam_experts   = 2
+num_lidar_experts = 2
+num_experts       = num_cam_experts + num_lidar_experts   # 4
 
 modality_specific_moe_cfg = dict(
     type='ModalitySpecificMoEBlock',
@@ -89,26 +79,31 @@ modality_specific_moe_cfg = dict(
     out_channels=256,
     num_cam_experts=num_cam_experts,
     num_lidar_experts=num_lidar_experts,
-    k=2,
-    num_convs=1,
-    importance_coef=0.02,
-    load_coef=0.002,
-    z_loss_coef=1e-4,
-    # Camera-vs-LiDAR group-balance penalty on the soft router belief.
-    # Only this variant emits group_balance_loss into aux_loss.
-    group_balance_coef=0.01,
+    num_convs=2,
+    # Dense routing — gate_type='dense' forces k=num_experts internally.
+    gate_type='dense',
+    gate_cfg=dict(temperature=1.0),
+    gate_input_detach=True,
+    # Routing + auxiliary loss coefficients copied from 4577584.
+    importance_coef=0.005,
+    load_coef=0.0,
+    z_loss_coef=0.002,
+    # Variant-B-only: small group-balance penalty to avoid modality
+    # collapse under dense routing.
+    group_balance_coef=0.002,
     residual_gain=1.0,
-    router_pool_size=4,
-    router_spatial_dim=128,
-    router_hidden_dim=256,
+    # Per-modality summary: 128-d each → 256-d concat (matches 4577584
+    # gate input dim).
     router_out_dim=128,
+    # Context supervision on road_type with weighted CE + inverse
+    # frequency + label smoothing — identical to 4577584.
     context_aux_cfg=dict(
         target_field='road_type',
-        loss_coef=0.05,
-        label_smoothing=0.0,
+        loss_coef=0.03,
+        loss_type='weighted_ce',
+        class_weights='inverse_frequency',
+        label_smoothing=0.05,
     ),
-    gate_type='noisy_topk',
-    gate_cfg=dict(noise_epsilon=1e-2, temperature=1.0),
 )
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -119,7 +114,51 @@ model = dict(
     modality_specific_moe_cfg=modality_specific_moe_cfg,
 )
 
-model_wrapper_cfg = dict(find_unused_parameters=True)
+model_wrapper_cfg = dict(
+    find_unused_parameters=True, type='MMDistributedDataParallel')
+
+# ─────────────────────────────────────────────────────────────────────────
+# Optimiser + LR schedule — copy lidar_only_moe 4577584, compressed to
+# 28 epochs.  See zod_moe_fusion_then.py for the rationale.
+# paramwise_cfg keys are adapted to the modality_specific_moe module path.
+# ─────────────────────────────────────────────────────────────────────────
+lr = 5e-5
+
+optim_wrapper = dict(
+    type='AmpOptimWrapper',
+    loss_scale='dynamic',
+    clip_grad=dict(max_norm=10, norm_type=2),
+    optimizer=dict(type='AdamW', lr=lr, weight_decay=0.01),
+    paramwise_cfg=dict(
+        custom_keys={
+            'bbox_head':                              dict(lr_mult=1.0),
+            'modality_specific_moe.context_head':     dict(decay_mult=0.05, lr_mult=1.0),
+            'modality_specific_moe.cam_summary':      dict(decay_mult=0.05, lr_mult=1.0),
+            'modality_specific_moe.lidar_summary':    dict(decay_mult=0.05, lr_mult=1.0),
+            'modality_specific_moe.gate':             dict(decay_mult=0.01, lr_mult=1.0),
+            'pts_backbone':                           dict(lr_mult=1.0),
+            'pts_neck':                               dict(lr_mult=1.0),
+        }),
+    accumulative_counts=2,
+)
+
+param_scheduler = [
+    dict(type='CosineAnnealingLR',
+         T_max=8, begin=0, end=8,
+         eta_min=5e-4, by_epoch=True, convert_to_iter_based=True),
+    dict(type='CosineAnnealingLR',
+         T_max=20, begin=8, end=28,
+         eta_min=5e-9, by_epoch=True, convert_to_iter_based=True),
+    dict(type='CosineAnnealingMomentum',
+         T_max=8, begin=0, end=8,
+         eta_min=0.8947368421052632, by_epoch=True,
+         convert_to_iter_based=True),
+    dict(type='CosineAnnealingMomentum',
+         T_max=20, begin=8, end=28,
+         eta_min=1, by_epoch=True, convert_to_iter_based=True),
+]
+
+train_cfg = dict(by_epoch=True, max_epochs=28, val_interval=1)
 
 # ─────────────────────────────────────────────────────────────────────────
 # Pipelines — base config + 'context' meta key, identical otherwise.
@@ -165,7 +204,7 @@ train_pipeline = [
     dict(type='ObjectNameFilter', classes=class_names),
     dict(
         type='GridMask',
-        use_h=True, use_w=True, max_epoch=10, rotate=1, offset=False,
+        use_h=True, use_w=True, max_epoch=28, rotate=1, offset=False,
         ratio=0.5, mode=1, prob=0.0, fixed_prob=True),
     dict(type='PointShuffle'),
     dict(
@@ -214,7 +253,7 @@ test_pipeline = [
         ])
 ]
 
-train_dataloader = dict(dataset=dict(pipeline=train_pipeline))
+train_dataloader = dict(batch_size=2, dataset=dict(pipeline=train_pipeline))
 val_dataloader   = dict(dataset=dict(pipeline=test_pipeline))
 test_dataloader  = dict(dataset=dict(pipeline=test_pipeline))
 
@@ -222,15 +261,15 @@ test_dataloader  = dict(dataset=dict(pipeline=test_pipeline))
 # Hooks — preserve base set + MoE diagnostic + respawn hooks.
 # enable_hook_c=True: track camera-group / LiDAR-group mass per epoch.
 # ─────────────────────────────────────────────────────────────────────────
-_VIS_EPOCHS = (1, 3, 5, 7, 10, 12)
+_VIS_EPOCHS = (1, 5, 10, 15, 20, 25, 28)
 
 custom_hooks = [
     dict(
         type='DualCheckpointInitHook',
         lidar_ckpt=(
             '/home/users/u103958/projects/multimodal-MoE/outputs/runs/'
-            'zod_lidar_only/zod-lidar-only_4454825/'
-            'best_mAP_0.50_epoch_18.pth'),
+            'zod_lidar_only/zod-lidar-only_4570893/'
+            'best_mAP_0.50_epoch_30.pth'),
         camera_ckpt=(
             '/home/users/u103958/projects/multimodal-MoE/outputs/runs/'
             'zod_camera_only/zod-cam-only_4469392/'
@@ -254,7 +293,7 @@ custom_hooks = [
     dict(type='ValidationCurveHook',
          metric_keys=('mAP_0.50', 'mAP_0.5m'),
          filename='val_curve_ap_0_50_0_5m'),
-    # ── MoE-specific hooks ─────────────────────────────────────────────
+    # ── MoE-specific hooks (copied from 4577584) ───────────────────────
     dict(
         type='ExpertRespawnHook',
         num_experts=num_experts,
