@@ -51,6 +51,7 @@ from __future__ import annotations
 
 from typing import List
 
+import torch
 import torch.nn as nn
 from torch import Tensor
 
@@ -68,6 +69,60 @@ from mmdet3d.registry import MODELS
 # uses pure zero-init on the expand BN because its random reduce/
 # spatial/expand_conv weights provide the per-expert gradient asymmetry.
 _LAST_BN_GAMMA_STD: float = 0.05
+
+
+# ── fp32-safe BatchNorm2d ─────────────────────────────────────────────────
+
+class _FP32BatchNorm2d(nn.BatchNorm2d):
+    """:class:`nn.BatchNorm2d` that always computes in fp32, irrespective
+    of the surrounding ``torch.amp.autocast`` region.
+
+    Why this matters for the MoE experts
+    ------------------------------------
+    Under dense soft-MoE every expert runs on every sample at the full
+    BEV resolution (post-SECONDFPN, 512 channels, ~180×180 spatial), so
+    each expert BN sees a *large* per-iter reduction window.  When the
+    surrounding region is ``autocast(dtype=fp16)`` and the post-FPN
+    feature map carries one or two outlier samples (e.g. dense
+    near-range LiDAR returns shrinking ``var → 0`` in some channels),
+    the BN's batch-variance computation can yield a *huge but finite*
+    ``batch_var`` (~1e3–1e5).  That value enters the running-stat EMA
+    update verbatim and, because the buffer is fp32, accumulates over
+    epochs without ever crossing into NaN/Inf — invisible to the
+    existing :meth:`BEVFusion._repair_bn_stats` guard which only checks
+    ``torch.isfinite``.
+
+    Run 4585570 epoch 15 ended with
+    ``experts.{0..3}.block.4.running_var ∈ [7.6e4, 2.1e5]`` and
+    ``running_mean ∈ [1.3e3, 2.8e3]``; combined with the gate-Linear's
+    ``nan_to_num`` defensive cast (which silently zeros the gate
+    gradient when ``z_ctx`` overflows), this is the upstream of the
+    mAP→0 collapse documented in :mod:`moe_bev.bev_moe`.
+
+    Forcing the BN op to fp32 while leaving the surrounding convs in
+    fp16 keeps the dense-MoE memory budget intact (BN activations are
+    a small fraction of total) and removes the only spot in the expert
+    pipeline where the variance reduction can pick up an fp16-rounded
+    contribution.  The cast back to ``input_dtype`` on the output
+    preserves the activation-tensor dtype contract for the rest of the
+    expert's residual branch, so this is a drop-in replacement for
+    :class:`nn.BatchNorm2d` everywhere it appears inside the experts.
+
+    Running stats buffers and affine parameters are already fp32 in
+    mmengine regardless of model dtype, so checkpoints are
+    bit-compatible — a model trained with the previous
+    :class:`nn.BatchNorm2d` loads into a model using this class
+    without any state-dict renaming.
+    """
+
+    def forward(self, x: Tensor) -> Tensor:
+        input_dtype = x.dtype
+        # Disable autocast for the BN op itself.  ``x.float()`` is a
+        # no-op when ``x`` is already fp32; under fp16 autocast it
+        # ensures the variance reduction sees full-precision inputs.
+        with torch.autocast('cuda', enabled=False):
+            out = super().forward(x.float())
+        return out.to(input_dtype)
 
 
 @MODELS.register_module()
@@ -96,7 +151,13 @@ class BEVResidualExpert(nn.Module):
         layers: List[nn.Module] = []
         for i in range(num_convs):
             layers.append(nn.Conv2d(channels, channels, 3, padding=1, bias=False))
-            layers.append(nn.BatchNorm2d(channels, eps=1e-3, momentum=0.01))
+            # _FP32BatchNorm2d: fp16-overflow-safe drop-in for the legacy
+            # full-channel expert.  Run 4585570 epoch 15 showed this
+            # exact BN (``block.{2 * num_convs}`` ≡ the last BN of the
+            # residual branch, fed by a 512→512 3×3 conv) drifting to
+            # ``running_var`` ∈ [7.6e4, 2.1e5] under AMP fp16 — see the
+            # _FP32BatchNorm2d docstring for the full mechanism.
+            layers.append(_FP32BatchNorm2d(channels, eps=1e-3, momentum=0.01))
             if i < num_convs - 1:
                 layers.append(nn.ReLU(inplace=True))
         self.block = nn.Sequential(*layers)
@@ -171,10 +232,17 @@ class BEVBottleneckResidualExpert(nn.Module):
         self.channels = int(channels)
         self.hidden_channels = int(hidden_channels)
 
+        # All three BNs use _FP32BatchNorm2d: dense MoE dispatch keeps
+        # every expert on every batch at the full BEV resolution, so the
+        # AMP fp16 variance reduction needs to be safe against outlier
+        # batches.  See the _FP32BatchNorm2d docstring for the full
+        # rationale — running stats buffers and affine params remain
+        # fp32, so this is a state-dict-compatible swap.
+
         # Reduce: project to hidden width with a cheap 1×1 conv.
         self.reduce = nn.Sequential(
             nn.Conv2d(channels, hidden_channels, kernel_size=1, bias=False),
-            nn.BatchNorm2d(hidden_channels, eps=1e-3, momentum=0.01),
+            _FP32BatchNorm2d(hidden_channels, eps=1e-3, momentum=0.01),
             nn.ReLU(inplace=True),
         )
 
@@ -184,7 +252,7 @@ class BEVBottleneckResidualExpert(nn.Module):
         self.spatial = nn.Sequential(
             nn.Conv2d(hidden_channels, hidden_channels, kernel_size=3,
                       padding=1, bias=False),
-            nn.BatchNorm2d(hidden_channels, eps=1e-3, momentum=0.01),
+            _FP32BatchNorm2d(hidden_channels, eps=1e-3, momentum=0.01),
             nn.ReLU(inplace=True),
         )
 
@@ -195,7 +263,7 @@ class BEVBottleneckResidualExpert(nn.Module):
         # ReLU is applied after summation.
         self.expand_conv = nn.Conv2d(hidden_channels, channels,
                                      kernel_size=1, bias=False)
-        self.expand_bn = nn.BatchNorm2d(channels, eps=1e-3, momentum=0.01)
+        self.expand_bn = _FP32BatchNorm2d(channels, eps=1e-3, momentum=0.01)
         nn.init.zeros_(self.expand_bn.weight)
         nn.init.zeros_(self.expand_bn.bias)
 

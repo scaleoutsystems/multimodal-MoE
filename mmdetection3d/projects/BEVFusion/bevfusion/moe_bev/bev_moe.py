@@ -858,6 +858,43 @@ class BEVMoEBlock(nn.Module):
         # z_ctx itself is NOT detached for context_head (full grad there
         # whenever a context_head exists).
         z_ctx  = self.context_summary(x_bev)   # (B, 256)
+
+        # Defensive NaN/Inf guard on z_ctx (mirrors the Step-0 guard on
+        # x_bev and the pre-CE guard on ctx_logits).  BEVResSummaryEncoder
+        # contains BatchNorm layers whose running stats can drift to very
+        # large (but finite) values under AmpOptimWrapper / fp16 — every
+        # `grad_norm: nan` iter corresponds to an fp16 overflow event and
+        # contributes outlier batch statistics to those running buffers
+        # via the EMA update (running_var values >1e5 have been observed
+        # at epoch 15 in run 4585570).  Once a batch's BN computation
+        # overflows mid-fp16 it can emit non-finite values into z_ctx.
+        # Without a guard here, that NaN/Inf flows into:
+        #   1) the gate via z_gate (= z_ctx or z_ctx.detach()).  TopkGate
+        #      then nan_to_num's its own ``logits`` to zero, which:
+        #        - permanently breaks the gate-Linear gradient: PyTorch's
+        #          nan_to_num backward zeros grad_input wherever input was
+        #          NaN, so the gate weights stop receiving signal.
+        #        - drives softmax to uniform every step, decoupling the
+        #          router from the experts → mAP collapses to zero.
+        #      The AMP scaler does NOT rescue this: nan_to_num inside the
+        #      gate yields a *finite* loss, so the optimizer step is not
+        #      skipped and the broken state persists indefinitely.
+        #   2) the context head, where the existing ctx_logits guard
+        #      partially masks it but with the same gradient-zeroing
+        #      pathology.
+        # Replacing non-finite values with zero before they leave
+        # context_summary is the missing link in the defensive chain
+        # described in this module's docstring; healthy iterations are a
+        # no-op.
+        if not torch.isfinite(z_ctx).all():
+            import logging as _logging
+            _logging.getLogger('mmengine').warning(
+                'BEVMoEBlock: NaN/Inf in z_ctx '
+                f'({(~torch.isfinite(z_ctx)).sum().item()} bad values) — '
+                'replacing with zeros before gate / context_head.')
+            z_ctx = torch.nan_to_num(
+                z_ctx, nan=0.0, posinf=0.0, neginf=0.0)
+
         if self.gate_input_detach:
             z_gate = z_ctx.detach()            # (B, 256), stop-gradient
         else:

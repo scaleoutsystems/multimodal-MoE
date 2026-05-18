@@ -220,14 +220,99 @@ class BEVFusion(Base3DDetector):
 
         return loss, log_vars  # type: ignore
 
-    def _repair_bn_stats(self) -> None:
-        """Replace any NaN/Inf values in BN running stats with safe defaults.
+    # Magnitude thresholds for the pathological-drift reset branch of
+    # :meth:`_repair_bn_stats`.  Numbers are anchored to the run-4585570
+    # epoch-15 forensic audit:
+    #
+    #   * ``experts.{0..3}.block.4.running_var`` ∈ [7.6e4, 2.1e5]
+    #     (last BN of the BEVResidualExpert residual branch)
+    #   * ``experts.{0..3}.block.4.running_mean`` ∈ [1.3e3, 2.8e3]
+    #
+    # The next-worst layer in the *entire* model was
+    # ``bbox_head.heatmap_head.0.bn.running_var = 8.5e3`` (legitimately
+    # large for a 128-ch detection-head BN), so a 1e4 variance ceiling
+    # cleanly separates pathological MoE-expert drift from any
+    # plausible non-MoE BN value.  The 1e3 running-mean ceiling is the
+    # mirror-image threshold and lands above the worst non-MoE
+    # ``running_mean`` (~1.3e2) by an order of magnitude.
+    _MOE_BN_VAR_RESET_THRESHOLD: float = 1e4
+    _MOE_BN_MEAN_RESET_THRESHOLD: float = 1e3
+
+    def _has_pathological_moe_bn(
+        self,
+        var_threshold: Optional[float] = None,
+        mean_threshold: Optional[float] = None,
+    ) -> bool:
+        """Return True iff any BN running stat inside an MoE block has
+        drifted into a pathological-but-finite regime.
+
+        Scoped to ``bev_moe`` / ``joint_modality_moe`` /
+        ``modality_specific_moe`` because the pretrained backbone's
+        BN stats are known-good and a global magnitude check would
+        risk firing on legitimately-large detection-head or
+        position-embedding BN values.
+
+        Args:
+            var_threshold: Override for ``|running_var|`` ceiling.
+                Defaults to :attr:`_MOE_BN_VAR_RESET_THRESHOLD`.
+            mean_threshold: Override for ``|running_mean|`` ceiling.
+                Defaults to :attr:`_MOE_BN_MEAN_RESET_THRESHOLD`.
+
+        Returns:
+            ``True`` as soon as one MoE BN exceeds either threshold;
+            performs at most one CUDA→CPU sync per BN buffer (early-
+            exits on first hit) so the steady-state cost on a healthy
+            run is ~0.5–1ms per train step (a few dozen BN modules).
+        """
+        if var_threshold is None:
+            var_threshold = self._MOE_BN_VAR_RESET_THRESHOLD
+        if mean_threshold is None:
+            mean_threshold = self._MOE_BN_MEAN_RESET_THRESHOLD
+        for top_name in ('bev_moe', 'joint_modality_moe',
+                          'modality_specific_moe'):
+            top = getattr(self, top_name, None)
+            if top is None:
+                continue
+            for m in top.modules():
+                rv = getattr(m, 'running_var', None)
+                rm = getattr(m, 'running_mean', None)
+                if rv is None or rm is None:
+                    continue
+                if rv.abs().max().item() > var_threshold:
+                    return True
+                if rm.abs().max().item() > mean_threshold:
+                    return True
+        return False
+
+    def _repair_bn_stats(self, reset_pathological: bool = False) -> None:
+        """Replace any NaN/Inf values in BN running stats with safe defaults,
+        and optionally also reset MoE-block BN buffers whose magnitudes
+        have drifted into a pathological-but-finite regime.
 
         Called from train_step() after backward completes, so the repair
         happens outside the autograd graph window (CuDNN BN saves
         running_mean/running_var for its backward kernel; in-place ops on
         those tensors between forward and backward raise a version mismatch
         RuntimeError).
+
+        Args:
+            reset_pathological: When ``True``, additionally reset any
+                MoE-block BN whose ``|running_var|`` or ``|running_mean|``
+                exceeds :attr:`_MOE_BN_VAR_RESET_THRESHOLD` /
+                :attr:`_MOE_BN_MEAN_RESET_THRESHOLD` back to ``(0, 1)``.
+                Scoped to MoE submodules only — see
+                :meth:`_has_pathological_moe_bn` for the scope rationale.
+                The reset is done because eval()-mode BN normalises with
+                these EMA buffers; once they drift far enough, the
+                eval-time activations become saturated/noise and the
+                fp16 forward on the next train batch is more likely to
+                overflow, kicking off the ``z_ctx → gate-logits``
+                zero-out collapse documented in :mod:`moe_bev.bev_moe`.
+                Resetting to ``(0, 1)`` recovers a neutral starting
+                point; the experts' affine ``weight``/``bias`` are
+                untouched so the residual branch's identity init is
+                preserved and the gate is free to re-discover useful
+                expert specialisation from the next forward onward.
         """
         for m in self.modules():
             if getattr(m, 'running_mean', None) is not None:
@@ -235,10 +320,42 @@ class BEVFusion(Base3DDetector):
             if getattr(m, 'running_var', None) is not None:
                 m.running_var.nan_to_num_(nan=1.0, posinf=1.0, neginf=1.0)
 
+        if not reset_pathological:
+            return
+
+        var_threshold = self._MOE_BN_VAR_RESET_THRESHOLD
+        mean_threshold = self._MOE_BN_MEAN_RESET_THRESHOLD
+        n_reset = 0
+        reset_names: List[str] = []
+        for top_name in ('bev_moe', 'joint_modality_moe',
+                          'modality_specific_moe'):
+            top = getattr(self, top_name, None)
+            if top is None:
+                continue
+            for m_name, m in top.named_modules():
+                rv = getattr(m, 'running_var', None)
+                rm = getattr(m, 'running_mean', None)
+                if rv is None or rm is None:
+                    continue
+                if (rv.abs().max().item() > var_threshold
+                        or rm.abs().max().item() > mean_threshold):
+                    rm.zero_()
+                    rv.fill_(1.0)
+                    n_reset += 1
+                    reset_names.append(f'{top_name}.{m_name}')
+        if n_reset > 0:
+            import logging as _logging
+            _logging.getLogger('mmengine').warning(
+                f'Reset {n_reset} MoE BN running-stat buffer pair(s) '
+                f'whose magnitudes exceeded thresholds '
+                f'(|running_var| > {var_threshold:.0e} or '
+                f'|running_mean| > {mean_threshold:.0e}). '
+                f'Affected modules: {reset_names}')
+
     def train_step(self, data, optim_wrapper):
         """Override to repair BN stats after backward when a NaN batch fires.
 
-        Three independent triggers schedule a repair (any one is sufficient):
+        Four independent triggers schedule a repair (any one is sufficient):
 
         1. ``parse_losses`` saw a non-finite *total* loss this iter and set
            ``_repair_bn_stats_after_backward`` (original behaviour).
@@ -251,9 +368,24 @@ class BEVFusion(Base3DDetector):
            validation collapsed to mAP=0 because eval() mode uses those buffers.
         3. Any BN buffer is already non-finite at the end of this iter (defence
            in depth: catches whatever path slipped through triggers 1 and 2).
+        4. Any MoE-expert BN buffer has drifted into a *finite but pathological*
+           regime (``|running_var| > 1e4`` or ``|running_mean| > 1e3``).
+           Run 4585570 epoch 15 ended with
+           ``experts.*.block.4.running_var ∈ [7.6e4, 2.1e5]`` and
+           ``running_mean ∈ [1.3e3, 2.8e3]`` while every loss/grad/buffer
+           stayed strictly finite — triggers 1-3 are blind to this state
+           but it still pre-loads the next fp16 forward for the
+           ``z_ctx → gate-logits`` zero-out collapse documented in
+           :mod:`moe_bev.bev_moe`.  Trigger 4 detects the drift and the
+           reset path of :meth:`_repair_bn_stats` recovers the affected
+           expert BN buffers to ``(mean=0, var=1)`` — scoped to MoE
+           submodules only so the pretrained backbone's BN prior is
+           preserved.
 
-        Triggers 2 and 3 are O(num_params + num_bn_buffers) reductions
-        per iter, well below 1ms on this model.
+        Triggers 2, 3 and 4 are O(num_params + num_bn_buffers) GPU-side
+        reductions per iter (with one ``.item()`` sync per checked
+        buffer in the worst case for trigger 4), well below 1 ms on
+        this model.
         """
         log_vars = super().train_step(data, optim_wrapper)
 
@@ -287,8 +419,24 @@ class BEVFusion(Base3DDetector):
                 if needs_repair:
                     break
 
-        if needs_repair:
-            self._repair_bn_stats()
+        # Trigger 4 is independent of triggers 1-3 — pathological
+        # finite-magnitude drift can co-exist with clean losses, clean
+        # gradients, and finite BN buffers — so it is checked
+        # unconditionally and merged with the NaN-path flag below.
+        needs_pathological_reset = self._has_pathological_moe_bn()
+        if needs_pathological_reset:
+            import logging as _logging
+            _logging.getLogger('mmengine').warning(
+                'Pathological-but-finite drift detected in MoE BN '
+                'running stats — resetting affected buffers now to '
+                f'(mean=0, var=1).  Thresholds: |running_var| > '
+                f'{self._MOE_BN_VAR_RESET_THRESHOLD:.0e}, '
+                f'|running_mean| > '
+                f'{self._MOE_BN_MEAN_RESET_THRESHOLD:.0e}.')
+
+        if needs_repair or needs_pathological_reset:
+            self._repair_bn_stats(
+                reset_pathological=needs_pathological_reset)
             self._repair_bn_stats_after_backward = False
         return log_vars
 
