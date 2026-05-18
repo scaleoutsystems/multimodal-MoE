@@ -2,8 +2,10 @@
 
 ## Models
 
-- **LiDAR-only checkpoint:** `outputs/runs/zod_lidar_only/zod-lidar-only_4543546/best_mAP_0.50_epoch_19.pth`
-- **LiDAR-only config:** `mmdetection3d/configs/zod/zod_lidar_only.py`
+- **LiDAR-only checkpoint:** `outputs/runs/zod_lidar_only/zod-lidar-only_4570893/best_mAP_0.50_epoch_30.pth`
+- **LiDAR-only config:** `mmdetection3d/configs/zod/zod_lidar_only_30ep.py`
+- **LiDAR-only-MoE checkpoint:** `outputs/runs/zod_lidar_only_moe/lidar-moe_4570728/best_mAP_0.50_epoch_29.pth`
+- **LiDAR-only-MoE config:** `mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_30ep.py`
 - **Camera-only checkpoint:** `outputs/runs/zod_camera_only/zod-cam-only_4469392/best_mAP_0.50_epoch_11.pth`
 - **Camera-only config:** `mmdetection3d/configs/zod/zod_camera_only.py`
 - **Fusion checkpoint:** `outputs/runs/zod_bevfusion_dualinit/bevfusion-dualinit_4543552/best_mAP_0.50_epoch_11.pth`
@@ -29,7 +31,7 @@ This is especially useful because:
 
 | Model | AP@0.50 | AP@0.5m |
 |---|---:|---:|
-| LiDAR-only | 0.5207 | 0.8125 |
+| LiDAR-only | 0.5443 | 0.8140 |
 | Camera-only | 0.0047 | 0.2101 |
 | Fusion | 0.5785 | 0.8277 |
 
@@ -48,8 +50,8 @@ night: 1875
 
 | Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
 |---|---:|---:|---:|---:|---:|---:|
-| day | 0.5205 | 0.8192 | 0.0046 | 0.2105 | 0.5759 | 0.8305 |
-| night | 0.5568 | 0.7664 | 0.0067 | 0.2123 | 0.6294 | 0.7926 |
+| day | 0.5449 | 0.8202 | 0.0046 | 0.2105 | 0.5759 | 0.8305 |
+| night | 0.5611 | 0.7756 | 0.0067 | 0.2123 | 0.6294 | 0.7926 |
 
 ### Quick read
 - **LiDAR-only** and **Fusion** are slightly better on **AP@0.50** at night, but worse on **AP@0.5m**.
@@ -69,17 +71,17 @@ smaller_rural: 513
 
 | Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
 |---|---:|---:|---:|---:|---:|---:|
-| arterial_rural | 0.4420 | 0.5934 | 0.0005 | 0.0414 | 0.4500 | 0.5875 |
-| arterial_urban | 0.5272 | 0.7924 | 0.0042 | 0.2057 | 0.5760 | 0.8116 |
-| city | 0.5217 | 0.8204 | 0.0049 | 0.2139 | 0.5818 | 0.8343 |
-| highway | 0.1434 | 0.1577 | 0.0000 | 0.0025 | 0.1980 | 0.3218 |
-| smaller_rural | 0.3392 | 0.7358 | 0.0006 | 0.1679 | 0.4339 | 0.7700 |
+| arterial_rural | 0.3699 | 0.5572 | 0.0005 | 0.0414 | 0.4500 | 0.5875 |
+| arterial_urban | 0.5534 | 0.7950 | 0.0042 | 0.2057 | 0.5760 | 0.8116 |
+| city | 0.5450 | 0.8217 | 0.0049 | 0.2139 | 0.5818 | 0.8343 |
+| highway | 0.1659 | 0.1772 | 0.0000 | 0.0025 | 0.1980 | 0.3218 |
+| smaller_rural | 0.3867 | 0.7319 | 0.0006 | 0.1679 | 0.4339 | 0.7700 |
 
 ### Quick read
 - **Road type is the strongest context signal** across all models.
 - **City** and **arterial_urban** are much easier than **arterial_rural** and **highway**.
 - **Camera-only** is essentially unusable on **highway** and extremely weak on **arterial_rural**.
-- **Fusion** improves on LiDAR-only almost everywhere, but does not remove the strong road-type dependence.
+- **Fusion** improves on LiDAR-only everywhere on **AP@0.50**, but does not remove the strong road-type dependence.
 
 ---
 
@@ -96,13 +98,13 @@ fog: small subset
 
 | Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
 |---|---:|---:|---:|---:|---:|---:|
-| clear_day | 0.5116 | 0.8046 | 0.0043 | 0.1979 | 0.5608 | 0.8143 |
-| clear_night | 0.5292 | 0.7795 | 0.0033 | 0.1743 | 0.5833 | 0.8095 |
-| cloudy | 0.5359 | 0.8281 | 0.0050 | 0.2084 | 0.5834 | 0.8421 |
-| fog | 0.5208 | 0.7953 | 0.0110 | 0.2555 | 0.6288 | 0.8104 |
-| partly_cloudy_day | 0.5387 | 0.8266 | 0.0039 | 0.2123 | 0.5819 | 0.8351 |
-| partly_cloudy_night | 0.5492 | 0.7780 | 0.0056 | 0.2240 | 0.6034 | 0.7931 |
-| precipitation | 0.4580 | 0.7905 | 0.0090 | 0.2221 | 0.5761 | 0.8187 |
+| clear_day | 0.5338 | 0.8051 | 0.0043 | 0.1979 | 0.5608 | 0.8143 |
+| clear_night | 0.4862 | 0.7680 | 0.0033 | 0.1743 | 0.5833 | 0.8095 |
+| cloudy | 0.5556 | 0.8319 | 0.0050 | 0.2084 | 0.5834 | 0.8421 |
+| fog | 0.4939 | 0.8021 | 0.0110 | 0.2555 | 0.6288 | 0.8104 |
+| partly_cloudy_day | 0.5605 | 0.8272 | 0.0039 | 0.2123 | 0.5819 | 0.8351 |
+| partly_cloudy_night | 0.5675 | 0.7837 | 0.0056 | 0.2240 | 0.6034 | 0.7931 |
+| precipitation | 0.5090 | 0.7913 | 0.0090 | 0.2221 | 0.5761 | 0.8187 |
 
 ### Quick read
 - Weather matters, but less than **road type**.
@@ -120,12 +122,78 @@ cloud_like: 5928
 
 | Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
 |---|---:|---:|---:|---:|---:|---:|
-| clear_like | 0.5113 | 0.8005 | 0.0041 | 0.1955 | 0.5624 | 0.8136 |
-| cloud_like | 0.5370 | 0.8213 | 0.0043 | 0.2125 | 0.5838 | 0.8345 |
+| clear_like | 0.5287 | 0.8000 | 0.0041 | 0.1955 | 0.5624 | 0.8136 |
+| cloud_like | 0.5577 | 0.8234 | 0.0043 | 0.2125 | 0.5838 | 0.8345 |
 
 ### Quick read
 - All three models do slightly better in **cloud_like** than **clear_like**.
 - The effect is real but modest compared with **road type**.
+
+---
+
+## LiDAR-only vs LiDAR-only-MoE comparison
+
+The updated LiDAR-only baseline is stronger than the LiDAR-only-MoE model on the main IoU metric. On the full test set, LiDAR-only reaches **0.5443 AP@0.50**, while LiDAR-only-MoE reaches **0.4384 AP@0.50**, a difference of **-0.1059** for the MoE model. However, the two models are almost identical on the coarse center-distance metric: **0.8140 AP@0.5m** for LiDAR-only versus **0.8110 AP@0.5m** for LiDAR-only-MoE.
+
+This suggests that the LiDAR-only-MoE model preserves coarse localization ability fairly well, but currently hurts precise box quality / IoU-based detection. In other words, the MoE variant is not simply failing to find pedestrians; rather, it appears to degrade the quality or consistency of the final 3D boxes relative to the non-MoE LiDAR-only baseline.
+
+### Full test
+
+| Context | LiDAR AP@0.50 | LiDAR-MoE AP@0.50 | Δ AP@0.50 | LiDAR AP@0.5m | LiDAR-MoE AP@0.5m | Δ AP@0.5m |
+|---|---:|---:|---:|---:|---:|---:|
+| full_test | 0.5443 | 0.4384 | -0.1059 | 0.8140 | 0.8110 | -0.0030 |
+
+### Lighting
+
+| Context | LiDAR AP@0.50 | LiDAR-MoE AP@0.50 | Δ AP@0.50 | LiDAR AP@0.5m | LiDAR-MoE AP@0.5m | Δ AP@0.5m |
+|---|---:|---:|---:|---:|---:|---:|
+| day | 0.5449 | 0.4374 | -0.1075 | 0.8202 | 0.8167 | -0.0035 |
+| night | 0.5611 | 0.4761 | -0.0850 | 0.7756 | 0.7752 | -0.0004 |
+
+### Road type
+
+| Context | LiDAR AP@0.50 | LiDAR-MoE AP@0.50 | Δ AP@0.50 | LiDAR AP@0.5m | LiDAR-MoE AP@0.5m | Δ AP@0.5m |
+|---|---:|---:|---:|---:|---:|---:|
+| arterial_rural | 0.3699 | 0.3089 | -0.0610 | 0.5572 | 0.5322 | -0.0250 |
+| arterial_urban | 0.5534 | 0.4660 | -0.0874 | 0.7950 | 0.7923 | -0.0027 |
+| city | 0.5450 | 0.4342 | -0.1108 | 0.8217 | 0.8201 | -0.0016 |
+| highway | 0.1659 | 0.0631 | -0.1028 | 0.1772 | 0.1284 | -0.0488 |
+| smaller_rural | 0.3867 | 0.3692 | -0.0175 | 0.7319 | 0.7146 | -0.0173 |
+
+### Scraped weather
+
+| Context | LiDAR AP@0.50 | LiDAR-MoE AP@0.50 | Δ AP@0.50 | LiDAR AP@0.5m | LiDAR-MoE AP@0.5m | Δ AP@0.5m |
+|---|---:|---:|---:|---:|---:|---:|
+| clear_day | 0.5338 | 0.4274 | -0.1064 | 0.8051 | 0.8036 | -0.0015 |
+| clear_night | 0.4862 | 0.4471 | -0.0391 | 0.7680 | 0.7609 | -0.0071 |
+| cloudy | 0.5556 | 0.4478 | -0.1078 | 0.8319 | 0.8236 | -0.0083 |
+| fog | 0.4939 | 0.5157 | +0.0218 | 0.8021 | 0.7726 | -0.0295 |
+| partly_cloudy_day | 0.5605 | 0.4445 | -0.1160 | 0.8272 | 0.8266 | -0.0006 |
+| partly_cloudy_night | 0.5675 | 0.4539 | -0.1136 | 0.7837 | 0.7872 | +0.0035 |
+| precipitation | 0.5090 | 0.4257 | -0.0833 | 0.7913 | 0.7851 | -0.0062 |
+
+### Weather group
+
+| Context | LiDAR AP@0.50 | LiDAR-MoE AP@0.50 | Δ AP@0.50 | LiDAR AP@0.5m | LiDAR-MoE AP@0.5m | Δ AP@0.5m |
+|---|---:|---:|---:|---:|---:|---:|
+| clear_like | 0.5287 | 0.4274 | -0.1013 | 0.8000 | 0.7984 | -0.0016 |
+| cloud_like | 0.5577 | 0.4452 | -0.1125 | 0.8234 | 0.8209 | -0.0025 |
+
+### Complexity
+
+| Context | LiDAR AP@0.50 | LiDAR-MoE AP@0.50 | Δ AP@0.50 | LiDAR AP@0.5m | LiDAR-MoE AP@0.5m | Δ AP@0.5m |
+|---|---:|---:|---:|---:|---:|---:|
+| low | 0.5434 | 0.4642 | -0.0792 | 0.7833 | 0.7868 | +0.0035 |
+| medium | 0.5586 | 0.4411 | -0.1175 | 0.8282 | 0.8281 | -0.0001 |
+| high | 0.5520 | 0.4400 | -0.1120 | 0.8510 | 0.8498 | -0.0012 |
+
+### Quick read
+- **LiDAR-only-MoE is consistently worse than LiDAR-only on AP@0.50** across almost all context splits.
+- The largest AP@0.50 drops occur in **partly_cloudy_day**, **medium complexity**, **cloud_like**, **city**, **clear_day**, **cloudy**, and **high complexity**.
+- The main exception is **fog**, where LiDAR-only-MoE is slightly better on **AP@0.50**: **0.5157** versus **0.4939**.
+- On **AP@0.5m**, LiDAR-only-MoE is usually very close to LiDAR-only.
+- This means the MoE model mostly preserves coarse localization, but loses precision under IoU-based evaluation.
+- The strongest negative signal is therefore not that the MoE model cannot localize pedestrians, but that its adaptive expert block may be disrupting the representation needed for accurate 3D box geometry.
 
 ---
 
@@ -135,6 +203,7 @@ cloud_like: 5928
 - Strong across most contexts.
 - **Road type** is the strongest context effect.
 - Weather and lighting matter somewhat, but less.
+- The updated 30-epoch LiDAR-only baseline is stronger than the previous LiDAR-only numbers, especially on **AP@0.50**.
 
 ### Camera-only
 - Very weak on **AP@0.50**.
@@ -150,6 +219,13 @@ cloud_like: 5928
 - Usually only slightly better than LiDAR-only on **AP@0.5m**.
 - This suggests the main fusion gain is more about **better box quality** than dramatically better coarse localization.
 - Fusion does **not** remove context dependence, especially for **road type**.
+
+### LiDAR-only-MoE
+- Performs worse than the updated LiDAR-only baseline on **AP@0.50**.
+- Remains very close to LiDAR-only on **AP@0.5m**.
+- This pattern suggests that the current LiDAR-only-MoE setup preserves coarse localization but degrades precise box quality.
+- The result is important because it shows that adding MoE capacity does not automatically improve the LiDAR-only model.
+- The MoE block likely needs stronger stabilization, better placement, or more careful routing/expert regularization before it can outperform the non-adaptive LiDAR-only baseline.
 
 ---
 
@@ -191,6 +267,7 @@ Most relevant signals:
 Why:
 - Experts can specialize to different scene regimes (e.g. highway vs city).
 - Weather may still affect feature quality, especially for camera.
+- However, the current LiDAR-only-MoE results show that single-modality MoE specialization is not automatically beneficial. The model needs to improve precise box quality, not just preserve coarse localization.
 
 ---
 
@@ -199,3 +276,6 @@ Why:
 - **Road type is the dominant context signal** across all models.
 - **Weather is the most meaningful complementary signal**, especially for multimodal routing.
 - Fusion improves overall performance but **does not eliminate context dependence**, reinforcing the motivation for context-aware MoE routing.
+- The updated LiDAR-only baseline is stronger than the current LiDAR-only-MoE model on **AP@0.50**.
+- The LiDAR-only-MoE model remains close on **AP@0.5m**, which suggests that it preserves coarse localization but currently harms precise 3D box quality.
+- Therefore, the current MoE result should be interpreted as evidence that **adaptive routing is promising but not yet better than the strong LiDAR-only baseline in this configuration**.
