@@ -94,7 +94,7 @@ partly_cloudy_day: 2915
 partly_cloudy_night: 1113  
 cloudy: 1900  
 precipitation: 1768  
-fog: small subset  
+fog: 212 
 
 | Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
 |---|---:|---:|---:|---:|---:|---:|
