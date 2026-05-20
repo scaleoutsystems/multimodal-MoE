@@ -6,8 +6,8 @@
 - **LiDAR-only config:** `mmdetection3d/configs/zod/zod_lidar_only_30ep.py`
 - **LiDAR-only-MoE checkpoint:** `outputs/runs/zod_lidar_only_moe/lidar-moe_4570728/best_mAP_0.50_epoch_29.pth`
 - **LiDAR-only-MoE config:** `mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_30ep.py`
-- **Camera-only checkpoint:** `outputs/runs/zod_camera_only/zod-cam-only_4469392/best_mAP_0.50_epoch_11.pth`
-- **Camera-only config:** `mmdetection3d/configs/zod/zod_camera_only.py`
+- **Camera-only checkpoint:** `outputs/runs/zod_camera_only/zod-cam-only_4577582/best_mAP_0.50_epoch_31.pth`
+- **Camera-only config:** `mmdetection3d/configs/zod/zod_camera_only_40ep.py`
 - **Fusion checkpoint:** `outputs/runs/zod_bevfusion_dualinit/bevfusion-dualinit_4543552/best_mAP_0.50_epoch_11.pth`
 - **Fusion config:** `mmdetection3d/configs/zod/zod_bevfusion_dualinit.py`
 
@@ -32,7 +32,7 @@ This is especially useful because:
 | Model | AP@0.50 | AP@0.5m |
 |---|---:|---:|
 | LiDAR-only | 0.5443 | 0.8140 |
-| Camera-only | 0.0047 | 0.2101 |
+| Camera-only | 0.0086 | 0.2399 |
 | Fusion | 0.5785 | 0.8277 |
 
 ### Quick read
@@ -50,8 +50,8 @@ night: 1875
 
 | Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
 |---|---:|---:|---:|---:|---:|---:|
-| day | 0.5449 | 0.8202 | 0.0046 | 0.2105 | 0.5759 | 0.8305 |
-| night | 0.5611 | 0.7756 | 0.0067 | 0.2123 | 0.6294 | 0.7926 |
+| day | 0.5449 | 0.8202 | 0.0082 | 0.2400 | 0.5759 | 0.8305 |
+| night | 0.5611 | 0.7756 | 0.0086 | 0.2426 | 0.6294 | 0.7926 |
 
 ### Quick read
 - **LiDAR-only** and **Fusion** are slightly better on **AP@0.50** at night, but worse on **AP@0.5m**.
@@ -71,11 +71,11 @@ smaller_rural: 513
 
 | Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
 |---|---:|---:|---:|---:|---:|---:|
-| arterial_rural | 0.3699 | 0.5572 | 0.0005 | 0.0414 | 0.4500 | 0.5875 |
-| arterial_urban | 0.5534 | 0.7950 | 0.0042 | 0.2057 | 0.5760 | 0.8116 |
-| city | 0.5450 | 0.8217 | 0.0049 | 0.2139 | 0.5818 | 0.8343 |
-| highway | 0.1659 | 0.1772 | 0.0000 | 0.0025 | 0.1980 | 0.3218 |
-| smaller_rural | 0.3867 | 0.7319 | 0.0006 | 0.1679 | 0.4339 | 0.7700 |
+| arterial_rural | 0.3699 | 0.5572 | 0.0018 | 0.0966 | 0.4500 | 0.5875 |
+| arterial_urban | 0.5534 | 0.7950 | 0.0083 | 0.2313 | 0.5760 | 0.8116 |
+| city | 0.5450 | 0.8217 | 0.0087 | 0.2443 | 0.5818 | 0.8343 |
+| highway | 0.1659 | 0.1772 | 0.0000 | 0.0548 | 0.1980 | 0.3218 |
+| smaller_rural | 0.3867 | 0.7319 | 0.0018 | 0.2230 | 0.4339 | 0.7700 |
 
 ### Quick read
 - **Road type is the strongest context signal** across all models.
@@ -98,18 +98,18 @@ fog: small subset
 
 | Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
 |---|---:|---:|---:|---:|---:|---:|
-| clear_day | 0.5338 | 0.8051 | 0.0043 | 0.1979 | 0.5608 | 0.8143 |
-| clear_night | 0.4862 | 0.7680 | 0.0033 | 0.1743 | 0.5833 | 0.8095 |
-| cloudy | 0.5556 | 0.8319 | 0.0050 | 0.2084 | 0.5834 | 0.8421 |
-| fog | 0.4939 | 0.8021 | 0.0110 | 0.2555 | 0.6288 | 0.8104 |
-| partly_cloudy_day | 0.5605 | 0.8272 | 0.0039 | 0.2123 | 0.5819 | 0.8351 |
-| partly_cloudy_night | 0.5675 | 0.7837 | 0.0056 | 0.2240 | 0.6034 | 0.7931 |
-| precipitation | 0.5090 | 0.7913 | 0.0090 | 0.2221 | 0.5761 | 0.8187 |
+| clear_day | 0.5338 | 0.8051 | 0.0073 | 0.2152 | 0.5608 | 0.8143 |
+| clear_night | 0.4862 | 0.7680 | 0.0131 | 0.2134 | 0.5833 | 0.8095 |
+| cloudy | 0.5556 | 0.8319 | 0.0086 | 0.2412 | 0.5834 | 0.8421 |
+| fog | 0.4939 | 0.8021 | 0.0143 | 0.2997 | 0.6288 | 0.8104 |
+| partly_cloudy_day | 0.5605 | 0.8272 | 0.0079 | 0.2455 | 0.5819 | 0.8351 |
+| partly_cloudy_night | 0.5675 | 0.7837 | 0.0114 | 0.2398 | 0.6034 | 0.7931 |
+| precipitation | 0.5090 | 0.7913 | 0.0134 | 0.2644 | 0.5761 | 0.8187 |
 
 ### Quick read
 - Weather matters, but less than **road type**.
 - **Camera-only** shows meaningful variation in **AP@0.5m** across weather regimes.
-- Best camera-only weather bins by **AP@0.5m** are **fog**, **partly_cloudy_night**, and **precipitation**.
+- Best camera-only weather bins by **AP@0.5m** are **fog**, **precipitation**, and **partly_cloudy_day**.
 - For **Fusion**, the general ordering of weather difficulty is similar to LiDAR-only.
 
 ---
@@ -122,8 +122,8 @@ cloud_like: 5928
 
 | Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
 |---|---:|---:|---:|---:|---:|---:|
-| clear_like | 0.5287 | 0.8000 | 0.0041 | 0.1955 | 0.5624 | 0.8136 |
-| cloud_like | 0.5577 | 0.8234 | 0.0043 | 0.2125 | 0.5838 | 0.8345 |
+| clear_like | 0.5287 | 0.8000 | 0.0075 | 0.2094 | 0.5624 | 0.8136 |
+| cloud_like | 0.5577 | 0.8234 | 0.0080 | 0.2435 | 0.5838 | 0.8345 |
 
 ### Quick read
 - All three models do slightly better in **cloud_like** than **clear_like**.
