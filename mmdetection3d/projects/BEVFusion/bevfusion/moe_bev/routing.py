@@ -584,11 +584,21 @@ class TopkGate(nn.Module):
         """
         logits = self.gate(feat)                                       # (B, E)
 
-        # Guard against NaN/inf logits (can arise if gate weights are
-        # corrupted by a gradient update that slipped through GradScaler
-        # in a multi-GPU DDP run).  Clamping to ±30 keeps softmax
-        # numerically safe while preserving relative expert ordering.
-        logits = torch.nan_to_num(logits, nan=0.0, posinf=30.0, neginf=-30.0)
+        # Clamp logits to ±30 so the downstream ``softmax`` is bounded
+        # away from over/underflow without altering relative ordering
+        # between experts.  We deliberately do NOT ``nan_to_num`` the
+        # logits here: under the fp32 routing path used by
+        # :class:`BEVMoEBlock` the only way to reach a non-finite logit
+        # is a corrupted gate weight, and in that case we want the NaN
+        # to propagate to the total loss so ``GradScaler`` skips the
+        # optimiser step and BN stats get repaired.  Masking it via
+        # ``nan_to_num`` used to zero the autograd gradient through
+        # ``gate.weight`` (and through ``context_summary`` upstream),
+        # which is exactly the silent-corruption mode that the dense-MoE
+        # collapse diagnosis showed (see ``bev_moe.py`` Step 1–2
+        # comments for the full failure path).  ``clamp`` keeps the
+        # forward numerically safe and lets autograd see a finite
+        # gradient (zero outside the clamp range, identity inside).
         logits = logits.clamp(-30.0, 30.0)
 
         full_softmax_probs = F.softmax(

@@ -86,57 +86,50 @@ from .routing import (BEVResSummaryEncoder, NoisyTopkGate, TopkGate,
 
 @MODELS.register_module()
 class JointModalityExpert(nn.Module):
-    """Single joint-modality expert — lightweight bottleneck fusion.
+    """Single joint-modality expert.
 
-    Each expert independently fuses ``cam_bev`` and ``lidar_bev`` into a
-    fresh BEV feature map (no identity residual — this is *not* a residual
-    adapter; the expert produces a new fused representation that replaces
-    the per-modality BEVs).  The bottleneck structure reduces the dense-MoE
-    compute relative to a full-channel ``3×3 (C_cam + C_lidar) → C_out``
-    fusion conv while preserving the same I/O contract.
+    Two expert flavours share the same I/O contract:
+    ``(cam_bev, lidar_bev) → (B, out_channels, H, W)``.  No identity
+    residual — the joint expert produces a fresh fused BEV from two
+    independent inputs.
 
-    Architecture::
+    ``expert_type='bottleneck'`` (legacy):
+        1×1 Conv(C_in → H) → BN → ReLU
+        3×3 Conv(H → H)    → BN → ReLU
+        1×1 Conv(H → C_out) → BN → ReLU
+        where ``C_in = cam_channels + lidar_channels``, ``H = hidden_channels``.
 
-        x = concat([cam_bev, lidar_bev], dim=1)        # (B, C_cam+C_lidar, H, W)
-
-        x = 1×1 Conv (C_cam+C_lidar → hidden_channels) ─ BN ─ ReLU
-        x = 3×3 Conv (hidden_channels  → hidden_channels) ─ BN ─ ReLU
-        x = 1×1 Conv (hidden_channels  → out_channels)   ─ BN ─ ReLU
-
-        fused_bev = x                                  # (B, C_out, H, W)
-
-    Compute (per BEV cell), default hidden_channels=128, cam=80, lidar=256,
-    out=256::
-
-        Legacy 3×3 (C_cam+C_lidar) → C_out:
-            (80 + 256) · 256 · 9 = 774 144 FLOPs/cell
-        Bottleneck (1×1 + 3×3 + 1×1) at H=128:
-            (80 + 256) · 128 + 128 · 128 · 9 + 128 · 256
-          = 43 008 + 147 456 + 32 768 ≈ 223 232 FLOPs/cell
-
-    ~3.5× cheaper per expert; with 4 dense experts the saving is ~2 MFLOPs/cell.
-
-    Important:
-        * Input shapes: ``cam_bev (B, C_cam, H, W)``, ``lidar_bev (B, C_lidar, H, W)``.
-        * Output shape: ``(B, out_channels, H, W)``.  ``out_channels`` is
-          chosen by the parent block to match the downstream
-          ``pts_backbone`` input channel count (256 in the BEVFusion stack).
-        * No identity residual: the joint expert produces a fresh fused
-          BEV from two independent inputs (the cam/lidar maps do not share
-          a single canonical "input to add back").  Each forward pass
-          returns a full fused tensor that the parent block weights into
-          the dense softmax mixture (``Σ_e p_e · expert_e(cam, lidar)``).
+    ``expert_type='full'`` (default for thesis main runs):
+        1×1 Conv(C_in → C_out) → GN(32, C_out) → ReLU   (project to output width)
+        num_refine_convs × [3×3 Conv(C_out → C_out) → GN(32, C_out) → ReLU]
+        GroupNorm (not BatchNorm) is used here because this expert
+        replaces ConvFuser entirely and sees a brand-new cam+lidar
+        concatenation distribution whose running BN stats lag the
+        rapidly-moving batch stats under high-LR fine-tuning,
+        producing transient val collapses (see :class:`JointModalityExpert`
+        body for the run-4610585 ep9 example).  GN's per-sample
+        normalization is identical at train and eval time, so this
+        failure mode cannot occur.
+        Final ReLU is kept (matches the bottleneck variant's output
+        contract) so the fused BEV passed to ``pts_backbone`` is
+        non-negative regardless of which expert flavour is in use.
 
     Args:
         cam_channels:    Camera BEV channel count.
         lidar_channels:  LiDAR BEV channel count.
-        out_channels:    Fused BEV output channel count (matches the
-                         downstream ``pts_backbone`` input).
-        hidden_channels: Bottleneck width.  Default 128.
+        out_channels:    Fused BEV output channel count.
+        hidden_channels: Bottleneck width (``expert_type='bottleneck'`` only).
+        expert_type:     ``'full'`` (default) or ``'bottleneck'``.
+        num_refine_convs:
+                         Number of 3×3 refinement convolutions after the
+                         initial 1×1 project for ``expert_type='full'``.
+                         Default 2.  Each refine conv (except the last)
+                         is followed by BN + ReLU; the last gets only BN.
     """
 
     def __init__(self, cam_channels: int, lidar_channels: int,
-                 out_channels: int, hidden_channels: int = 128):
+                 out_channels: int, hidden_channels: int = 128,
+                 expert_type: str = 'full', num_refine_convs: int = 2):
         super().__init__()
         assert (cam_channels > 0 and lidar_channels > 0
                 and out_channels > 0 and hidden_channels > 0), (
@@ -147,32 +140,56 @@ class JointModalityExpert(nn.Module):
         self.lidar_channels  = int(lidar_channels)
         self.out_channels    = int(out_channels)
         self.hidden_channels = int(hidden_channels)
+        self.expert_type     = str(expert_type).lower()
 
         in_channels = cam_channels + lidar_channels
-        # Reduce → spatial → expand bottleneck fusion.  Output is a fresh
-        # fused BEV (no residual add) so a final ReLU after the expand BN
-        # is appropriate.  BN epsilon/momentum mirror the BEV-residual
-        # expert defaults for consistency.
-        self.fuse = nn.Sequential(
-            # 1×1 reduce: project the concatenated cam+lidar tensor down
-            # to the bottleneck width.  Cheapest spatially-trivial way to
-            # combine the two modalities before the 3×3 spatial mixing.
-            nn.Conv2d(in_channels, hidden_channels, kernel_size=1,
-                      bias=False),
-            nn.BatchNorm2d(hidden_channels, eps=1e-3, momentum=0.01),
-            nn.ReLU(inplace=True),
-            # 3×3 spatial mixing at the bottleneck width.
-            nn.Conv2d(hidden_channels, hidden_channels, kernel_size=3,
-                      padding=1, bias=False),
-            nn.BatchNorm2d(hidden_channels, eps=1e-3, momentum=0.01),
-            nn.ReLU(inplace=True),
-            # 1×1 expand: project up to the requested fused-BEV channel
-            # count (matches ``pts_backbone`` input).
-            nn.Conv2d(hidden_channels, out_channels, kernel_size=1,
-                      bias=False),
-            nn.BatchNorm2d(out_channels, eps=1e-3, momentum=0.01),
-            nn.ReLU(inplace=True),
-        )
+
+        if self.expert_type == 'full':
+            # GroupNorm(32, C) instead of BatchNorm2d here:
+            # the joint expert is the only fresh-init fusion path in the
+            # whole network (it replaces ConvFuser entirely), so its BN
+            # running stats start at (0, 1) and have to estimate the
+            # cam+lidar concat distribution from scratch.  Under
+            # high-LR fine-tuning, the running-stat EMA lags the
+            # batch-stat distribution, producing a train-eval mismatch
+            # visible as transient val mAP collapses (e.g. run 4610585
+            # epoch 9 val=0.002 → epoch 10 val=0.507).  GroupNorm uses
+            # the same per-sample statistics in train and eval, so this
+            # failure mode is removed by construction.
+            # 1×1 project: concat → out_channels
+            layers: list = [
+                nn.Conv2d(in_channels, out_channels, kernel_size=1,
+                          bias=False),
+                nn.GroupNorm(32, out_channels),
+                nn.ReLU(inplace=True),
+            ]
+            # num_refine_convs × 3×3 spatial mixing at out_channels width,
+            # each followed by GN + ReLU.  Terminal ReLU is retained so
+            # the fused BEV output contract matches the bottleneck path
+            # (both return non-negative tensors to pts_backbone).
+            for _ in range(num_refine_convs):
+                layers.append(
+                    nn.Conv2d(out_channels, out_channels, kernel_size=3,
+                              padding=1, bias=False))
+                layers.append(nn.GroupNorm(32, out_channels))
+                layers.append(nn.ReLU(inplace=True))
+            self.fuse = nn.Sequential(*layers)
+
+        else:  # 'bottleneck'
+            self.fuse = nn.Sequential(
+                nn.Conv2d(in_channels, hidden_channels, kernel_size=1,
+                          bias=False),
+                nn.BatchNorm2d(hidden_channels, eps=1e-3, momentum=0.01),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(hidden_channels, hidden_channels, kernel_size=3,
+                          padding=1, bias=False),
+                nn.BatchNorm2d(hidden_channels, eps=1e-3, momentum=0.01),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(hidden_channels, out_channels, kernel_size=1,
+                          bias=False),
+                nn.BatchNorm2d(out_channels, eps=1e-3, momentum=0.01),
+                nn.ReLU(inplace=True),
+            )
 
     def forward(self, cam_bev: Tensor, lidar_bev: Tensor) -> Tensor:
         return self.fuse(torch.cat([cam_bev, lidar_bev], dim=1))
@@ -229,13 +246,16 @@ class JointModalityMoEBlock(nn.Module):
                              into the summary encoders.
         expert_hidden_channels:
                              Bottleneck width for each
-                             :class:`JointModalityExpert`'s fusion
-                             pathway.  Default 128 — matches the
-                             single-input BEV bottleneck experts in
-                             :class:`BEVMoEBlock` /
-                             :class:`ModalitySpecificMoEBlock` so the
-                             three MoE variants stay roughly
-                             compute-comparable.
+                             :class:`JointModalityExpert` when
+                             ``expert_type='bottleneck'``.  Ignored for
+                             ``expert_type='full'``.  Default 128.
+        expert_type:         ``'full'`` (default) → stronger
+                             1×1 project + ``num_refine_convs`` × 3×3
+                             refinement convolutions;
+                             ``'bottleneck'`` → legacy
+                             1×1 reduce + 3×3 spatial + 1×1 expand.
+        num_refine_convs:    Number of 3×3 spatial refinement convs for
+                             ``expert_type='full'``.  Default 2.
     """
 
     def __init__(
@@ -255,6 +275,8 @@ class JointModalityMoEBlock(nn.Module):
         gate_cfg: Optional[dict] = None,
         gate_input_detach: bool = True,
         expert_hidden_channels: int = 128,
+        expert_type: str = 'full',
+        num_refine_convs: int = 2,
     ):
         super().__init__()
         self.cam_channels = cam_channels
@@ -283,10 +305,14 @@ class JointModalityMoEBlock(nn.Module):
                 stacklevel=2)
 
         self.expert_hidden_channels = int(expert_hidden_channels)
+        self.expert_type = str(expert_type).lower()
+        self.num_refine_convs = int(num_refine_convs)
         self.experts = nn.ModuleList([
             JointModalityExpert(
                 cam_channels, lidar_channels, out_channels,
-                hidden_channels=self.expert_hidden_channels)
+                hidden_channels=self.expert_hidden_channels,
+                expert_type=self.expert_type,
+                num_refine_convs=self.num_refine_convs)
             for _ in range(num_experts)
         ])
 
@@ -432,40 +458,30 @@ class JointModalityMoEBlock(nn.Module):
         lidar_bev: Tensor,
         batch_input_metas: Optional[List[dict]] = None,
     ) -> Tuple[Tensor, Dict[str, Any]]:
-        # NaN/Inf guard on the incoming BEV feature maps.  See the
-        # equivalent comment in BEVMoEBlock.forward for the full
-        # rationale: a transient fp16 overflow upstream can leave
-        # NaN/Inf in the BEV maps, which then poison the experts' BN
-        # running stats and the context head's CE, contaminating
-        # ``moe_ctx_aux_loss_weighted`` for the rest of the run.
-        if not torch.isfinite(cam_bev).all():
-            import logging as _logging
-            _logging.getLogger('mmengine').warning(
-                'JointModalityMoEBlock: NaN/Inf in cam_bev — replacing '
-                'with zeros before MoE forward.')
-            cam_bev = torch.nan_to_num(
-                cam_bev, nan=0.0, posinf=0.0, neginf=0.0)
-        if not torch.isfinite(lidar_bev).all():
-            import logging as _logging
-            _logging.getLogger('mmengine').warning(
-                'JointModalityMoEBlock: NaN/Inf in lidar_bev — replacing '
-                'with zeros before MoE forward.')
-            lidar_bev = torch.nan_to_num(
-                lidar_bev, nan=0.0, posinf=0.0, neginf=0.0)
-
         B = cam_bev.shape[0]
 
-        # ── Step 1: Joint descriptor ──────────────────────────────────
+        # ── Step 1: Joint descriptor (fp32 routing path) ──────────────
+        # See ``BEVMoEBlock.forward`` Step 1–2 comment for the full
+        # diagnosis.  TL;DR: the routing path (summary encoders + gate
+        # + context_head + aux losses) is small but numerically
+        # fragile.  Running it under the outer fp16 autocast produced
+        # NaN/Inf in the descriptors which were then masked by
+        # ``nan_to_num`` — that masking silently killed the autograd
+        # gradient through the encoders and froze the router at init
+        # for the entire run.  We now run the whole routing block in
+        # fp32 (negligible compute relative to the experts) and let
+        # any genuinely non-finite value propagate to the total loss
+        # so ``GradScaler`` / ``_repair_bn_stats`` can do their job.
         # z_LC drives both the gate (via z_gate) and the context head.
         # When gate_input_detach=True the gate consumes z_LC.detach()
         # so the summary encoders are shaped only by the auxiliary
         # context CE (mirrors BEVMoEBlock).
-        z_C  = self.cam_summary(cam_bev)
-        z_L  = self.lidar_summary(lidar_bev)
-        z_LC = torch.cat([z_C, z_L], dim=1)
-        z_gate = z_LC.detach() if self.gate_input_detach else z_LC
-
-        gate_out = self.gate(z_gate)
+        with torch.autocast('cuda', enabled=False):
+            z_C  = self.cam_summary(cam_bev.float())
+            z_L  = self.lidar_summary(lidar_bev.float())
+            z_LC = torch.cat([z_C, z_L], dim=1)
+            z_gate = z_LC.detach() if self.gate_input_detach else z_LC
+            gate_out = self.gate(z_gate)
 
         # ── Step 2: Dispatch ──────────────────────────────────────────
         # Dense path (production for thesis Variant A): every expert
@@ -497,65 +513,61 @@ class JointModalityMoEBlock(nn.Module):
                     sample_out = sample_out + weight * expert_out
                 out[b] = sample_out[0]
 
-        # ── Step 3: Auxiliary losses ──────────────────────────────────
-        imp_loss = importance_loss(
-            gate_out.full_softmax_probs, self.importance_coef)
-        ld_loss  = load_loss(
-            gate_out.clean_logits, gate_out.noisy_logits,
-            gate_out.noise_std, self.k, self.load_coef)
-        z_loss   = router_z_loss(gate_out.clean_logits, self.z_loss_coef)
+        # ── Step 3: Auxiliary losses (fp32, same rationale as Step 1) ─
+        # ``context_head`` + balance losses run in fp32; no
+        # ``nan_to_num`` masking — propagate any non-finite value to
+        # the total loss so GradScaler can skip the step.
+        with torch.autocast('cuda', enabled=False):
+            imp_loss = importance_loss(
+                gate_out.full_softmax_probs, self.importance_coef)
+            ld_loss  = load_loss(
+                gate_out.clean_logits, gate_out.noisy_logits,
+                gate_out.noise_std, self.k, self.load_coef)
+            z_loss   = router_z_loss(gate_out.clean_logits, self.z_loss_coef)
 
-        # Context auxiliary classification ----------------------------------
-        ctx_loss_raw = z_LC.new_zeros(())
-        ctx_loss_weighted = z_LC.new_zeros(())
-        ctx_acc = z_LC.new_zeros(())
-        ctx_pred_hist: List[int] = []
-        ctx_label_hist: List[int] = []
-        ctx_logits_mean_abs = 0.0
+            ctx_loss_raw = z_LC.new_zeros(())
+            ctx_loss_weighted = z_LC.new_zeros(())
+            ctx_acc = z_LC.new_zeros(())
+            ctx_pred_hist: List[int] = []
+            ctx_label_hist: List[int] = []
+            ctx_logits_mean_abs = 0.0
 
-        if self.context_head is not None:
-            if batch_input_metas is None:
-                raise RuntimeError(
-                    'JointModalityMoEBlock: context_aux_cfg is configured '
-                    'but batch_input_metas was not passed to forward().')
-            ctx_logits = self.context_head(z_LC)
-            if not torch.isfinite(ctx_logits).all():
-                import logging as _logging
-                _logging.getLogger('mmengine').warning(
-                    'JointModalityMoEBlock: NaN/Inf in ctx_logits — '
-                    'replacing with zeros before context-aux CE.')
-                ctx_logits = torch.nan_to_num(
-                    ctx_logits, nan=0.0, posinf=0.0, neginf=0.0)
-            ctx_labels = extract_context_labels(
-                batch_input_metas, self._ctx_target_field,
-                self._ctx_vocab_map, z_LC.device)
-            assert ctx_labels.dtype == torch.long and ctx_labels.shape == (B,)
-            if self._ctx_loss_type == 'focal':
-                ctx_loss_raw = focal_ce_loss(
-                    ctx_logits, ctx_labels, gamma=self._ctx_focal_gamma)
-            elif self._ctx_loss_type == 'weighted_ce':
-                w = self._ctx_class_weights.to(
-                    device=ctx_logits.device, dtype=ctx_logits.dtype)
-                ctx_loss_raw = F.cross_entropy(
-                    ctx_logits, ctx_labels,
-                    weight=w,
-                    label_smoothing=self._ctx_label_smoothing)
-            else:  # 'ce'
-                ctx_loss_raw = F.cross_entropy(
-                    ctx_logits, ctx_labels,
-                    label_smoothing=self._ctx_label_smoothing)
-            ctx_loss_weighted = self._ctx_loss_coef * ctx_loss_raw
-            with torch.no_grad():
-                pred = ctx_logits.argmax(dim=-1)
-                ctx_acc = (pred == ctx_labels).float().mean()
-                num_classes = self.context_aux_cfg['num_classes']
-                ctx_pred_hist = torch.bincount(
-                    pred, minlength=num_classes).cpu().tolist()
-                ctx_label_hist = torch.bincount(
-                    ctx_labels, minlength=num_classes).cpu().tolist()
-                ctx_logits_mean_abs = float(ctx_logits.abs().mean().item())
+            if self.context_head is not None:
+                if batch_input_metas is None:
+                    raise RuntimeError(
+                        'JointModalityMoEBlock: context_aux_cfg is configured '
+                        'but batch_input_metas was not passed to forward().')
+                ctx_logits = self.context_head(z_LC)
+                ctx_labels = extract_context_labels(
+                    batch_input_metas, self._ctx_target_field,
+                    self._ctx_vocab_map, z_LC.device)
+                assert ctx_labels.dtype == torch.long and ctx_labels.shape == (B,)
+                if self._ctx_loss_type == 'focal':
+                    ctx_loss_raw = focal_ce_loss(
+                        ctx_logits, ctx_labels, gamma=self._ctx_focal_gamma)
+                elif self._ctx_loss_type == 'weighted_ce':
+                    w = self._ctx_class_weights.to(
+                        device=ctx_logits.device, dtype=ctx_logits.dtype)
+                    ctx_loss_raw = F.cross_entropy(
+                        ctx_logits, ctx_labels,
+                        weight=w,
+                        label_smoothing=self._ctx_label_smoothing)
+                else:  # 'ce'
+                    ctx_loss_raw = F.cross_entropy(
+                        ctx_logits, ctx_labels,
+                        label_smoothing=self._ctx_label_smoothing)
+                ctx_loss_weighted = self._ctx_loss_coef * ctx_loss_raw
+                with torch.no_grad():
+                    pred = ctx_logits.argmax(dim=-1)
+                    ctx_acc = (pred == ctx_labels).float().mean()
+                    num_classes = self.context_aux_cfg['num_classes']
+                    ctx_pred_hist = torch.bincount(
+                        pred, minlength=num_classes).cpu().tolist()
+                    ctx_label_hist = torch.bincount(
+                        ctx_labels, minlength=num_classes).cpu().tolist()
+                    ctx_logits_mean_abs = float(ctx_logits.abs().mean().item())
 
-        aux = imp_loss + ld_loss + z_loss + ctx_loss_weighted
+            aux = imp_loss + ld_loss + z_loss + ctx_loss_weighted
 
         # ── Step 4: Build moe_info ────────────────────────────────────
         clean_topk_idx_detached = (

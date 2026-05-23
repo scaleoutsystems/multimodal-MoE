@@ -66,6 +66,7 @@ bev_moe_cfg = dict(
     # 4577584 config exactly.
     k=num_experts,
     num_convs=2,
+    expert_type='full',
     gate_type='dense',
     gate_cfg=dict(temperature=1.0),
     gate_input_detach=True,
@@ -135,18 +136,25 @@ optim_wrapper = dict(
 )
 
 param_scheduler = [
+    # 500-iter linear warmup (start_factor=1/3 → lr goes 5e-5/3 → 5e-5)
+    dict(type='LinearLR',
+         start_factor=0.33333333, begin=0, end=500,
+         by_epoch=False),
+    # Cosine ramp-up: 5e-5 → 5e-4 over epochs 0-4
     dict(type='CosineAnnealingLR',
-         T_max=8, begin=0, end=8,
+         T_max=4, begin=0, end=4,
          eta_min=5e-4, by_epoch=True, convert_to_iter_based=True),
+    # Cosine decay: 5e-4 → 5e-9 over epochs 4-28
     dict(type='CosineAnnealingLR',
-         T_max=20, begin=8, end=28,
+         T_max=24, begin=4, end=28,
          eta_min=5e-9, by_epoch=True, convert_to_iter_based=True),
+    # Coupled momentum annealing
     dict(type='CosineAnnealingMomentum',
-         T_max=8, begin=0, end=8,
+         T_max=4, begin=0, end=4,
          eta_min=0.8947368421052632, by_epoch=True,
          convert_to_iter_based=True),
     dict(type='CosineAnnealingMomentum',
-         T_max=20, begin=8, end=28,
+         T_max=24, begin=4, end=28,
          eta_min=1, by_epoch=True, convert_to_iter_based=True),
 ]
 
@@ -274,8 +282,8 @@ custom_hooks = [
             '/home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4570893/best_mAP_0.50_epoch_30.pth'),
         camera_ckpt=(
             '/home/users/u103958/projects/multimodal-MoE/outputs/runs/'
-            'zod_camera_only/zod-cam-only_4469392/'
-            'best_mAP_0.50_epoch_11.pth'),
+            'zod_camera_only/zod-cam-only_4577582/'
+            'best_mAP_0.50_epoch_31.pth'),
         lidar_modules=[
             'pts_middle_encoder', 'pts_backbone', 'pts_neck', 'bbox_head',
         ],

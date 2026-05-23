@@ -806,108 +806,87 @@ class BEVMoEBlock(nn.Module):
             x_out:    BEV feature map (B, C, H, W) after expert processing.
             moe_info: Diagnostics dict (see module docstring).
         """
-        # ── Step 0: NaN/Inf guard on the incoming BEV feature map ─────
-        # A single transient fp16 overflow in an upstream layer (SECONDFPN
-        # under AmpOptimWrapper with dynamic loss-scale at the high end of
-        # its range) can emit non-finite values into x_bev.  Without a
-        # guard here, those NaN/Inf:
-        #   1) propagate through the experts' BN, updating the running
-        #      stats buffers with NaN (running_mean/var are buffer-
-        #      updated during forward regardless of whether the optimizer
-        #      step is later skipped by GradScaler; the bevfusion.py
-        #      after-backward _repair_bn_stats helper undoes this only
-        #      for batches whose *total* loss was non-finite),
-        #   2) flow through context_summary → LayerNorm in the context
-        #      head, producing NaN ctx_logits and a NaN
-        #      ``moe_ctx_aux_loss_weighted`` term that contaminates the
-        #      total loss for the rest of the run.
-        # Replacing non-finite values with zero is a no-op on healthy
-        # iters and matches the existing point-cloud sanitisation in
-        # BEVFusion.extract_pts_feat.
-        if not torch.isfinite(x_bev).all():
-            import logging as _logging
-            _logging.getLogger('mmengine').warning(
-                'BEVMoEBlock: NaN/Inf in input x_bev '
-                f'({(~torch.isfinite(x_bev)).sum().item()} bad values) — '
-                'replacing with zeros before MoE forward.')
-            x_bev = torch.nan_to_num(
-                x_bev, nan=0.0, posinf=0.0, neginf=0.0)
-
         B = x_bev.shape[0]
 
-        # ── Step 1: Build BEV context descriptor ──────────────────────
-        # z_ctx:  context branch — its gradient sources depend on the
-        #         training mode:
-        #           * gate_input_detach=True  (default, context-
-        #             supervised): z_ctx is shaped by the auxiliary
-        #             context CE only; detection-loss gradient is
-        #             blocked from reaching context_summary by the
-        #             detach below.
-        #           * gate_input_detach=False (task-driven): z_ctx is
-        #             shaped by the detection loss flowing back through
-        #             gate → expert dispatch → expert outputs.  The
-        #             encoder learns whatever feature the routing
-        #             decision needs to depend on, with no auxiliary
-        #             supervision.
-        # z_gate: feeds the gate.  Detached when gate_input_detach=True
-        #         so the gate's input space is fixed by context CE
-        #         alone (gate Linear is still task-driven via dispatch).
-        #         Same tensor as z_ctx when gate_input_detach=False so
-        #         detection gradient flows all the way back into
-        #         context_summary.
-        # z_ctx itself is NOT detached for context_head (full grad there
-        # whenever a context_head exists).
-        z_ctx  = self.context_summary(x_bev)   # (B, 256)
+        # ── Steps 1–2: Routing path (context_summary + gate) in fp32 ──
+        # The routing path is small relative to the experts but
+        # numerically fragile: a 3-block residual CNN at full BEV
+        # resolution feeds an avg+max-pool projection ending in
+        # ``LayerNorm`` and is then fed to a small ``Linear → softmax``
+        # gate.  Running it under the outer ``AmpOptimWrapper`` fp16
+        # autocast produced non-finite ``z_ctx`` values from iter 1
+        # onwards in the LiDAR-only runs (e.g. ``lidar-moe_4594168``
+        # stderr: 70k+ ``NaN/Inf in z_ctx`` events starting at the
+        # first training step).  Each event used to be masked by a
+        # ``torch.nan_to_num`` here, which created a *worse* failure
+        # mode than the original NaN:
+        #
+        #   * the gate received an exact-zero descriptor → uniform
+        #     softmax every iter → router decoupled from the experts;
+        #   * ``nan_to_num`` backward returns 0 wherever input was
+        #     non-finite, so the autograd path through
+        #     ``context_summary`` was killed and the encoder stayed at
+        #     its random initialisation for the entire run;
+        #   * the total loss stayed finite (because the masked aux CE
+        #     was finite), so ``GradScaler`` never skipped the step,
+        #     ``parse_losses`` never warned, and
+        #     ``_repair_bn_stats`` never fired.  The model trained
+        #     happily through corruption until backbone / expert
+        #     weights themselves overflowed at peak LR and the mAP
+        #     curve cliffed (epoch 7–8 collapse in the same run).
+        #
+        # The fix is structural, not defensive: promote the entire
+        # routing block to fp32.  context_summary + gate +
+        # context_head + aux losses together are a small fraction of
+        # one expert in FLOPs, so the AMP memory / speed win on the
+        # dominant compute (the experts and backbone) is preserved.
+        # No fallback ``nan_to_num`` is layered on top — if a
+        # non-finite value still appears (truly catastrophic upstream
+        # corruption) we *want* it to propagate to the total loss so
+        # the existing ``BEVFusion.parse_losses`` /
+        # ``train_step`` defences (warn, skip step, repair BN stats)
+        # can do their job.  Masking it would re-introduce the silent
+        # corruption mode this rewrite eliminates.
+        with torch.autocast('cuda', enabled=False):
+            x_bev_fp32 = x_bev.float()
 
-        # Defensive NaN/Inf guard on z_ctx (mirrors the Step-0 guard on
-        # x_bev and the pre-CE guard on ctx_logits).  BEVResSummaryEncoder
-        # contains BatchNorm layers whose running stats can drift to very
-        # large (but finite) values under AmpOptimWrapper / fp16 — every
-        # `grad_norm: nan` iter corresponds to an fp16 overflow event and
-        # contributes outlier batch statistics to those running buffers
-        # via the EMA update (running_var values >1e5 have been observed
-        # at epoch 15 in run 4585570).  Once a batch's BN computation
-        # overflows mid-fp16 it can emit non-finite values into z_ctx.
-        # Without a guard here, that NaN/Inf flows into:
-        #   1) the gate via z_gate (= z_ctx or z_ctx.detach()).  TopkGate
-        #      then nan_to_num's its own ``logits`` to zero, which:
-        #        - permanently breaks the gate-Linear gradient: PyTorch's
-        #          nan_to_num backward zeros grad_input wherever input was
-        #          NaN, so the gate weights stop receiving signal.
-        #        - drives softmax to uniform every step, decoupling the
-        #          router from the experts → mAP collapses to zero.
-        #      The AMP scaler does NOT rescue this: nan_to_num inside the
-        #      gate yields a *finite* loss, so the optimizer step is not
-        #      skipped and the broken state persists indefinitely.
-        #   2) the context head, where the existing ctx_logits guard
-        #      partially masks it but with the same gradient-zeroing
-        #      pathology.
-        # Replacing non-finite values with zero before they leave
-        # context_summary is the missing link in the defensive chain
-        # described in this module's docstring; healthy iterations are a
-        # no-op.
-        if not torch.isfinite(z_ctx).all():
-            import logging as _logging
-            _logging.getLogger('mmengine').warning(
-                'BEVMoEBlock: NaN/Inf in z_ctx '
-                f'({(~torch.isfinite(z_ctx)).sum().item()} bad values) — '
-                'replacing with zeros before gate / context_head.')
-            z_ctx = torch.nan_to_num(
-                z_ctx, nan=0.0, posinf=0.0, neginf=0.0)
+            # z_ctx:  context branch — its gradient sources depend on
+            #         the training mode:
+            #           * gate_input_detach=True  (default, context-
+            #             supervised): z_ctx is shaped by the auxiliary
+            #             context CE only; detection-loss gradient is
+            #             blocked from reaching context_summary by the
+            #             detach below.
+            #           * gate_input_detach=False (task-driven): z_ctx
+            #             is shaped by the detection loss flowing back
+            #             through gate → expert dispatch → expert
+            #             outputs.  The encoder learns whatever
+            #             feature the routing decision needs to depend
+            #             on, with no auxiliary supervision.
+            # z_gate: feeds the gate.  Detached when
+            #         gate_input_detach=True so the gate's input space
+            #         is fixed by context CE alone (gate Linear is
+            #         still task-driven via dispatch).  Same tensor as
+            #         z_ctx when gate_input_detach=False so detection
+            #         gradient flows all the way back into
+            #         context_summary.
+            # z_ctx itself is NOT detached for context_head (full grad
+            # there whenever a context_head exists).
+            z_ctx = self.context_summary(x_bev_fp32)   # (B, 256), fp32
 
-        if self.gate_input_detach:
-            z_gate = z_ctx.detach()            # (B, 256), stop-gradient
-        else:
-            z_gate = z_ctx                     # (B, 256), full grad through gate
+            if self.gate_input_detach:
+                z_gate = z_ctx.detach()           # (B, 256), stop-gradient
+            else:
+                z_gate = z_ctx                    # (B, 256), full grad through gate
 
-        # ── Step 2: Gate → top-k expert selection ─────────────────────
-        # Apply temperature annealing: T decays from ctx_gate_temp_high
-        # (e.g. 5.0) to 1.0 over ctx_gate_warmup_epochs.  High T keeps
-        # the softmax flat so routing stays balanced while z_ctx is still
-        # weak in early epochs.  Balance losses remain active throughout.
-        if self.ctx_gate_warmup_epochs > 0:
-            self.gate.set_temperature(self.router_temperature)
-        gate_out = self.gate(z_gate)
+            # Apply temperature annealing: T decays from
+            # ctx_gate_temp_high (e.g. 5.0) to 1.0 over
+            # ctx_gate_warmup_epochs.  High T keeps the softmax flat
+            # so routing stays balanced while z_ctx is still weak in
+            # early epochs.  Balance losses remain active throughout.
+            if self.ctx_gate_warmup_epochs > 0:
+                self.gate.set_temperature(self.router_temperature)
+            gate_out = self.gate(z_gate)
 
         # ── Step 3: Dispatch to selected experts ──────────────────────
         # Dense path: every expert always runs, weighted by the full
@@ -959,121 +938,112 @@ class BEVMoEBlock(nn.Module):
                     delta_sum = delta_sum + weight * (expert_out - xb)
                 x_out[b] = (xb + self.residual_gain * delta_sum)[0]
 
-        # ── Step 4: Auxiliary losses ──────────────────────────────────
-        imp_loss = importance_loss(
-            gate_out.full_softmax_probs, self.importance_coef)
-        ld_loss  = load_loss(
-            gate_out.clean_logits, gate_out.noisy_logits,
-            gate_out.noise_std, self.k, self.load_coef)
-        z_loss   = router_z_loss(gate_out.clean_logits, self.z_loss_coef)
+        # ── Step 4: Auxiliary losses (fp32, same rationale as Step 1–2)
+        # ``context_head`` is a tiny ``Linear → ReLU → LayerNorm →
+        # Dropout → Linear`` MLP and the balance losses are scalar
+        # reductions over ``(B, E)`` tensors — both need to be fp32 for
+        # the same numerical-robustness reason that the routing block
+        # above is fp32.  The previous ``nan_to_num`` guard on
+        # ``ctx_logits`` is deliberately not reinstated here: under
+        # fp32 the only way to reach a non-finite ``ctx_logits`` is via
+        # corruption upstream of this block, and in that case we want
+        # the NaN to propagate to the total loss so GradScaler can
+        # skip the step and ``_repair_bn_stats`` can run.
+        with torch.autocast('cuda', enabled=False):
+            imp_loss = importance_loss(
+                gate_out.full_softmax_probs, self.importance_coef)
+            ld_loss  = load_loss(
+                gate_out.clean_logits, gate_out.noisy_logits,
+                gate_out.noise_std, self.k, self.load_coef)
+            z_loss   = router_z_loss(gate_out.clean_logits, self.z_loss_coef)
 
-        # Switch balance loss — Fedus et al. (2022), α · E · Σ f_e · P_e.
-        # Fed with the *clean* top-k (``clean_topk_idx``) so it
-        # disciplines the deterministic validation-time router rather
-        # than the noisy training dispatch; see losses.py docstring.
-        # Under :class:`TopkGate` and under :class:`NoisyTopkGate` in
-        # eval, ``clean_topk_idx`` equals ``topk_idx`` so this is a no-op
-        # relative to the classical Switch formulation.
-        #
-        # In dense dispatch (``gate_type='dense'``, k=E) the switch loss
-        # collapses to the constant α (every expert is "selected" on
-        # every sample so f_e = 1/E uniformly, giving E·Σ(1/E)·P_e = 1).
-        # The gradient through P_e is a uniform additive bias on every
-        # logit and provides no specialisation signal — so we
-        # short-circuit the term to zero regardless of the configured
-        # coefficient and rely on ``importance_loss`` for soft balance.
-        if self._dense_dispatch:
-            sw_loss = z_ctx.new_zeros(())
-        elif self.switch_balance_coef > 0.0:
-            clean_idx = gate_out.clean_topk_idx
-            if clean_idx is None:                         # legacy safety
-                clean_idx = gate_out.topk_idx
-            sw_loss = switch_balance_loss(
-                gate_out.full_softmax_probs,
-                clean_idx,
-                self.num_experts,
-                self.switch_balance_coef,
-            )
-        else:
-            sw_loss = z_ctx.new_zeros(())
+            # Switch balance loss — Fedus et al. (2022),
+            # α · E · Σ f_e · P_e.  Fed with the *clean* top-k
+            # (``clean_topk_idx``) so it disciplines the deterministic
+            # validation-time router rather than the noisy training
+            # dispatch; see losses.py docstring.  Under
+            # :class:`TopkGate` and under :class:`NoisyTopkGate` in
+            # eval, ``clean_topk_idx`` equals ``topk_idx`` so this is
+            # a no-op relative to the classical Switch formulation.
+            #
+            # In dense dispatch (``gate_type='dense'``, k=E) the
+            # switch loss collapses to the constant α (every expert is
+            # "selected" on every sample so f_e = 1/E uniformly,
+            # giving E·Σ(1/E)·P_e = 1).  The gradient through P_e is a
+            # uniform additive bias on every logit and provides no
+            # specialisation signal — so we short-circuit the term to
+            # zero regardless of the configured coefficient and rely
+            # on ``importance_loss`` for soft balance.
+            if self._dense_dispatch:
+                sw_loss = z_ctx.new_zeros(())
+            elif self.switch_balance_coef > 0.0:
+                clean_idx = gate_out.clean_topk_idx
+                if clean_idx is None:                         # legacy safety
+                    clean_idx = gate_out.topk_idx
+                sw_loss = switch_balance_loss(
+                    gate_out.full_softmax_probs,
+                    clean_idx,
+                    self.num_experts,
+                    self.switch_balance_coef,
+                )
+            else:
+                sw_loss = z_ctx.new_zeros(())
 
-        # Context auxiliary classification ----------------------------------
-        ctx_loss_raw = z_ctx.new_zeros(())
-        ctx_loss_weighted = z_ctx.new_zeros(())
-        ctx_acc = z_ctx.new_zeros(())
-        ctx_pred_hist: List[int] = []
-        ctx_label_hist: List[int] = []
-        ctx_logits_mean_abs = 0.0
+            # Context auxiliary classification ─────────────────────────
+            ctx_loss_raw = z_ctx.new_zeros(())
+            ctx_loss_weighted = z_ctx.new_zeros(())
+            ctx_acc = z_ctx.new_zeros(())
+            ctx_pred_hist: List[int] = []
+            ctx_label_hist: List[int] = []
+            ctx_logits_mean_abs = 0.0
 
-        if self.context_head is not None:
-            if batch_input_metas is None:
-                raise RuntimeError(
-                    'BEVMoEBlock: context_aux_cfg is configured but '
-                    'batch_input_metas was not passed to forward().')
-            ctx_logits = self.context_head(z_ctx)                  # (B, K)
-            assert ctx_logits.dim() == 2 and \
-                ctx_logits.shape[0] == B and \
-                ctx_logits.shape[1] == self.context_aux_cfg['num_classes'], (
-                f'context_head produced unexpected shape '
-                f'{tuple(ctx_logits.shape)}; expected '
-                f'(B, num_context_classes)')
+            if self.context_head is not None:
+                if batch_input_metas is None:
+                    raise RuntimeError(
+                        'BEVMoEBlock: context_aux_cfg is configured but '
+                        'batch_input_metas was not passed to forward().')
+                ctx_logits = self.context_head(z_ctx)              # (B, K), fp32
+                assert ctx_logits.dim() == 2 and \
+                    ctx_logits.shape[0] == B and \
+                    ctx_logits.shape[1] == self.context_aux_cfg['num_classes'], (
+                    f'context_head produced unexpected shape '
+                    f'{tuple(ctx_logits.shape)}; expected '
+                    f'(B, num_context_classes)')
 
-            # Defensive NaN/Inf guard immediately before CE.  Even with
-            # the Step-0 input guard above, the context_head's own
-            # Linear/LayerNorm/Dropout stack can on rare batches emit
-            # non-finite logits under fp16 — e.g. when an upstream
-            # parameter is on the borderline of overflow.  A single NaN
-            # in ctx_logits makes F.cross_entropy return NaN, which then
-            # poisons the total loss for the iter (and is logged as
-            # ``moe_ctx_aux_loss_weighted: nan`` while the detection
-            # losses still appear finite, the exact signature observed
-            # in run 4577584).  Replace any non-finite logit with 0
-            # before the CE; GradScaler still skips the optimizer step
-            # via its own gradient-finiteness check, so this is a no-op
-            # for healthy iters and only changes the *logged* value for
-            # iters that would otherwise have produced NaN.
-            if not torch.isfinite(ctx_logits).all():
-                import logging as _logging
-                _logging.getLogger('mmengine').warning(
-                    'BEVMoEBlock: NaN/Inf in ctx_logits — replacing '
-                    'with zeros before context-aux CE.')
-                ctx_logits = torch.nan_to_num(
-                    ctx_logits, nan=0.0, posinf=0.0, neginf=0.0)
+                ctx_labels = extract_context_labels(
+                    batch_input_metas,
+                    self._ctx_target_field,
+                    self._ctx_vocab_map,
+                    z_ctx.device,
+                )
+                assert ctx_labels.dtype == torch.long and ctx_labels.shape == (B,)
+                if self._ctx_loss_type == 'focal':
+                    ctx_loss_raw = focal_ce_loss(
+                        ctx_logits, ctx_labels, gamma=self._ctx_focal_gamma)
+                elif self._ctx_loss_type == 'weighted_ce':
+                    # Weights registered as buffer → follows device moves.
+                    w = self._ctx_class_weights.to(
+                        device=ctx_logits.device, dtype=ctx_logits.dtype)
+                    ctx_loss_raw = F.cross_entropy(
+                        ctx_logits, ctx_labels,
+                        weight=w,
+                        label_smoothing=self._ctx_label_smoothing)
+                else:  # 'ce'
+                    ctx_loss_raw = F.cross_entropy(
+                        ctx_logits, ctx_labels,
+                        label_smoothing=self._ctx_label_smoothing)
+                ctx_loss_weighted = self._ctx_loss_coef * ctx_loss_raw
+                with torch.no_grad():
+                    pred = ctx_logits.argmax(dim=-1)
+                    ctx_acc = (pred == ctx_labels).float().mean()
+                    num_classes = self.context_aux_cfg['num_classes']
+                    ctx_pred_hist = torch.bincount(
+                        pred, minlength=num_classes).cpu().tolist()
+                    ctx_label_hist = torch.bincount(
+                        ctx_labels, minlength=num_classes).cpu().tolist()
+                    ctx_logits_mean_abs = float(ctx_logits.abs().mean().item())
 
-            ctx_labels = extract_context_labels(
-                batch_input_metas,
-                self._ctx_target_field,
-                self._ctx_vocab_map,
-                z_ctx.device,
-            )
-            assert ctx_labels.dtype == torch.long and ctx_labels.shape == (B,)
-            if self._ctx_loss_type == 'focal':
-                ctx_loss_raw = focal_ce_loss(
-                    ctx_logits, ctx_labels, gamma=self._ctx_focal_gamma)
-            elif self._ctx_loss_type == 'weighted_ce':
-                # Weights registered as buffer → follows device moves.
-                w = self._ctx_class_weights.to(
-                    device=ctx_logits.device, dtype=ctx_logits.dtype)
-                ctx_loss_raw = F.cross_entropy(
-                    ctx_logits, ctx_labels,
-                    weight=w,
-                    label_smoothing=self._ctx_label_smoothing)
-            else:  # 'ce'
-                ctx_loss_raw = F.cross_entropy(
-                    ctx_logits, ctx_labels,
-                    label_smoothing=self._ctx_label_smoothing)
-            ctx_loss_weighted = self._ctx_loss_coef * ctx_loss_raw
-            with torch.no_grad():
-                pred = ctx_logits.argmax(dim=-1)
-                ctx_acc = (pred == ctx_labels).float().mean()
-                num_classes = self.context_aux_cfg['num_classes']
-                ctx_pred_hist = torch.bincount(
-                    pred, minlength=num_classes).cpu().tolist()
-                ctx_label_hist = torch.bincount(
-                    ctx_labels, minlength=num_classes).cpu().tolist()
-                ctx_logits_mean_abs = float(ctx_logits.abs().mean().item())
-
-        aux = imp_loss + ld_loss + z_loss + sw_loss + ctx_loss_weighted
+            aux = imp_loss + ld_loss + z_loss + sw_loss + ctx_loss_weighted
 
         # ── Step 5: Build moe_info ────────────────────────────────────
         clean_topk_idx_detached = (

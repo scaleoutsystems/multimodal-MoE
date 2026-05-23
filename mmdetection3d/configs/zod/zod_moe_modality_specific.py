@@ -1,7 +1,7 @@
 """Variant B — ModalitySpecificMoE on top of zod_bevfusion_dualinit (28 epoch).
 
-Architecture
-------------
+Architecture (symmetric output-space modality-specific MoE)
+-----------------------------------------------------------
 ::
 
     cam_bev (80 ch)  ─→ cam_summary  ─→ z_C ─┐
@@ -14,59 +14,111 @@ Architecture
                           │                            │
                           │                        ctx_logits
                           ▼
-                  dense modality residuals
-                  ─────────────────────────────
-                  cam_out   = cam_bev   + g·Σ_{e∈cam}   p_e·(cam_e(cam_bev)   − cam_bev)
-                  lidar_out = lidar_bev + g·Σ_{e∈lidar} p_e·(lidar_e(lidar_bev) − lidar_bev)
-                                          │
-                                          ▼
-                                   fusion_proj
-                          (concat → 1×1 → 3×3 → fused_bev 256 ch)
+        ┌────────────────────────────────────────────────────────────┐
+        │   cam_direct   = cam_direct_proj(cam_bev)   # 80   → 256    │
+        │   lidar_direct = lidar_bev                  # 256  used    │
+        │                                                             │
+        │   m_C = p_0 + p_1                                           │
+        │   m_L = p_2 + p_3                                           │
+        │   direct_mix = m_C · cam_direct + m_L · lidar_direct        │
+        │                                                             │
+        │   delta_sum  = Σ_(e∈cam)   p_e · (E_C(cam_direct)   − cam_direct)   │
+        │              + Σ_(e∈lidar) p_e · (E_L(lidar_direct) − lidar_direct) │
+        │                                                             │
+        │   fused = refine(direct_mix + g · delta_sum)                │
+        └────────────────────────────────────────────────────────────┘
                                           │
                                           ▼
                        pts_backbone → pts_neck → bbox_head
 
-Expert pools (4 experts total, dense routing):
+Cam direct proj:  (B,  80, H, W) → (B, 256, H, W)  (1×1 → BN → ReLU)
+LiDAR direct:     (B, 256, H, W)  used as-is
+Camera experts:   (B, 256, H, W) → (B, 256, H, W)  (BEVBottleneckResidualExpert)
+LiDAR  experts:   (B, 256, H, W) → (B, 256, H, W)  (BEVBottleneckResidualExpert)
+Fused output:     (B, 256, H, W)
+
+Expert pools (4 experts total, dense flat routing):
 
     expert 0:  camera expert 0
     expert 1:  camera expert 1
     expert 2:  LiDAR  expert 0
     expert 3:  LiDAR  expert 1
 
-Strict design copy
-------------------
-Routing is identical to LiDAR-only MoE run 4577584 (dense soft-MoE,
-4 experts, context-supervised routing on ``road_type`` with weighted
-CE + inverse frequency + label smoothing).  ConvFuser is REMOVED — the
-block performs its own two-step concat → 1×1 → 3×3 fusion after expert
-dispatch.
+Flat-routing guarantee
+----------------------
+There is still exactly one gate over E = num_cam_experts +
+num_lidar_experts experts.  Modality-specificity is preserved at the
+*expert input* level (camera experts only see cam_direct, LiDAR
+experts only see lidar_direct) but all experts operate in the shared
+256-channel output space.  This is **not** hierarchical routing —
+there is no separate modality gate, no per-modality softmax, no
+two-stage router.
 
-This is the only multimodal MoE variant that emits a
-``group_balance_loss`` (coefficient 0.002).  It penalises drift between
-the camera and LiDAR group masses on the dense soft router belief::
+Why symmetric output-space?
+---------------------------
+The old design (per-modality residual then concat → 1×1 → 3×3 fuser)
+only controlled how much residual adaptation each modality received
+but gave the routing no direct lever over the LiDAR/camera
+contribution mix in the final fused BEV.  A LiDAR-anchored base path
+would hard-code LiDAR as privileged; instead, this implementation
+projects camera into the shared 256-channel width with a single 1×1
+conv (``cam_direct_proj``) and uses LiDAR directly (no learned LiDAR
+base path).  Both modalities then enter the fused BEV symmetrically:
+the same flat gate weights both the direct modality contributions
+(``m_C · cam_direct + m_L · lidar_direct``) and the routed expert
+residual deltas.  Modality dominance is decided by the gate and the
+detection gradients during training rather than at construction
+time.
 
-    cam_mass   = probs[:, 0:2].sum(dim=1).mean()
-    lidar_mass = probs[:, 2:4].sum(dim=1).mean()
+Reusing existing experts
+------------------------
+Both expert pools are built with the existing ``make_bev_experts``
+factory and ``expert_type='bottleneck'`` (i.e.
+:class:`BEVBottleneckResidualExpert`).  Because the inputs after the
+direct projection are already 256-channel, the experts are
+constructed with ``channels=out_channels`` — no new expert class is
+introduced.
 
-    L_gb = group_balance_coef · ((cam_mass − 0.5)² + (lidar_mass − 0.5)²)
+Identity-at-init contract
+-------------------------
+``BEVBottleneckResidualExpert`` has its final BN affine parameters
+zero-initialised so the adapter branch emits an exact-zero residual
+at step 0.  Both ``cam_direct`` and ``lidar_direct`` are post-ReLU
+non-negative tensors, so ``expert(x) = ReLU(x) = x`` and the
+per-expert ``delta = expert(x) − x = 0`` at step 0.  Consequently::
 
-The 0.002 weight is intentionally tiny — it discourages full modality
-collapse without forcing hard equality.
+    fused_at_init ≈ refine(m_C · cam_direct + m_L · lidar_direct)
+
+— a learned softmax mixture of the two direct modality features.
+
+Group balance under the symmetric design
+----------------------------------------
+``group_balance_coef`` defaults to **0.004**: small enough that the
+gate can still learn to favour the genuinely stronger modality, but
+large enough to prevent early routing collapse to a single modality
+group while both direct paths are still adapting their BN statistics.
+``cam_group_mass`` / ``lidar_group_mass`` measure the routed modality
+contribution mass (and they also weight the direct mix, so they are
+the dominant statistic for who-contributes-what to the fused BEV).
 
 Auxiliary losses entering the optimisation total
 ------------------------------------------------
 * importance_coef · importance_loss
 * load_coef · load_loss                (0 under dense routing)
 * z_loss_coef · router_z_loss
-* group_balance_coef · group_balance_loss
+* group_balance_coef · group_balance_loss   (0.004 by default here)
 * ctx_loss_coef · CE_weighted(ctx_logits, road_type)
 """
 _base_ = ['./zod_bevfusion_dualinit_28ep.py']
 
 # ─────────────────────────────────────────────────────────────────────────
 # MoE block — 2 cam + 2 lidar dense experts replacing ConvFuser.
-# Routing hyperparameters mirror LiDAR-only MoE 4577584 exactly; the only
-# addition for this variant is the small group_balance_coef.
+# Symmetric output-space design: camera is projected from 80 to the
+# shared 256-channel width with ``cam_direct_proj``; LiDAR is used
+# directly (no LiDAR base path).  Both expert pools reuse the existing
+# BEVBottleneckResidualExpert at ``channels=out_channels=256``.  A
+# single flat gate weights both the direct mix and the routed deltas.
+# Routing hyperparameters mirror LiDAR-only MoE 4577584.
 # ─────────────────────────────────────────────────────────────────────────
 num_cam_experts   = 2
 num_lidar_experts = 2
@@ -79,7 +131,10 @@ modality_specific_moe_cfg = dict(
     out_channels=256,
     num_cam_experts=num_cam_experts,
     num_lidar_experts=num_lidar_experts,
-    num_convs=2,
+    # Reuse the existing bottleneck expert; both pools are constructed
+    # at channels=out_channels because cam_direct_proj brings camera
+    # into the 256-channel shared space first.
+    expert_type='full',
     # Dense routing — gate_type='dense' forces k=num_experts internally.
     gate_type='dense',
     gate_cfg=dict(temperature=1.0),
@@ -88,9 +143,11 @@ modality_specific_moe_cfg = dict(
     importance_coef=0.005,
     load_coef=0.0,
     z_loss_coef=0.002,
-    # Variant-B-only: small group-balance penalty to avoid modality
-    # collapse under dense routing.
-    group_balance_coef=0.002,
+    # Group balance ACTIVE under the symmetric design — small coefficient
+    # to discourage early collapse of routing mass to a single modality
+    # group while still letting the gate drift toward the genuinely
+    # stronger modality if needed.
+    group_balance_coef=0.004,
     residual_gain=1.0,
     # Per-modality summary: 128-d each → 256-d concat (matches 4577584
     # gate input dim).
@@ -143,18 +200,25 @@ optim_wrapper = dict(
 )
 
 param_scheduler = [
+    # 500-iter linear warmup (start_factor=1/3 → lr goes 5e-5/3 → 5e-5)
+    dict(type='LinearLR',
+         start_factor=0.33333333, begin=0, end=500,
+         by_epoch=False),
+    # Cosine ramp-up: 5e-5 → 5e-4 over epochs 0-4
     dict(type='CosineAnnealingLR',
-         T_max=8, begin=0, end=8,
+         T_max=4, begin=0, end=4,
          eta_min=5e-4, by_epoch=True, convert_to_iter_based=True),
+    # Cosine decay: 5e-4 → 5e-9 over epochs 4-28
     dict(type='CosineAnnealingLR',
-         T_max=20, begin=8, end=28,
+         T_max=24, begin=4, end=28,
          eta_min=5e-9, by_epoch=True, convert_to_iter_based=True),
+    # Coupled momentum annealing
     dict(type='CosineAnnealingMomentum',
-         T_max=8, begin=0, end=8,
+         T_max=4, begin=0, end=4,
          eta_min=0.8947368421052632, by_epoch=True,
          convert_to_iter_based=True),
     dict(type='CosineAnnealingMomentum',
-         T_max=20, begin=8, end=28,
+         T_max=24, begin=4, end=28,
          eta_min=1, by_epoch=True, convert_to_iter_based=True),
 ]
 
@@ -272,8 +336,8 @@ custom_hooks = [
             'best_mAP_0.50_epoch_30.pth'),
         camera_ckpt=(
             '/home/users/u103958/projects/multimodal-MoE/outputs/runs/'
-            'zod_camera_only/zod-cam-only_4469392/'
-            'best_mAP_0.50_epoch_11.pth'),
+            'zod_camera_only/zod-cam-only_4577582/'
+            'best_mAP_0.50_epoch_31.pth'),
         lidar_modules=[
             'pts_middle_encoder', 'pts_backbone', 'pts_neck', 'bbox_head',
         ],

@@ -43,6 +43,7 @@ bev_moe_cfg = dict(
     num_experts=num_experts,
     k=num_experts,
     num_convs=2,
+    expert_type='full',
     importance_coef=0.005,
     load_coef=0.0,
     switch_balance_coef=0.0,
