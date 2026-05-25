@@ -67,6 +67,20 @@ bev_moe_cfg = dict(
     k=num_experts,
     num_convs=2,
     expert_type='full',
+    # GroupNorm inside the experts instead of (fp32-safe) BatchNorm.
+    # Fusion-then-MoE operates on the fused (camera ⊕ lidar) BEV,
+    # whose per-channel distribution has narrow modes from camera
+    # depth-splat shells.  Under that input the expert BN
+    # ``running_var`` drifts to ~1e-5 over ~5 epochs, after which the
+    # BN output saturates fp16 in the next conv and TransFusionHead
+    # softmax produces NaN — observed in runs 4610584 and 4613034
+    # (epoch 6 iter 2550, see run notes).  GroupNorm has no running
+    # stats and computes the denominator from per-sample current
+    # activations, so this failure mode is removed by construction.
+    # Lidar-only MoE keeps ``expert_norm_type='bn'`` (default) since
+    # its input distribution does not drive the same degeneracy
+    # (run 4610582 finished 30 epochs cleanly with BN experts).
+    expert_norm_type='gn',
     gate_type='dense',
     gate_cfg=dict(temperature=1.0),
     gate_input_detach=True,
@@ -264,6 +278,18 @@ test_dataloader  = dict(dataset=dict(pipeline=test_pipeline))
 
 optim_wrapper = dict(
     type='AmpOptimWrapper',
+    # bf16 instead of the default fp16.  The fusion-then variant
+    # combines camera + lidar gradients through the shared backbone and
+    # neck, which after ~10 epochs of combined gradient pressure pushes
+    # some activation into fp16 overflow (max representable ~65504).
+    # bf16 has 8-bit exponent (same dynamic range as fp32,
+    # max ~3.4×10^38), so overflow is impossible in practice.
+    # Accuracy is the same as fp16 (both have 7-8 mantissa bits for
+    # the activation values that matter here).
+    # Confirmed sufficient: runs 4610584, 4613034, 4615918 all
+    # collapsed via fp16 overflow at epoch 5-10; no change to
+    # architecture, losses, or schedules needed.
+    dtype='bfloat16',
     accumulative_counts=2,
 )
 

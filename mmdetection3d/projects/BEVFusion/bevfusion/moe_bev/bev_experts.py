@@ -143,30 +143,70 @@ class BEVResidualExpert(nn.Module):
 
     Args:
         channels:  Number of input/output channels.
-        num_convs: Number of Conv→BN layers in the block (default 1).
+        num_convs: Number of Conv→Norm layers in the block (default 1).
+        norm_type: ``'bn'`` (default) → :class:`_FP32BatchNorm2d` —
+                   matches the original full expert used by the
+                   lidar-only MoE runs.
+                   ``'gn'``           → ``nn.GroupNorm(32, channels)``
+                   — drop-in replacement with no running statistics.
+                   Required for the fusion-then-MoE variant: the
+                   fused (camera ⊕ lidar) BEV has narrow per-channel
+                   modes (camera depth-splat shells are dense in
+                   small depth bands), which drives the BN running
+                   ``var → ~1e-5`` after a few epochs.  Once that
+                   happens the BN output ``γ·(x − μ)/√(var + ε)``
+                   blows up to ``~3·10³``, which then saturates fp16
+                   in the next conv → ``inf`` → ``NaN`` in
+                   TransFusionHead's softmax (see run 4613034 epoch 6
+                   iter 2550 in the run notes).  GroupNorm computes
+                   the denominator from per-sample current
+                   activations, so it cannot degenerate the same way.
+                   Activation-tensor shape and dtype contract are
+                   identical for both choices, so the rest of the
+                   MoE pipeline is unaffected.
     """
 
-    def __init__(self, channels: int, num_convs: int = 1):
+    def __init__(self,
+                 channels: int,
+                 num_convs: int = 1,
+                 norm_type: str = 'bn'):
         super().__init__()
+        self.norm_type = str(norm_type).lower()
+        if self.norm_type not in ('bn', 'gn'):
+            raise ValueError(
+                f"BEVResidualExpert.norm_type must be 'bn' or 'gn', "
+                f"got '{norm_type}'.")
+
+        def _make_norm(num_channels: int) -> nn.Module:
+            if self.norm_type == 'gn':
+                # GroupNorm(32, C): see Args docstring for why fused
+                # BEV needs per-sample normalisation instead of EMA
+                # running stats.  PyTorch AMP autocasts GroupNorm to
+                # fp32 automatically (default policy) so we do not
+                # need an _FP32GroupNorm wrapper.
+                return nn.GroupNorm(32, num_channels)
+            # _FP32BatchNorm2d: fp16-overflow-safe drop-in for the
+            # legacy full-channel expert.  See its docstring for the
+            # AMP fp16 reduction-window rationale.
+            return _FP32BatchNorm2d(num_channels, eps=1e-3, momentum=0.01)
+
         layers: List[nn.Module] = []
         for i in range(num_convs):
             layers.append(nn.Conv2d(channels, channels, 3, padding=1, bias=False))
-            # _FP32BatchNorm2d: fp16-overflow-safe drop-in for the legacy
-            # full-channel expert.  Run 4585570 epoch 15 showed this
-            # exact BN (``block.{2 * num_convs}`` ≡ the last BN of the
-            # residual branch, fed by a 512→512 3×3 conv) drifting to
-            # ``running_var`` ∈ [7.6e4, 2.1e5] under AMP fp16 — see the
-            # _FP32BatchNorm2d docstring for the full mechanism.
-            layers.append(_FP32BatchNorm2d(channels, eps=1e-3, momentum=0.01))
+            layers.append(_make_norm(channels))
             if i < num_convs - 1:
                 layers.append(nn.ReLU(inplace=True))
         self.block = nn.Sequential(*layers)
         self.relu = nn.ReLU(inplace=True)
 
-        last_bn = next(
+        # Small-random init on the last norm's ``weight`` parameter
+        # for per-expert asymmetry — both BatchNorm and GroupNorm
+        # expose a per-channel ``weight`` (== gamma) so this works
+        # for either norm choice.
+        last_norm = next(
             m for m in reversed(list(self.block.modules()))
-            if isinstance(m, nn.BatchNorm2d))
-        nn.init.normal_(last_bn.weight, mean=0.0, std=_LAST_BN_GAMMA_STD)
+            if isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)))
+        nn.init.normal_(last_norm.weight, mean=0.0, std=_LAST_BN_GAMMA_STD)
 
     def forward(self, x: Tensor) -> Tensor:
         return self.relu(x + self.block(x))
@@ -281,7 +321,8 @@ def make_bev_experts(num_experts: int,
                      channels: int,
                      num_convs: int = 1,
                      expert_type: str = 'bottleneck',
-                     hidden_channels: int = 128) -> nn.ModuleList:
+                     hidden_channels: int = 128,
+                     norm_type: str = 'bn') -> nn.ModuleList:
     """Factory: build a list of independent BEV expert modules.
 
     All produced experts share the same I/O contract:
@@ -293,7 +334,7 @@ def make_bev_experts(num_experts: int,
         channels:        Input/output channel count for each expert
                          (must match the feature map at the MoE
                          insertion point).
-        num_convs:       Number of Conv→BN layers in the legacy
+        num_convs:       Number of Conv→Norm layers in the legacy
                          :class:`BEVResidualExpert`; ignored for
                          ``expert_type='bottleneck'`` (which has a
                          fixed reduce / spatial / expand structure).
@@ -302,6 +343,11 @@ def make_bev_experts(num_experts: int,
                          ``'full'`` → legacy :class:`BEVResidualExpert`.
         hidden_channels: Bottleneck width for the bottleneck expert.
                          Default 128.  Ignored for ``expert_type='full'``.
+        norm_type:       Normalisation flavour passed to the full
+                         expert (``'bn'`` default, ``'gn'`` for fused
+                         BEV — see :class:`BEVResidualExpert` Args).
+                         Ignored for ``expert_type='bottleneck'``
+                         which always uses :class:`_FP32BatchNorm2d`.
 
     Returns:
         ``nn.ModuleList`` of expert modules.
@@ -315,7 +361,7 @@ def make_bev_experts(num_experts: int,
         ])
     if expert_type == 'full':
         return nn.ModuleList([
-            BEVResidualExpert(channels, num_convs)
+            BEVResidualExpert(channels, num_convs, norm_type=norm_type)
             for _ in range(num_experts)
         ])
     raise ValueError(

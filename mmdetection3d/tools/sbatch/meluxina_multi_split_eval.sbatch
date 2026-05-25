@@ -25,6 +25,7 @@
 #   INFOS_DIR     (optional) directory containing annotation pkls; defaults to {SPLITS_ROOT}/../infos
 #   ANN_KEY       (optional) dotted config key to override; default: test_dataloader.dataset.ann_file
 #   PY            (optional) path to python executable
+#   OUT_DIR       (optional) override the eval output directory (default: outputs/runs/<run_name>/eval/)
 #   EXTRA_ARGS    (optional) additional flags passed verbatim to run_multi_split_eval.py
 # =============================================================================
 
@@ -53,6 +54,7 @@ PYTHON=${PY:-$HOME/miniconda3/envs/multimodal-moe/bin/python}
 
 # ── Optional env vars ─────────────────────────────────────────────────────────
 ANN_KEY=${ANN_KEY:-test_dataloader.dataset.ann_file}
+OUT_DIR=${OUT_DIR:-}
 EXTRA_ARGS=${EXTRA_ARGS:-}
 
 echo "=== Slurm job ${SLURM_JOB_ID} on $(hostname) ==="
@@ -61,6 +63,7 @@ echo "CKPT        : $CKPT"
 echo "SPLITS_ROOT : $SPLITS_ROOT"
 echo "SPLITS      : ${SPLITS:-<default – all DEFAULT_SPLITS>}"
 echo "ANN_KEY     : $ANN_KEY"
+echo "OUT_DIR     : ${OUT_DIR:-<inferred from checkpoint path>}"
 echo "INFOS_DIR   : ${INFOS_DIR:-<inferred from SPLITS_ROOT/../infos>}"
 echo "EXTRA_ARGS  : ${EXTRA_ARGS:-<none>}"
 
@@ -83,6 +86,11 @@ CMD=(
     --ann-key "$ANN_KEY"
     --launcher none
 )
+
+# Append --out-dir only if explicitly set
+if [[ -n "${OUT_DIR:-}" ]]; then
+    CMD+=(--out-dir "$OUT_DIR")
+fi
 
 # Append --infos-dir only if explicitly set
 if [[ -n "${INFOS_DIR:-}" ]]; then

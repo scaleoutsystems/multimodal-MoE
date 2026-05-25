@@ -472,6 +472,7 @@ class BEVMoEBlock(nn.Module):
         gate_input_detach: bool = True,
         expert_type: str = 'bottleneck',
         expert_hidden_channels: int = 128,
+        expert_norm_type: str = 'bn',
     ):
         super().__init__()
         self.channels = channels
@@ -506,11 +507,21 @@ class BEVMoEBlock(nn.Module):
 
         self.expert_type = str(expert_type).lower()
         self.expert_hidden_channels = int(expert_hidden_channels)
+        self.expert_norm_type = str(expert_norm_type).lower()
+        # ``expert_norm_type`` selects the in-expert normalisation
+        # flavour for ``expert_type='full'``.  Default ``'bn'``
+        # preserves the lidar-only MoE behaviour; ``'gn'`` is
+        # required for fusion-then-MoE where the fused (cam ⊕ lidar)
+        # BEV channel distribution drives BN ``running_var → 0`` and
+        # the resulting BN output saturates fp16 (see run 4613034
+        # epoch 6 in the run notes).  Ignored when
+        # ``expert_type='bottleneck'``.
         self.experts = make_bev_experts(
             num_experts, channels,
             num_convs=num_convs,
             expert_type=self.expert_type,
-            hidden_channels=self.expert_hidden_channels)
+            hidden_channels=self.expert_hidden_channels,
+            norm_type=self.expert_norm_type)
 
         # ── Single BEVResSummaryEncoder branch ────────────────────────
         # context_summary is the *only* descriptor encoder; it is trained
