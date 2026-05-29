@@ -1,0 +1,1433 @@
+Using PYTHON=/home/users/u103958/miniconda3/envs/multimodal-moe/bin/python
+python /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python
+torch 2.4.0+cu121
+Camera-side modules + BEVMoEBlock registered OK
+Dual-init + MoE hooks registered OK
+=== Slurm job 4610529 on mel2082 ===
+MMDET3D_ROOT=/home/users/u103958/projects/multimodal-MoE/mmdetection3d
+CONFIG=configs/zod/zod_moe_fusion_then.py
+WORK_DIR=/home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_moe_fusion_then/moe-fusion-then_4610529
+CUDA_VISIBLE_DEVICES (step 0): 0,1,2,3     
+GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-ecb449d3-9362-e91c-1bbd-a6efada9417d)
+GPU 1: NVIDIA A100-SXM4-40GB (UUID: GPU-6af0fc45-ee2a-4610-5481-c66adcc2da71)
+GPU 2: NVIDIA A100-SXM4-40GB (UUID: GPU-fb6f4c95-74e5-4c88-e687-a89559fb2d99)
+GPU 3: NVIDIA A100-SXM4-40GB (UUID: GPU-9ee8385b-eaa9-ab1b-e3fc-048fac7a7d3a)
+NCCL version 2.20.5+cuda12.4
+05/22 19:56:46 - mmengine - INFO - 
+------------------------------------------------------------
+System environment:
+    sys.platform: linux
+    Python: 3.10.20 | packaged by conda-forge | (main, Mar  5 2026, 16:42:22) [GCC 14.3.0]
+    CUDA available: True
+    MUSA available: False
+    numpy_random_seed: 1306531191
+    GPU 0: NVIDIA A100-SXM4-40GB
+    CUDA_HOME: None
+    GCC: gcc (GCC) 8.5.0 20210514 (Red Hat 8.5.0-28)
+    PyTorch: 2.4.0+cu121
+    PyTorch compiling details: PyTorch built with:
+  - GCC 9.3
+  - C++ Version: 201703
+  - Intel(R) oneAPI Math Kernel Library Version 2022.2-Product Build 20220804 for Intel(R) 64 architecture applications
+  - Intel(R) MKL-DNN v3.4.2 (Git Hash 1137e04ec0b5251ca2b4400a4fd3c667ce843d67)
+  - OpenMP 201511 (a.k.a. OpenMP 4.5)
+  - LAPACK is enabled (usually provided by MKL)
+  - NNPACK is enabled
+  - CPU capability usage: AVX2
+  - CUDA Runtime 12.1
+  - NVCC architecture flags: -gencode;arch=compute_50,code=sm_50;-gencode;arch=compute_60,code=sm_60;-gencode;arch=compute_70,code=sm_70;-gencode;arch=compute_75,code=sm_75;-gencode;arch=compute_80,code=sm_80;-gencode;arch=compute_86,code=sm_86;-gencode;arch=compute_90,code=sm_90
+  - CuDNN 90.1  (built against CUDA 12.4)
+  - Magma 2.6.1
+  - Build settings: BLAS_INFO=mkl, BUILD_TYPE=Release, CUDA_VERSION=12.1, CUDNN_VERSION=9.1.0, CXX_COMPILER=/opt/rh/devtoolset-9/root/usr/bin/c++, CXX_FLAGS= -D_GLIBCXX_USE_CXX11_ABI=0 -fabi-version=11 -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -DNDEBUG -DUSE_KINETO -DLIBKINETO_NOROCTRACER -DUSE_FBGEMM -DUSE_PYTORCH_QNNPACK -DUSE_XNNPACK -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -O2 -fPIC -Wall -Wextra -Werror=return-type -Werror=non-virtual-dtor -Werror=bool-operation -Wnarrowing -Wno-missing-field-initializers -Wno-type-limits -Wno-array-bounds -Wno-unknown-pragmas -Wno-unused-parameter -Wno-unused-function -Wno-unused-result -Wno-strict-overflow -Wno-strict-aliasing -Wno-stringop-overflow -Wsuggest-override -Wno-psabi -Wno-error=pedantic -Wno-error=old-style-cast -Wno-missing-braces -fdiagnostics-color=always -faligned-new -Wno-unused-but-set-variable -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Wno-stringop-overflow, LAPACK_INFO=mkl, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, PERF_WITH_AVX512=1, TORCH_VERSION=2.4.0, USE_CUDA=ON, USE_CUDNN=ON, USE_CUSPARSELT=1, USE_EXCEPTION_PTR=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_GLOO=ON, USE_MKL=ON, USE_MKLDNN=ON, USE_MPI=OFF, USE_NCCL=1, USE_NNPACK=ON, USE_OPENMP=ON, USE_ROCM=OFF, USE_ROCM_KERNEL_ASSERT=OFF, 
+
+    TorchVision: 0.19.0+cu121
+    OpenCV: 4.9.0
+    MMEngine: 0.10.7
+
+Runtime environment:
+    cudnn_benchmark: False
+    mp_cfg: {'mp_start_method': 'fork', 'opencv_num_threads': 0}
+    dist_cfg: {'backend': 'nccl'}
+    seed: 1306531191
+    Distributed launcher: slurm
+    Distributed training: True
+    GPU number: 4
+------------------------------------------------------------
+
+05/22 19:56:47 - mmengine - INFO - Config:
+_VIS_EPOCHS = (
+    1,
+    5,
+    10,
+    15,
+    20,
+    25,
+    28,
+)
+auto_scale_lr = dict(enable=False)
+backend_args = None
+bev_moe_cfg = dict(
+    channels=512,
+    context_aux_cfg=dict(
+        class_weights='inverse_frequency',
+        label_smoothing=0.05,
+        loss_coef=0.03,
+        loss_type='weighted_ce',
+        target_field='road_type'),
+    ctx_gate_temp_high=1.0,
+    ctx_gate_warmup_epochs=0,
+    expert_type='full',
+    gate_cfg=dict(temperature=1.0),
+    gate_input_detach=True,
+    gate_type='dense',
+    importance_coef=0.005,
+    k=4,
+    load_coef=0.0,
+    num_convs=2,
+    num_experts=4,
+    residual_gain=1.0,
+    switch_balance_coef=0.0,
+    type='BEVMoEBlock',
+    z_loss_coef=0.002)
+class_names = [
+    'pedestrian',
+]
+custom_hooks = [
+    dict(
+        camera_ckpt=
+        '/home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_camera_only/zod-cam-only_4577582/best_mAP_0.50_epoch_31.pth',
+        camera_modules=[
+            'img_backbone',
+            'img_neck',
+            'view_transform',
+        ],
+        lidar_ckpt=
+        '/home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4570893/best_mAP_0.50_epoch_30.pth',
+        lidar_modules=[
+            'pts_middle_encoder',
+            'pts_backbone',
+            'pts_neck',
+            'bbox_head',
+        ],
+        type='DualCheckpointInitHook'),
+    dict(
+        type='BEVFeatureVisualizationHook',
+        vis_epochs=(
+            1,
+            5,
+            10,
+            15,
+            20,
+            25,
+            28,
+        )),
+    dict(
+        score_thr=0.15,
+        type='BEVPredictionVisualizationHook',
+        vis_epochs=(
+            1,
+            5,
+            10,
+            15,
+            20,
+            25,
+            28,
+        )),
+    dict(
+        score_thr=0.15,
+        type='BEVValPredictionVisualizationHook',
+        vis_epochs=(
+            1,
+            5,
+            10,
+            15,
+            20,
+            25,
+            28,
+        )),
+    dict(
+        type='BEVCameraFeatureVisualizationHook',
+        vis_epochs=(
+            1,
+            5,
+            10,
+            15,
+            20,
+            25,
+            28,
+        )),
+    dict(
+        type='DepthTransformDiagnosticHook',
+        vis_epochs=(
+            1,
+            5,
+            10,
+            15,
+            20,
+            25,
+            28,
+        )),
+    dict(type='TrainingEfficiencyHook'),
+    dict(type='RunSummaryHook'),
+    dict(
+        type='DepthProjectionDebugHook',
+        vis_epochs=(
+            1,
+            5,
+            10,
+            15,
+            20,
+            25,
+            28,
+        )),
+    dict(
+        filename='val_curve_ap_0_50_0_5m',
+        metric_keys=(
+            'mAP_0.50',
+            'mAP_0.5m',
+        ),
+        type='ValidationCurveHook'),
+    dict(
+        dead_threshold_ratio=0.1,
+        max_respawns=5,
+        num_experts=4,
+        perturbation_std=0.02,
+        skip_first_epoch=True,
+        type='ExpertRespawnHook'),
+    dict(
+        ap_metric_key='mAP_0.5m',
+        enable_hook_a=True,
+        enable_hook_b=True,
+        enable_hook_c=False,
+        num_experts=4,
+        type='MoERoutingHook'),
+    dict(type='ContextRoutingStatsHook'),
+    dict(type='ContextExpertUsageVisualizationHook'),
+]
+custom_imports = dict(
+    allow_failed_imports=False, imports=[
+        'projects.BEVFusion.bevfusion',
+    ])
+data_prefix = dict(CAM_FRONT='', pts='')
+data_root = '/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/'
+dataset_type = 'ZODDataset'
+default_hooks = dict(
+    checkpoint=dict(
+        interval=5,
+        rule='greater',
+        save_best='mAP_0.50',
+        type='CheckpointHook'),
+    logger=dict(interval=50, type='LoggerHook'),
+    param_scheduler=dict(type='ParamSchedulerHook'),
+    sampler_seed=dict(type='DistSamplerSeedHook'),
+    timer=dict(type='IterTimerHook'),
+    visualization=dict(type='Det3DVisualizationHook'))
+default_scope = 'mmdet3d'
+env_cfg = dict(
+    cudnn_benchmark=False,
+    dist_cfg=dict(backend='nccl'),
+    mp_cfg=dict(mp_start_method='fork', opencv_num_threads=0))
+grid_size = [
+    1440,
+    1440,
+    40,
+]
+input_modality = dict(use_camera=True, use_lidar=True)
+launcher = 'slurm'
+load_from = None
+log_level = 'INFO'
+log_processor = dict(by_epoch=True, type='LogProcessor', window_size=50)
+lr = 5e-05
+metainfo = dict(
+    box_type_3d='LiDAR', classes=[
+        'pedestrian',
+    ])
+model = dict(
+    bbox_head=dict(
+        auxiliary=True,
+        bbox_coder=dict(
+            code_size=8,
+            out_size_factor=8,
+            pc_range=[
+                0.0,
+                -54.0,
+            ],
+            post_center_range=[
+                0.0,
+                -54.0,
+                -10.0,
+                108.0,
+                54.0,
+                10.0,
+            ],
+            score_threshold=0.0,
+            type='TransFusionBBoxCoder',
+            voxel_size=[
+                0.075,
+                0.075,
+            ]),
+        bn_momentum=0.1,
+        common_heads=dict(
+            center=[
+                2,
+                2,
+            ], dim=[
+                3,
+                2,
+            ], height=[
+                1,
+                2,
+            ], rot=[
+                2,
+                2,
+            ]),
+        decoder_layer=dict(
+            cross_attn_cfg=dict(dropout=0.1, embed_dims=128, num_heads=8),
+            ffn_cfg=dict(
+                act_cfg=dict(inplace=True, type='ReLU'),
+                embed_dims=128,
+                feedforward_channels=256,
+                ffn_drop=0.1,
+                num_fcs=2),
+            norm_cfg=dict(type='LN'),
+            pos_encoding_cfg=dict(input_channel=2, num_pos_feats=128),
+            self_attn_cfg=dict(dropout=0.1, embed_dims=128, num_heads=8),
+            type='TransformerDecoderLayer'),
+        hidden_channel=128,
+        in_channels=512,
+        loss_bbox=dict(
+            loss_weight=0.25, reduction='mean', type='mmdet.L1Loss'),
+        loss_cls=dict(
+            alpha=0.25,
+            gamma=2.0,
+            loss_weight=1.0,
+            reduction='mean',
+            type='mmdet.FocalLoss',
+            use_sigmoid=True),
+        loss_heatmap=dict(
+            loss_weight=1.0, reduction='mean', type='mmdet.GaussianFocalLoss'),
+        nms_kernel_size=3,
+        num_classes=1,
+        num_decoder_layers=1,
+        num_proposals=500,
+        test_cfg=dict(
+            dataset='custom_zod',
+            grid_size=[
+                1440,
+                1440,
+                40,
+            ],
+            nms_type='circle',
+            out_size_factor=8,
+            pc_range=[
+                0.0,
+                -54.0,
+            ],
+            voxel_size=[
+                0.075,
+                0.075,
+            ]),
+        train_cfg=dict(
+            assigner=dict(
+                cls_cost=dict(
+                    alpha=0.25,
+                    gamma=2.0,
+                    type='mmdet.FocalLossCost',
+                    weight=0.15),
+                iou_calculator=dict(coordinate='lidar', type='BboxOverlaps3D'),
+                iou_cost=dict(type='IoU3DCost', weight=0.25),
+                reg_cost=dict(type='BBoxBEVL1Cost', weight=0.25),
+                type='HungarianAssigner3D'),
+            code_weights=[
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+            ],
+            dataset='custom_zod',
+            gaussian_overlap=0.1,
+            grid_size=[
+                1440,
+                1440,
+                40,
+            ],
+            min_radius=2,
+            out_size_factor=8,
+            point_cloud_range=[
+                0.0,
+                -54.0,
+                -5.0,
+                108.0,
+                54.0,
+                3.0,
+            ],
+            pos_weight=-1,
+            voxel_size=[
+                0.075,
+                0.075,
+                0.2,
+            ]),
+        type='TransFusionHead'),
+    bev_moe_cfg=dict(
+        channels=512,
+        context_aux_cfg=dict(
+            class_weights='inverse_frequency',
+            label_smoothing=0.05,
+            loss_coef=0.03,
+            loss_type='weighted_ce',
+            target_field='road_type'),
+        ctx_gate_temp_high=1.0,
+        ctx_gate_warmup_epochs=0,
+        expert_type='full',
+        gate_cfg=dict(temperature=1.0),
+        gate_input_detach=True,
+        gate_type='dense',
+        importance_coef=0.005,
+        k=4,
+        load_coef=0.0,
+        num_convs=2,
+        num_experts=4,
+        residual_gain=1.0,
+        switch_balance_coef=0.0,
+        type='BEVMoEBlock',
+        z_loss_coef=0.002),
+    bev_moe_position='post_neck',
+    data_preprocessor=dict(
+        bgr_to_rgb=False,
+        mean=[
+            123.675,
+            116.28,
+            103.53,
+        ],
+        pad_size_divisor=32,
+        std=[
+            58.395,
+            57.12,
+            57.375,
+        ],
+        type='Det3DDataPreprocessor',
+        voxelize_cfg=dict(
+            max_num_points=10,
+            max_voxels=[
+                200000,
+                240000,
+            ],
+            point_cloud_range=[
+                0.0,
+                -54.0,
+                -5.0,
+                108.0,
+                54.0,
+                3.0,
+            ],
+            voxel_size=[
+                0.075,
+                0.075,
+                0.2,
+            ],
+            voxelize_reduce=True)),
+    fusion_layer=dict(
+        in_channels=[
+            80,
+            256,
+        ], out_channels=256, type='ConvFuser'),
+    img_backbone=dict(
+        attn_drop_rate=0.0,
+        convert_weights=True,
+        depths=[
+            2,
+            2,
+            6,
+            2,
+        ],
+        drop_path_rate=0.2,
+        drop_rate=0.0,
+        embed_dims=96,
+        init_cfg=dict(
+            checkpoint=
+            '/mnt/tier2/project/p201222/u103958/checkpoints/swin_tiny_patch4_window7_224.pth',
+            type='Pretrained'),
+        mlp_ratio=4,
+        num_heads=[
+            3,
+            6,
+            12,
+            24,
+        ],
+        out_indices=[
+            1,
+            2,
+            3,
+        ],
+        patch_norm=True,
+        qk_scale=None,
+        qkv_bias=True,
+        type='mmdet.SwinTransformer',
+        window_size=7,
+        with_cp=False),
+    img_neck=dict(
+        act_cfg=dict(inplace=True, type='ReLU'),
+        in_channels=[
+            192,
+            384,
+            768,
+        ],
+        norm_cfg=dict(requires_grad=True, type='BN2d'),
+        num_outs=3,
+        out_channels=256,
+        start_level=0,
+        type='GeneralizedLSSFPN',
+        upsample_cfg=dict(align_corners=False, mode='bilinear')),
+    pts_backbone=dict(
+        conv_cfg=dict(bias=False, type='Conv2d'),
+        in_channels=256,
+        layer_nums=[
+            5,
+            5,
+        ],
+        layer_strides=[
+            1,
+            2,
+        ],
+        norm_cfg=dict(eps=0.001, momentum=0.01, type='BN'),
+        out_channels=[
+            128,
+            256,
+        ],
+        type='SECOND'),
+    pts_middle_encoder=dict(
+        block_type='basicblock',
+        encoder_channels=(
+            (
+                16,
+                16,
+                32,
+            ),
+            (
+                32,
+                32,
+                64,
+            ),
+            (
+                64,
+                64,
+                128,
+            ),
+            (
+                128,
+                128,
+            ),
+        ),
+        encoder_paddings=(
+            (
+                0,
+                0,
+                1,
+            ),
+            (
+                0,
+                0,
+                1,
+            ),
+            (
+                0,
+                0,
+                (
+                    1,
+                    1,
+                    0,
+                ),
+            ),
+            (
+                0,
+                0,
+            ),
+        ),
+        in_channels=4,
+        norm_cfg=dict(eps=0.001, momentum=0.01, type='BN1d'),
+        order=(
+            'conv',
+            'norm',
+            'act',
+        ),
+        sparse_shape=[
+            1440,
+            1440,
+            41,
+        ],
+        type='BEVFusionSparseEncoder'),
+    pts_neck=dict(
+        in_channels=[
+            128,
+            256,
+        ],
+        norm_cfg=dict(eps=0.001, momentum=0.01, type='BN'),
+        out_channels=[
+            256,
+            256,
+        ],
+        type='SECONDFPN',
+        upsample_cfg=dict(bias=False, type='deconv'),
+        upsample_strides=[
+            1,
+            2,
+        ],
+        use_conv_for_no_stride=True),
+    pts_voxel_encoder=dict(num_features=4, type='HardSimpleVFE'),
+    type='BEVFusion',
+    view_transform=dict(
+        aux_depth_loss_weight=0.5,
+        dbound=[
+            1.0,
+            90.0,
+            0.5,
+        ],
+        downsample=2,
+        feature_size=[
+            88,
+            156,
+        ],
+        image_size=[
+            704,
+            1248,
+        ],
+        in_channels=256,
+        out_channels=80,
+        splat_radius=1,
+        type='DepthLSSTransform',
+        xbound=[
+            0.0,
+            108.0,
+            0.3,
+        ],
+        ybound=[
+            -54.0,
+            54.0,
+            0.3,
+        ],
+        zbound=[
+            -10.0,
+            10.0,
+            20.0,
+        ]))
+model_wrapper_cfg = dict(
+    find_unused_parameters=True, type='MMDistributedDataParallel')
+num_experts = 4
+optim_wrapper = dict(
+    accumulative_counts=2,
+    clip_grad=dict(max_norm=10, norm_type=2),
+    loss_scale='dynamic',
+    optimizer=dict(lr=5e-05, type='AdamW', weight_decay=0.01),
+    type='AmpOptimWrapper')
+out_size_factor = 8
+param_scheduler = [
+    dict(
+        begin=0,
+        by_epoch=False,
+        end=500,
+        start_factor=0.33333333,
+        type='LinearLR'),
+    dict(
+        T_max=4,
+        begin=0,
+        by_epoch=True,
+        convert_to_iter_based=True,
+        end=4,
+        eta_min=0.0005,
+        type='CosineAnnealingLR'),
+    dict(
+        T_max=24,
+        begin=4,
+        by_epoch=True,
+        convert_to_iter_based=True,
+        end=28,
+        eta_min=5e-09,
+        type='CosineAnnealingLR'),
+    dict(
+        T_max=4,
+        begin=0,
+        by_epoch=True,
+        convert_to_iter_based=True,
+        end=4,
+        eta_min=0.8947368421052632,
+        type='CosineAnnealingMomentum'),
+    dict(
+        T_max=24,
+        begin=4,
+        by_epoch=True,
+        convert_to_iter_based=True,
+        end=28,
+        eta_min=1,
+        type='CosineAnnealingMomentum'),
+]
+point_cloud_range = [
+    0.0,
+    -54.0,
+    -5.0,
+    108.0,
+    54.0,
+    3.0,
+]
+resume = False
+sparse_shape = [
+    1440,
+    1440,
+    41,
+]
+test_cfg = dict()
+test_dataloader = dict(
+    batch_size=2,
+    dataset=dict(
+        ann_file='infos/zod_nuscenes_infos_test.pkl',
+        backend_args=None,
+        box_type_3d='LiDAR',
+        data_prefix=dict(CAM_FRONT='', pts=''),
+        data_root='/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/',
+        metainfo=dict(box_type_3d='LiDAR', classes=[
+            'pedestrian',
+        ]),
+        modality=dict(use_camera=True, use_lidar=True),
+        pipeline=[
+            dict(
+                backend_args=None,
+                color_type='color',
+                num_views=1,
+                to_float32=True,
+                type='BEVLoadMultiViewImageFromFiles'),
+            dict(
+                backend_args=None,
+                coord_type='LIDAR',
+                load_dim=4,
+                type='LoadPointsFromFile',
+                use_dim=4),
+            dict(
+                bot_pct_lim=[
+                    0.0,
+                    0.0,
+                ],
+                final_dim=[
+                    704,
+                    1248,
+                ],
+                is_train=False,
+                rand_flip=False,
+                resize_lim=[
+                    1.0,
+                    1.0,
+                ],
+                rot_lim=[
+                    0.0,
+                    0.0,
+                ],
+                type='ImageAug3D'),
+            dict(
+                point_cloud_range=[
+                    0.0,
+                    -54.0,
+                    -5.0,
+                    108.0,
+                    54.0,
+                    3.0,
+                ],
+                type='PointsRangeFilter'),
+            dict(
+                keys=[
+                    'img',
+                    'points',
+                    'gt_bboxes_3d',
+                    'gt_labels_3d',
+                ],
+                meta_keys=[
+                    'cam2img',
+                    'ori_cam2img',
+                    'lidar2cam',
+                    'lidar2img',
+                    'cam2lidar',
+                    'img_aug_matrix',
+                    'box_type_3d',
+                    'sample_idx',
+                    'lidar_path',
+                    'img_path',
+                    'num_pts_feats',
+                    'context',
+                ],
+                type='Pack3DDetInputs'),
+        ],
+        test_mode=True,
+        type='ZODDataset',
+        use_valid_flag=False,
+        with_velocity=False),
+    drop_last=False,
+    num_workers=4,
+    persistent_workers=True,
+    sampler=dict(shuffle=False, type='DefaultSampler'))
+test_evaluator = [
+    dict(iou_thr=[
+        0.25,
+        0.5,
+    ], type='IndoorMetric'),
+    dict(dist_thr=[
+        0.5,
+        1.0,
+        2.0,
+        4.0,
+    ], type='CenterDistanceMetric'),
+]
+test_pipeline = [
+    dict(
+        backend_args=None,
+        color_type='color',
+        num_views=1,
+        to_float32=True,
+        type='BEVLoadMultiViewImageFromFiles'),
+    dict(
+        backend_args=None,
+        coord_type='LIDAR',
+        load_dim=4,
+        type='LoadPointsFromFile',
+        use_dim=4),
+    dict(
+        bot_pct_lim=[
+            0.0,
+            0.0,
+        ],
+        final_dim=[
+            704,
+            1248,
+        ],
+        is_train=False,
+        rand_flip=False,
+        resize_lim=[
+            1.0,
+            1.0,
+        ],
+        rot_lim=[
+            0.0,
+            0.0,
+        ],
+        type='ImageAug3D'),
+    dict(
+        point_cloud_range=[
+            0.0,
+            -54.0,
+            -5.0,
+            108.0,
+            54.0,
+            3.0,
+        ],
+        type='PointsRangeFilter'),
+    dict(
+        keys=[
+            'img',
+            'points',
+            'gt_bboxes_3d',
+            'gt_labels_3d',
+        ],
+        meta_keys=[
+            'cam2img',
+            'ori_cam2img',
+            'lidar2cam',
+            'lidar2img',
+            'cam2lidar',
+            'img_aug_matrix',
+            'box_type_3d',
+            'sample_idx',
+            'lidar_path',
+            'img_path',
+            'num_pts_feats',
+            'context',
+        ],
+        type='Pack3DDetInputs'),
+]
+train_cfg = dict(by_epoch=True, max_epochs=28, val_interval=1)
+train_dataloader = dict(
+    batch_size=2,
+    dataset=dict(
+        ann_file='infos/zod_nuscenes_infos_train.pkl',
+        box_type_3d='LiDAR',
+        data_prefix=dict(CAM_FRONT='', pts=''),
+        data_root='/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/',
+        filter_empty_gt=False,
+        metainfo=dict(box_type_3d='LiDAR', classes=[
+            'pedestrian',
+        ]),
+        modality=dict(use_camera=True, use_lidar=True),
+        pipeline=[
+            dict(
+                backend_args=None,
+                color_type='color',
+                num_views=1,
+                to_float32=True,
+                type='BEVLoadMultiViewImageFromFiles'),
+            dict(
+                backend_args=None,
+                coord_type='LIDAR',
+                load_dim=4,
+                type='LoadPointsFromFile',
+                use_dim=4),
+            dict(
+                type='LoadAnnotations3D',
+                with_attr_label=False,
+                with_bbox_3d=True,
+                with_label_3d=True),
+            dict(
+                bot_pct_lim=[
+                    0.0,
+                    0.0,
+                ],
+                final_dim=[
+                    704,
+                    1248,
+                ],
+                is_train=True,
+                rand_flip=False,
+                resize_lim=[
+                    1.0,
+                    1.0,
+                ],
+                rot_lim=[
+                    0.0,
+                    0.0,
+                ],
+                type='ImageAug3D'),
+            dict(
+                rot_range=[
+                    0,
+                    0,
+                ],
+                scale_ratio_range=[
+                    0.9,
+                    1.1,
+                ],
+                translation_std=0.5,
+                type='BEVFusionGlobalRotScaleTrans'),
+            dict(
+                point_cloud_range=[
+                    0.0,
+                    -54.0,
+                    -5.0,
+                    108.0,
+                    54.0,
+                    3.0,
+                ],
+                type='PointsRangeFilter'),
+            dict(
+                point_cloud_range=[
+                    0.0,
+                    -54.0,
+                    -5.0,
+                    108.0,
+                    54.0,
+                    3.0,
+                ],
+                type='ObjectRangeFilter'),
+            dict(classes=[
+                'pedestrian',
+            ], type='ObjectNameFilter'),
+            dict(
+                fixed_prob=True,
+                max_epoch=28,
+                mode=1,
+                offset=False,
+                prob=0.0,
+                ratio=0.5,
+                rotate=1,
+                type='GridMask',
+                use_h=True,
+                use_w=True),
+            dict(type='PointShuffle'),
+            dict(
+                keys=[
+                    'points',
+                    'img',
+                    'gt_bboxes_3d',
+                    'gt_labels_3d',
+                ],
+                meta_keys=[
+                    'cam2img',
+                    'ori_cam2img',
+                    'lidar2cam',
+                    'lidar2img',
+                    'cam2lidar',
+                    'img_aug_matrix',
+                    'box_type_3d',
+                    'sample_idx',
+                    'lidar_path',
+                    'img_path',
+                    'transformation_3d_flow',
+                    'pcd_rotation',
+                    'pcd_scale_factor',
+                    'pcd_trans',
+                    'lidar_aug_matrix',
+                    'num_pts_feats',
+                    'context',
+                ],
+                type='Pack3DDetInputs'),
+        ],
+        test_mode=False,
+        type='ZODDataset',
+        use_valid_flag=False,
+        with_velocity=False),
+    num_workers=4,
+    persistent_workers=True,
+    sampler=dict(shuffle=True, type='DefaultSampler'))
+train_pipeline = [
+    dict(
+        backend_args=None,
+        color_type='color',
+        num_views=1,
+        to_float32=True,
+        type='BEVLoadMultiViewImageFromFiles'),
+    dict(
+        backend_args=None,
+        coord_type='LIDAR',
+        load_dim=4,
+        type='LoadPointsFromFile',
+        use_dim=4),
+    dict(
+        type='LoadAnnotations3D',
+        with_attr_label=False,
+        with_bbox_3d=True,
+        with_label_3d=True),
+    dict(
+        bot_pct_lim=[
+            0.0,
+            0.0,
+        ],
+        final_dim=[
+            704,
+            1248,
+        ],
+        is_train=True,
+        rand_flip=False,
+        resize_lim=[
+            1.0,
+            1.0,
+        ],
+        rot_lim=[
+            0.0,
+            0.0,
+        ],
+        type='ImageAug3D'),
+    dict(
+        rot_range=[
+            0,
+            0,
+        ],
+        scale_ratio_range=[
+            0.9,
+            1.1,
+        ],
+        translation_std=0.5,
+        type='BEVFusionGlobalRotScaleTrans'),
+    dict(
+        point_cloud_range=[
+            0.0,
+            -54.0,
+            -5.0,
+            108.0,
+            54.0,
+            3.0,
+        ],
+        type='PointsRangeFilter'),
+    dict(
+        point_cloud_range=[
+            0.0,
+            -54.0,
+            -5.0,
+            108.0,
+            54.0,
+            3.0,
+        ],
+        type='ObjectRangeFilter'),
+    dict(classes=[
+        'pedestrian',
+    ], type='ObjectNameFilter'),
+    dict(
+        fixed_prob=True,
+        max_epoch=28,
+        mode=1,
+        offset=False,
+        prob=0.0,
+        ratio=0.5,
+        rotate=1,
+        type='GridMask',
+        use_h=True,
+        use_w=True),
+    dict(type='PointShuffle'),
+    dict(
+        keys=[
+            'points',
+            'img',
+            'gt_bboxes_3d',
+            'gt_labels_3d',
+        ],
+        meta_keys=[
+            'cam2img',
+            'ori_cam2img',
+            'lidar2cam',
+            'lidar2img',
+            'cam2lidar',
+            'img_aug_matrix',
+            'box_type_3d',
+            'sample_idx',
+            'lidar_path',
+            'img_path',
+            'transformation_3d_flow',
+            'pcd_rotation',
+            'pcd_scale_factor',
+            'pcd_trans',
+            'lidar_aug_matrix',
+            'num_pts_feats',
+            'context',
+        ],
+        type='Pack3DDetInputs'),
+]
+val_cfg = dict()
+val_dataloader = dict(
+    batch_size=2,
+    dataset=dict(
+        ann_file='infos/zod_nuscenes_infos_val.pkl',
+        backend_args=None,
+        box_type_3d='LiDAR',
+        data_prefix=dict(CAM_FRONT='', pts=''),
+        data_root='/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/',
+        metainfo=dict(box_type_3d='LiDAR', classes=[
+            'pedestrian',
+        ]),
+        modality=dict(use_camera=True, use_lidar=True),
+        pipeline=[
+            dict(
+                backend_args=None,
+                color_type='color',
+                num_views=1,
+                to_float32=True,
+                type='BEVLoadMultiViewImageFromFiles'),
+            dict(
+                backend_args=None,
+                coord_type='LIDAR',
+                load_dim=4,
+                type='LoadPointsFromFile',
+                use_dim=4),
+            dict(
+                bot_pct_lim=[
+                    0.0,
+                    0.0,
+                ],
+                final_dim=[
+                    704,
+                    1248,
+                ],
+                is_train=False,
+                rand_flip=False,
+                resize_lim=[
+                    1.0,
+                    1.0,
+                ],
+                rot_lim=[
+                    0.0,
+                    0.0,
+                ],
+                type='ImageAug3D'),
+            dict(
+                point_cloud_range=[
+                    0.0,
+                    -54.0,
+                    -5.0,
+                    108.0,
+                    54.0,
+                    3.0,
+                ],
+                type='PointsRangeFilter'),
+            dict(
+                keys=[
+                    'img',
+                    'points',
+                    'gt_bboxes_3d',
+                    'gt_labels_3d',
+                ],
+                meta_keys=[
+                    'cam2img',
+                    'ori_cam2img',
+                    'lidar2cam',
+                    'lidar2img',
+                    'cam2lidar',
+                    'img_aug_matrix',
+                    'box_type_3d',
+                    'sample_idx',
+                    'lidar_path',
+                    'img_path',
+                    'num_pts_feats',
+                    'context',
+                ],
+                type='Pack3DDetInputs'),
+        ],
+        test_mode=True,
+        type='ZODDataset',
+        use_valid_flag=False,
+        with_velocity=False),
+    drop_last=False,
+    num_workers=4,
+    persistent_workers=True,
+    sampler=dict(shuffle=False, type='DefaultSampler'))
+val_evaluator = [
+    dict(iou_thr=[
+        0.25,
+        0.5,
+    ], type='IndoorMetric'),
+    dict(dist_thr=[
+        0.5,
+        1.0,
+        2.0,
+        4.0,
+    ], type='CenterDistanceMetric'),
+]
+vis_backends = [
+    dict(type='LocalVisBackend'),
+]
+visualizer = dict(
+    name='visualizer',
+    type='Det3DLocalVisualizer',
+    vis_backends=[
+        dict(type='LocalVisBackend'),
+    ])
+voxel_size = [
+    0.075,
+    0.075,
+    0.2,
+]
+work_dir = '/home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_moe_fusion_then/moe-fusion-then_4610529'
+
+05/22 19:57:13 - mmengine - INFO - Loads checkpoint by local backend from path: /mnt/tier2/project/p201222/u103958/checkpoints/swin_tiny_patch4_window7_224.pth
+05/22 19:57:14 - mmengine - INFO - Hooks will be executed in the following order:
+before_run:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(VERY_HIGH   ) DualCheckpointInitHook             
+(NORMAL      ) ExpertRespawnHook                  
+(BELOW_NORMAL) LoggerHook                         
+(BELOW_NORMAL) MoERoutingHook                     
+(BELOW_NORMAL) ContextRoutingStatsHook            
+(LOW         ) ValidationCurveHook                
+(LOW         ) ContextExpertUsageVisualizationHook
+ -------------------- 
+before_train:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+(BELOW_NORMAL) TrainingEfficiencyHook             
+(VERY_LOW    ) CheckpointHook                     
+(VERY_LOW    ) RunSummaryHook                     
+ -------------------- 
+before_train_epoch:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) DistSamplerSeedHook                
+(BELOW_NORMAL) TrainingEfficiencyHook             
+(BELOW_NORMAL) MoERoutingHook                     
+ -------------------- 
+before_train_iter:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+ -------------------- 
+after_train_iter:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) ExpertRespawnHook                  
+(BELOW_NORMAL) LoggerHook                         
+(BELOW_NORMAL) TrainingEfficiencyHook             
+(BELOW_NORMAL) MoERoutingHook                     
+(LOW         ) ParamSchedulerHook                 
+(VERY_LOW    ) CheckpointHook                     
+(VERY_LOW    ) RunSummaryHook                     
+ -------------------- 
+after_train_epoch:
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) ExpertRespawnHook                  
+(BELOW_NORMAL) TrainingEfficiencyHook             
+(BELOW_NORMAL) MoERoutingHook                     
+(LOW         ) ParamSchedulerHook                 
+(LOW         ) BEVFeatureVisualizationHook        
+(LOW         ) BEVPredictionVisualizationHook     
+(LOW         ) BEVValPredictionVisualizationHook  
+(LOW         ) BEVCameraFeatureVisualizationHook  
+(LOW         ) DepthTransformDiagnosticHook       
+(LOW         ) DepthProjectionDebugHook           
+(VERY_LOW    ) CheckpointHook                     
+ -------------------- 
+before_val:
+(VERY_HIGH   ) RuntimeInfoHook                    
+ -------------------- 
+before_val_epoch:
+(NORMAL      ) IterTimerHook                      
+(BELOW_NORMAL) ContextRoutingStatsHook            
+(LOW         ) ContextExpertUsageVisualizationHook
+ -------------------- 
+before_val_iter:
+(NORMAL      ) IterTimerHook                      
+ -------------------- 
+after_val_iter:
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) Det3DVisualizationHook             
+(BELOW_NORMAL) LoggerHook                         
+(BELOW_NORMAL) MoERoutingHook                     
+(BELOW_NORMAL) ContextRoutingStatsHook            
+(LOW         ) ContextExpertUsageVisualizationHook
+ -------------------- 
+after_val_epoch:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+(BELOW_NORMAL) LoggerHook                         
+(BELOW_NORMAL) MoERoutingHook                     
+(BELOW_NORMAL) ContextRoutingStatsHook            
+(LOW         ) ParamSchedulerHook                 
+(LOW         ) ValidationCurveHook                
+(LOW         ) ContextExpertUsageVisualizationHook
+(VERY_LOW    ) CheckpointHook                     
+(VERY_LOW    ) RunSummaryHook                     
+ -------------------- 
+after_val:
+(VERY_HIGH   ) RuntimeInfoHook                    
+ -------------------- 
+after_train:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(VERY_LOW    ) CheckpointHook                     
+(VERY_LOW    ) RunSummaryHook                     
+ -------------------- 
+before_test:
+(VERY_HIGH   ) RuntimeInfoHook                    
+ -------------------- 
+before_test_epoch:
+(NORMAL      ) IterTimerHook                      
+ -------------------- 
+before_test_iter:
+(NORMAL      ) IterTimerHook                      
+ -------------------- 
+after_test_iter:
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) Det3DVisualizationHook             
+(BELOW_NORMAL) LoggerHook                         
+ -------------------- 
+after_test_epoch:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+(BELOW_NORMAL) LoggerHook                         
+ -------------------- 
+after_test:
+(VERY_HIGH   ) RuntimeInfoHook                    
+ -------------------- 
+after_run:
+(BELOW_NORMAL) LoggerHook                         
+ -------------------- 
+05/22 19:57:15 - mmengine - WARNING - LiDAR is not a meta file, simply parsed as meta information
+05/22 19:57:28 - mmengine - INFO - ------------------------------
+05/22 19:57:28 - mmengine - INFO - The length of training dataset: 79999
+05/22 19:57:28 - mmengine - INFO - The number of instances per category in the dataset:
++------------+--------+
+| category   | number |
++------------+--------+
+| pedestrian | 182784 |
++------------+--------+
+05/22 19:57:30 - mmengine - INFO - ------------------------------
+05/22 19:57:30 - mmengine - INFO - The length of test dataset: 10000
+05/22 19:57:30 - mmengine - INFO - The number of instances per category in the dataset:
++------------+--------+
+| category   | number |
++------------+--------+
+| pedestrian | 23478  |
++------------+--------+
+05/22 19:57:30 - mmengine - WARNING - The prefix is not set in metric class IndoorMetric.
+05/22 19:57:30 - mmengine - WARNING - The prefix is not set in metric class CenterDistanceMetric.
+05/22 19:57:31 - mmengine - INFO - DualCheckpointInitHook: starting dual-checkpoint init …
+  LiDAR ckpt  : /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4570893/best_mAP_0.50_epoch_30.pth
+  Camera ckpt : /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_camera_only/zod-cam-only_4577582/best_mAP_0.50_epoch_31.pth
+05/22 19:57:31 - mmengine - INFO - DualCheckpointInitHook [LiDAR]: loading checkpoint /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only/zod-lidar-only_4570893/best_mAP_0.50_epoch_30.pth
+05/22 19:57:31 - mmengine - INFO - DualCheckpointInitHook [LiDAR]: "pts_middle_encoder" ← 126 tensors; missing=0, unexpected=0
+05/22 19:57:31 - mmengine - INFO - DualCheckpointInitHook [LiDAR]: "pts_backbone" ← 72 tensors; missing=0, unexpected=0
+05/22 19:57:31 - mmengine - INFO - DualCheckpointInitHook [LiDAR]: "pts_neck" ← 12 tensors; missing=0, unexpected=0
+05/22 19:57:31 - mmengine - INFO - DualCheckpointInitHook [LiDAR]: "bbox_head" ← 88 tensors; missing=0, unexpected=0
+05/22 19:57:31 - mmengine - INFO - DualCheckpointInitHook [Camera]: loading checkpoint /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_camera_only/zod-cam-only_4577582/best_mAP_0.50_epoch_31.pth
+05/22 19:57:31 - mmengine - INFO - DualCheckpointInitHook [Camera]: "img_backbone" ← 187 tensors; missing=0, unexpected=0
+05/22 19:57:31 - mmengine - INFO - DualCheckpointInitHook [Camera]: "img_neck" ← 24 tensors; missing=0, unexpected=0
+05/22 19:57:31 - mmengine - INFO - DualCheckpointInitHook [Camera]: "view_transform" ← 59 tensors; missing=0, unexpected=0
+05/22 19:57:31 - mmengine - INFO - DualCheckpointInitHook: dual-checkpoint init complete.
+  Loaded from LiDAR-only ckpt  : pts_middle_encoder, pts_backbone, pts_neck, bbox_head
+  Loaded from Camera-only ckpt : img_backbone, img_neck, view_transform
+  Default init (not loaded)    : fusion_layer, bbox_head
+05/22 19:57:31 - mmengine - INFO - ExpertRespawnHook: dead threshold = 0.0250 (10% of uniform share), perturbation_std=0.02, max_respawns=5
+05/22 19:57:31 - mmengine - INFO - MoERoutingHook: artifacts → /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_moe_fusion_then/moe-fusion-then_4610529/moe_routing
+05/22 19:57:31 - mmengine - INFO - Loads checkpoint by local backend from path: /mnt/tier2/project/p201222/u103958/checkpoints/swin_tiny_patch4_window7_224.pth
+05/22 19:57:32 - mmengine - WARNING - Gradient accumulative may slightly decrease performance because the model has BatchNorm layers.
+05/22 19:57:32 - mmengine - WARNING - "FileClient" will be deprecated in future. Please use io functions in https://mmengine.readthedocs.io/en/latest/api/fileio.html#file-io
+05/22 19:57:32 - mmengine - WARNING - "HardDiskBackend" is the alias of "LocalBackend" and the former will be deprecated in future.
+05/22 19:57:32 - mmengine - INFO - Checkpoints will be saved to /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_moe_fusion_then/moe-fusion-then_4610529.
+05/22 19:58:16 - mmengine - INFO - Epoch(train)  [1][   50/10000]  lr: 1.9942e-05  eta: 2 days, 20:04:43  time: 0.8755  data_time: 0.0712  memory: 12636  loss: 3.7232  loss_heatmap: 1.0401  layer_-1_loss_cls: 0.2894  layer_-1_loss_bbox: 1.3695  matched_ious: 0.0635  aux_depth_loss: 0.9588  moe_importance_loss: 0.0015  moe_router_z_loss: 0.0062  moe_ctx_aux_loss_weighted: 0.0576  grad_norm: nan
+05/22 19:58:43 - mmengine - INFO - Epoch(train)  [1][  100/10000]  lr: 2.3288e-05  eta: 2 days, 7:12:56  time: 0.5449  data_time: 0.0173  memory: 12455  loss: 2.7233  loss_heatmap: 0.7018  layer_-1_loss_cls: 0.2246  layer_-1_loss_bbox: 1.0540  matched_ious: 0.2307  aux_depth_loss: 0.6777  moe_importance_loss: 0.0021  moe_router_z_loss: 0.0073  moe_ctx_aux_loss_weighted: 0.0556  grad_norm: nan  sec_per_iter: 0.8759  iters_per_sec: 1.1400  samples_per_sec: 9.1300  samples_per_sec_per_gpu: 2.2800  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 19:59:11 - mmengine - INFO - Epoch(train)  [1][  150/10000]  lr: 2.6639e-05  eta: 2 days, 3:11:08  time: 0.5550  data_time: 0.0178  memory: 12479  loss: 2.2181  loss_heatmap: 0.5910  layer_-1_loss_cls: 0.1955  layer_-1_loss_bbox: 0.6634  matched_ious: 0.0572  aux_depth_loss: 0.7031  moe_importance_loss: 0.0015  moe_router_z_loss: 0.0082  moe_ctx_aux_loss_weighted: 0.0554  grad_norm: 23.7890  sec_per_iter: 0.7107  iters_per_sec: 1.4100  samples_per_sec: 11.2600  samples_per_sec_per_gpu: 2.8100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 19:59:39 - mmengine - INFO - Epoch(train)  [1][  200/10000]  lr: 2.9994e-05  eta: 2 days, 1:24:08  time: 0.5671  data_time: 0.0186  memory: 12451  loss: 1.9815  loss_heatmap: 0.5145  layer_-1_loss_cls: 0.1815  layer_-1_loss_bbox: 0.5649  matched_ious: 0.3111  aux_depth_loss: 0.6590  moe_importance_loss: 0.0011  moe_router_z_loss: 0.0068  moe_ctx_aux_loss_weighted: 0.0538  grad_norm: 24.8692  sec_per_iter: 0.6589  iters_per_sec: 1.5200  samples_per_sec: 12.1400  samples_per_sec_per_gpu: 3.0400  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:00:07 - mmengine - INFO - Epoch(train)  [1][  250/10000]  lr: 3.3355e-05  eta: 2 days, 0:05:29  time: 0.5519  data_time: 0.0187  memory: 12532  loss: 2.0880  loss_heatmap: 0.6309  layer_-1_loss_cls: 0.1840  layer_-1_loss_bbox: 0.5904  matched_ious: 0.2443  aux_depth_loss: 0.6231  moe_importance_loss: 0.0009  moe_router_z_loss: 0.0054  moe_ctx_aux_loss_weighted: 0.0533  grad_norm: 23.7734  sec_per_iter: 0.6359  iters_per_sec: 1.5700  samples_per_sec: 12.5800  samples_per_sec_per_gpu: 3.1400  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:00:35 - mmengine - INFO - Epoch(train)  [1][  300/10000]  lr: 3.6721e-05  eta: 1 day, 23:12:51  time: 0.5518  data_time: 0.0174  memory: 12497  loss: 1.9067  loss_heatmap: 0.5234  layer_-1_loss_cls: 0.1589  layer_-1_loss_bbox: 0.5068  matched_ious: 0.0000  aux_depth_loss: 0.6573  moe_importance_loss: 0.0011  moe_router_z_loss: 0.0056  moe_ctx_aux_loss_weighted: 0.0537  grad_norm: inf  sec_per_iter: 0.6191  iters_per_sec: 1.6200  samples_per_sec: 12.9200  samples_per_sec_per_gpu: 3.2300  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:01:02 - mmengine - INFO - Epoch(train)  [1][  350/10000]  lr: 4.0093e-05  eta: 1 day, 22:34:04  time: 0.5502  data_time: 0.0183  memory: 12504  loss: 2.0245  loss_heatmap: 0.5709  layer_-1_loss_cls: 0.1425  layer_-1_loss_bbox: 0.5924  matched_ious: 0.3088  aux_depth_loss: 0.6605  moe_importance_loss: 0.0012  moe_router_z_loss: 0.0055  moe_ctx_aux_loss_weighted: 0.0515  grad_norm: inf  sec_per_iter: 0.6078  iters_per_sec: 1.6500  samples_per_sec: 13.1600  samples_per_sec_per_gpu: 3.2900  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:01:31 - mmengine - INFO - Epoch(train)  [1][  400/10000]  lr: 4.3470e-05  eta: 1 day, 22:18:25  time: 0.5735  data_time: 0.0175  memory: 12616  loss: 1.6985  loss_heatmap: 0.4470  layer_-1_loss_cls: 0.1189  layer_-1_loss_bbox: 0.4389  matched_ious: 0.2279  aux_depth_loss: 0.6367  moe_importance_loss: 0.0013  moe_router_z_loss: 0.0052  moe_ctx_aux_loss_weighted: 0.0506  grad_norm: 28.2502  sec_per_iter: 0.5996  iters_per_sec: 1.6700  samples_per_sec: 13.3400  samples_per_sec_per_gpu: 3.3400  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:01:58 - mmengine - INFO - Epoch(train)  [1][  450/10000]  lr: 4.6852e-05  eta: 1 day, 21:56:57  time: 0.5557  data_time: 0.0168  memory: 12719  loss: 1.6049  loss_heatmap: 0.4128  layer_-1_loss_cls: 0.1041  layer_-1_loss_bbox: 0.3914  matched_ious: 0.2250  aux_depth_loss: 0.6394  moe_importance_loss: 0.0014  moe_router_z_loss: 0.0044  moe_ctx_aux_loss_weighted: 0.0514  grad_norm: 28.6419  sec_per_iter: 0.5963  iters_per_sec: 1.6800  samples_per_sec: 13.4200  samples_per_sec_per_gpu: 3.3500  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:02:27 - mmengine - INFO - Epoch(train)  [1][  500/10000]  lr: 5.0240e-05  eta: 1 day, 21:41:52  time: 0.5604  data_time: 0.0189  memory: 12592  loss: 1.8945  loss_heatmap: 0.5575  layer_-1_loss_cls: 0.1344  layer_-1_loss_bbox: 0.5138  matched_ious: 0.3523  aux_depth_loss: 0.6351  moe_importance_loss: 0.0009  moe_router_z_loss: 0.0037  moe_ctx_aux_loss_weighted: 0.0490  grad_norm: 32.5593  sec_per_iter: 0.5918  iters_per_sec: 1.6900  samples_per_sec: 13.5200  samples_per_sec_per_gpu: 3.3800  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:02:55 - mmengine - INFO - Epoch(train)  [1][  550/10000]  lr: 5.0276e-05  eta: 1 day, 21:32:20  time: 0.5673  data_time: 0.0171  memory: 12746  loss: 1.6680  loss_heatmap: 0.4708  layer_-1_loss_cls: 0.1181  layer_-1_loss_bbox: 0.4189  matched_ious: 0.2047  aux_depth_loss: 0.6045  moe_importance_loss: 0.0013  moe_router_z_loss: 0.0037  moe_ctx_aux_loss_weighted: 0.0508  grad_norm: 30.9307  sec_per_iter: 0.5887  iters_per_sec: 1.7000  samples_per_sec: 13.5900  samples_per_sec_per_gpu: 3.4000  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:03:23 - mmengine - INFO - Epoch(train)  [1][  600/10000]  lr: 5.0316e-05  eta: 1 day, 21:24:49  time: 0.5685  data_time: 0.0210  memory: 12505  loss: 1.5819  loss_heatmap: 0.4254  layer_-1_loss_cls: 0.1055  layer_-1_loss_bbox: 0.4019  matched_ious: 0.2340  aux_depth_loss: 0.5958  moe_importance_loss: 0.0011  moe_router_z_loss: 0.0035  moe_ctx_aux_loss_weighted: 0.0487  grad_norm: 22.7902  sec_per_iter: 0.5868  iters_per_sec: 1.7000  samples_per_sec: 13.6300  samples_per_sec_per_gpu: 3.4100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:03:51 - mmengine - INFO - Epoch(train)  [1][  650/10000]  lr: 5.0360e-05  eta: 1 day, 21:13:00  time: 0.5535  data_time: 0.0178  memory: 12624  loss: 1.7652  loss_heatmap: 0.4764  layer_-1_loss_cls: 0.1072  layer_-1_loss_bbox: 0.5716  matched_ious: 0.2760  aux_depth_loss: 0.5549  moe_importance_loss: 0.0010  moe_router_z_loss: 0.0033  moe_ctx_aux_loss_weighted: 0.0508  grad_norm: 23.6375  sec_per_iter: 0.5852  iters_per_sec: 1.7100  samples_per_sec: 13.6700  samples_per_sec_per_gpu: 3.4200  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:04:20 - mmengine - INFO - Epoch(train)  [1][  700/10000]  lr: 5.0406e-05  eta: 1 day, 21:08:33  time: 0.5708  data_time: 0.0187  memory: 12575  loss: 1.5672  loss_heatmap: 0.4228  layer_-1_loss_cls: 0.1104  layer_-1_loss_bbox: 0.3543  matched_ious: 0.2223  aux_depth_loss: 0.6263  moe_importance_loss: 0.0006  moe_router_z_loss: 0.0032  moe_ctx_aux_loss_weighted: 0.0497  grad_norm: 28.1424  sec_per_iter: 0.5828  iters_per_sec: 1.7200  samples_per_sec: 13.7300  samples_per_sec_per_gpu: 3.4300  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:04:48 - mmengine - INFO - Epoch(train)  [1][  750/10000]  lr: 5.0456e-05  eta: 1 day, 21:02:41  time: 0.5645  data_time: 0.0201  memory: 12748  loss: 1.4949  loss_heatmap: 0.3860  layer_-1_loss_cls: 0.1003  layer_-1_loss_bbox: 0.3466  matched_ious: 0.0903  aux_depth_loss: 0.6087  moe_importance_loss: 0.0004  moe_router_z_loss: 0.0031  moe_ctx_aux_loss_weighted: 0.0497  grad_norm: 39.0735  sec_per_iter: 0.5819  iters_per_sec: 1.7200  samples_per_sec: 13.7500  samples_per_sec_per_gpu: 3.4400  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:05:16 - mmengine - INFO - Epoch(train)  [1][  800/10000]  lr: 5.0510e-05  eta: 1 day, 20:55:38  time: 0.5581  data_time: 0.0183  memory: 12566  loss: 1.6216  loss_heatmap: 0.4152  layer_-1_loss_cls: 0.0969  layer_-1_loss_bbox: 0.4469  matched_ious: 0.2032  aux_depth_loss: 0.6110  moe_importance_loss: 0.0004  moe_router_z_loss: 0.0028  moe_ctx_aux_loss_weighted: 0.0484  grad_norm: 44.7186  sec_per_iter: 0.5808  iters_per_sec: 1.7200  samples_per_sec: 13.7800  samples_per_sec_per_gpu: 3.4400  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:05:43 - mmengine - INFO - Epoch(train)  [1][  850/10000]  lr: 5.0567e-05  eta: 1 day, 20:46:04  time: 0.5461  data_time: 0.0177  memory: 12628  loss: 1.5426  loss_heatmap: 0.4078  layer_-1_loss_cls: 0.0975  layer_-1_loss_bbox: 0.4149  matched_ious: 0.2052  aux_depth_loss: 0.5708  moe_importance_loss: 0.0004  moe_router_z_loss: 0.0027  moe_ctx_aux_loss_weighted: 0.0484  grad_norm: 36.4825  sec_per_iter: 0.5794  iters_per_sec: 1.7300  samples_per_sec: 13.8100  samples_per_sec_per_gpu: 3.4500  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:06:11 - mmengine - INFO - Epoch(train)  [1][  900/10000]  lr: 5.0628e-05  eta: 1 day, 20:41:56  time: 0.5632  data_time: 0.0193  memory: 12500  loss: 1.5416  loss_heatmap: 0.4224  layer_-1_loss_cls: 0.1094  layer_-1_loss_bbox: 0.3550  matched_ious: 0.3270  aux_depth_loss: 0.6033  moe_importance_loss: 0.0004  moe_router_z_loss: 0.0025  moe_ctx_aux_loss_weighted: 0.0486  grad_norm: 42.6962  sec_per_iter: 0.5774  iters_per_sec: 1.7300  samples_per_sec: 13.8600  samples_per_sec_per_gpu: 3.4600  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:06:39 - mmengine - INFO - Epoch(train)  [1][  950/10000]  lr: 5.0692e-05  eta: 1 day, 20:37:40  time: 0.5611  data_time: 0.0202  memory: 12649  loss: 1.6081  loss_heatmap: 0.4774  layer_-1_loss_cls: 0.1303  layer_-1_loss_bbox: 0.3677  matched_ious: 0.1942  aux_depth_loss: 0.5837  moe_importance_loss: 0.0006  moe_router_z_loss: 0.0024  moe_ctx_aux_loss_weighted: 0.0461  grad_norm: 53.0595  sec_per_iter: 0.5766  iters_per_sec: 1.7300  samples_per_sec: 13.8700  samples_per_sec_per_gpu: 3.4700  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:07:06 - mmengine - INFO - Exp name: zod_moe_fusion_then_20260522_195637
+05/22 20:07:06 - mmengine - INFO - Epoch(train)  [1][ 1000/10000]  lr: 5.0759e-05  eta: 1 day, 20:30:01  time: 0.5450  data_time: 0.0184  memory: 12573  loss: 1.5236  loss_heatmap: 0.4289  layer_-1_loss_cls: 0.0999  layer_-1_loss_bbox: 0.3934  matched_ious: 0.3406  aux_depth_loss: 0.5521  moe_importance_loss: 0.0006  moe_router_z_loss: 0.0022  moe_ctx_aux_loss_weighted: 0.0465  grad_norm: 44.6433  sec_per_iter: 0.5758  iters_per_sec: 1.7400  samples_per_sec: 13.8900  samples_per_sec_per_gpu: 3.4700  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:07:35 - mmengine - INFO - Epoch(train)  [1][ 1050/10000]  lr: 5.0830e-05  eta: 1 day, 20:27:40  time: 0.5657  data_time: 0.0176  memory: 12548  loss: 1.6614  loss_heatmap: 0.4951  layer_-1_loss_cls: 0.1268  layer_-1_loss_bbox: 0.3809  matched_ious: 0.0738  aux_depth_loss: 0.6083  moe_importance_loss: 0.0004  moe_router_z_loss: 0.0021  moe_ctx_aux_loss_weighted: 0.0477  grad_norm: 48.9773  sec_per_iter: 0.5742  iters_per_sec: 1.7400  samples_per_sec: 13.9300  samples_per_sec_per_gpu: 3.4800  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:08:03 - mmengine - INFO - Epoch(train)  [1][ 1100/10000]  lr: 5.0905e-05  eta: 1 day, 20:24:06  time: 0.5592  data_time: 0.0183  memory: 12688  loss: 1.5889  loss_heatmap: 0.4839  layer_-1_loss_cls: 0.1194  layer_-1_loss_bbox: 0.3459  matched_ious: 0.1381  aux_depth_loss: 0.5911  moe_importance_loss: 0.0004  moe_router_z_loss: 0.0022  moe_ctx_aux_loss_weighted: 0.0461  grad_norm: 74.3681  sec_per_iter: 0.5739  iters_per_sec: 1.7400  samples_per_sec: 13.9400  samples_per_sec_per_gpu: 3.4900  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:08:31 - mmengine - INFO - Epoch(train)  [1][ 1150/10000]  lr: 5.0983e-05  eta: 1 day, 20:21:10  time: 0.5610  data_time: 0.0188  memory: 12561  loss: 1.4028  loss_heatmap: 0.3700  layer_-1_loss_cls: 0.1011  layer_-1_loss_bbox: 0.3115  matched_ious: 0.2515  aux_depth_loss: 0.5691  moe_importance_loss: 0.0004  moe_router_z_loss: 0.0021  moe_ctx_aux_loss_weighted: 0.0485  grad_norm: 61.5293  sec_per_iter: 0.5732  iters_per_sec: 1.7400  samples_per_sec: 13.9600  samples_per_sec_per_gpu: 3.4900  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:08:59 - mmengine - INFO - Epoch(train)  [1][ 1200/10000]  lr: 5.1064e-05  eta: 1 day, 20:20:36  time: 0.5721  data_time: 0.0193  memory: 12596  loss: 1.5766  loss_heatmap: 0.4546  layer_-1_loss_cls: 0.1089  layer_-1_loss_bbox: 0.3920  matched_ious: 0.3217  aux_depth_loss: 0.5735  moe_importance_loss: 0.0004  moe_router_z_loss: 0.0021  moe_ctx_aux_loss_weighted: 0.0453  grad_norm: 30.7968  sec_per_iter: 0.5727  iters_per_sec: 1.7500  samples_per_sec: 13.9700  samples_per_sec_per_gpu: 3.4900  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:09:27 - mmengine - INFO - Epoch(train)  [1][ 1250/10000]  lr: 5.1149e-05  eta: 1 day, 20:17:06  time: 0.5563  data_time: 0.0185  memory: 12510  loss: 1.6157  loss_heatmap: 0.4425  layer_-1_loss_cls: 0.1120  layer_-1_loss_bbox: 0.3895  matched_ious: 0.2436  aux_depth_loss: 0.6219  moe_importance_loss: 0.0005  moe_router_z_loss: 0.0022  moe_ctx_aux_loss_weighted: 0.0471  grad_norm: 49.1462  sec_per_iter: 0.5726  iters_per_sec: 1.7500  samples_per_sec: 13.9700  samples_per_sec_per_gpu: 3.4900  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:09:55 - mmengine - INFO - Epoch(train)  [1][ 1300/10000]  lr: 5.1237e-05  eta: 1 day, 20:13:48  time: 0.5562  data_time: 0.0174  memory: 12582  loss: 1.5545  loss_heatmap: 0.4327  layer_-1_loss_cls: 0.0952  layer_-1_loss_bbox: 0.3963  matched_ious: 0.3064  aux_depth_loss: 0.5803  moe_importance_loss: 0.0005  moe_router_z_loss: 0.0020  moe_ctx_aux_loss_weighted: 0.0474  grad_norm: 73.6402  sec_per_iter: 0.5720  iters_per_sec: 1.7500  samples_per_sec: 13.9900  samples_per_sec_per_gpu: 3.5000  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:10:23 - mmengine - INFO - Epoch(train)  [1][ 1350/10000]  lr: 5.1329e-05  eta: 1 day, 20:12:36  time: 0.5671  data_time: 0.0189  memory: 12604  loss: 1.5540  loss_heatmap: 0.4178  layer_-1_loss_cls: 0.1007  layer_-1_loss_bbox: 0.4069  matched_ious: 0.4511  aux_depth_loss: 0.5788  moe_importance_loss: 0.0006  moe_router_z_loss: 0.0021  moe_ctx_aux_loss_weighted: 0.0472  grad_norm: 59.1525  sec_per_iter: 0.5714  iters_per_sec: 1.7500  samples_per_sec: 14.0000  samples_per_sec_per_gpu: 3.5000  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:10:52 - mmengine - INFO - Epoch(train)  [1][ 1400/10000]  lr: 5.1424e-05  eta: 1 day, 20:13:08  time: 0.5772  data_time: 0.0198  memory: 12547  loss: 1.7451  loss_heatmap: 0.4748  layer_-1_loss_cls: 0.1085  layer_-1_loss_bbox: 0.5319  matched_ious: 0.1388  aux_depth_loss: 0.5793  moe_importance_loss: 0.0007  moe_router_z_loss: 0.0020  moe_ctx_aux_loss_weighted: 0.0479  grad_norm: 63.4343  sec_per_iter: 0.5712  iters_per_sec: 1.7500  samples_per_sec: 14.0100  samples_per_sec_per_gpu: 3.5000  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:11:20 - mmengine - INFO - Epoch(train)  [1][ 1450/10000]  lr: 5.1523e-05  eta: 1 day, 20:11:02  time: 0.5612  data_time: 0.0183  memory: 12546  loss: 1.4661  loss_heatmap: 0.3985  layer_-1_loss_cls: 0.0946  layer_-1_loss_bbox: 0.3639  matched_ious: 0.4364  aux_depth_loss: 0.5597  moe_importance_loss: 0.0005  moe_router_z_loss: 0.0017  moe_ctx_aux_loss_weighted: 0.0472  grad_norm: 65.4592  sec_per_iter: 0.5714  iters_per_sec: 1.7500  samples_per_sec: 14.0000  samples_per_sec_per_gpu: 3.5000  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:11:48 - mmengine - INFO - Epoch(train)  [1][ 1500/10000]  lr: 5.1625e-05  eta: 1 day, 20:09:24  time: 0.5637  data_time: 0.0181  memory: 12449  loss: 1.4298  loss_heatmap: 0.3978  layer_-1_loss_cls: 0.1041  layer_-1_loss_bbox: 0.3175  matched_ious: 0.3005  aux_depth_loss: 0.5608  moe_importance_loss: 0.0006  moe_router_z_loss: 0.0016  moe_ctx_aux_loss_weighted: 0.0473  grad_norm: 57.7126  sec_per_iter: 0.5711  iters_per_sec: 1.7500  samples_per_sec: 14.0100  samples_per_sec_per_gpu: 3.5000  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:12:16 - mmengine - INFO - Epoch(train)  [1][ 1550/10000]  lr: 5.1730e-05  eta: 1 day, 20:06:49  time: 0.5567  data_time: 0.0191  memory: 12474  loss: 1.4477  loss_heatmap: 0.3804  layer_-1_loss_cls: 0.0942  layer_-1_loss_bbox: 0.3644  matched_ious: 0.4100  aux_depth_loss: 0.5597  moe_importance_loss: 0.0006  moe_router_z_loss: 0.0016  moe_ctx_aux_loss_weighted: 0.0468  grad_norm: 67.7698  sec_per_iter: 0.5708  iters_per_sec: 1.7500  samples_per_sec: 14.0100  samples_per_sec_per_gpu: 3.5000  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:12:44 - mmengine - INFO - Epoch(train)  [1][ 1600/10000]  lr: 5.1839e-05  eta: 1 day, 20:03:15  time: 0.5489  data_time: 0.0180  memory: 12547  loss: 1.7412  loss_heatmap: 0.5233  layer_-1_loss_cls: 0.1112  layer_-1_loss_bbox: 0.5034  matched_ious: 0.1511  aux_depth_loss: 0.5550  moe_importance_loss: 0.0005  moe_router_z_loss: 0.0015  moe_ctx_aux_loss_weighted: 0.0462  grad_norm: 58.4186  sec_per_iter: 0.5704  iters_per_sec: 1.7500  samples_per_sec: 14.0300  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:13:11 - mmengine - INFO - Epoch(train)  [1][ 1650/10000]  lr: 5.1951e-05  eta: 1 day, 20:00:32  time: 0.5538  data_time: 0.0194  memory: 12536  loss: 1.4530  loss_heatmap: 0.3939  layer_-1_loss_cls: 0.1059  layer_-1_loss_bbox: 0.3311  matched_ious: 0.2373  aux_depth_loss: 0.5725  moe_importance_loss: 0.0005  moe_router_z_loss: 0.0014  moe_ctx_aux_loss_weighted: 0.0478  grad_norm: 81.8901  sec_per_iter: 0.5697  iters_per_sec: 1.7600  samples_per_sec: 14.0400  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:13:39 - mmengine - INFO - Epoch(train)  [1][ 1700/10000]  lr: 5.2067e-05  eta: 1 day, 19:58:33  time: 0.5581  data_time: 0.0201  memory: 12566  loss: 1.5551  loss_heatmap: 0.4814  layer_-1_loss_cls: 0.1163  layer_-1_loss_bbox: 0.3340  matched_ious: 0.1933  aux_depth_loss: 0.5738  moe_importance_loss: 0.0004  moe_router_z_loss: 0.0013  moe_ctx_aux_loss_weighted: 0.0480  grad_norm: 82.8536  sec_per_iter: 0.5692  iters_per_sec: 1.7600  samples_per_sec: 14.0500  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:14:08 - mmengine - INFO - Epoch(train)  [1][ 1750/10000]  lr: 5.2187e-05  eta: 1 day, 19:59:15  time: 0.5778  data_time: 0.0196  memory: 12620  loss: 1.5004  loss_heatmap: 0.4203  layer_-1_loss_cls: 0.1099  layer_-1_loss_bbox: 0.3394  matched_ious: 0.1446  aux_depth_loss: 0.5840  moe_importance_loss: 0.0004  moe_router_z_loss: 0.0012  moe_ctx_aux_loss_weighted: 0.0452  grad_norm: 49.8611  sec_per_iter: 0.5689  iters_per_sec: 1.7600  samples_per_sec: 14.0600  samples_per_sec_per_gpu: 3.5200  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:14:36 - mmengine - INFO - Epoch(train)  [1][ 1800/10000]  lr: 5.2309e-05  eta: 1 day, 19:58:09  time: 0.5643  data_time: 0.0200  memory: 12480  loss: 1.3539  loss_heatmap: 0.3363  layer_-1_loss_cls: 0.0970  layer_-1_loss_bbox: 0.2675  matched_ious: 0.1976  aux_depth_loss: 0.6069  moe_importance_loss: 0.0004  moe_router_z_loss: 0.0015  moe_ctx_aux_loss_weighted: 0.0444  grad_norm: 76.1083  sec_per_iter: 0.5692  iters_per_sec: 1.7600  samples_per_sec: 14.0600  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:15:06 - mmengine - INFO - Epoch(train)  [1][ 1850/10000]  lr: 5.2435e-05  eta: 1 day, 20:00:12  time: 0.5892  data_time: 0.0188  memory: 12496  loss: 1.5209  loss_heatmap: 0.4140  layer_-1_loss_cls: 0.1065  layer_-1_loss_bbox: 0.3187  matched_ious: 0.2742  aux_depth_loss: 0.6324  moe_importance_loss: 0.0003  moe_router_z_loss: 0.0014  moe_ctx_aux_loss_weighted: 0.0477  grad_norm: 88.9540  sec_per_iter: 0.5690  iters_per_sec: 1.7600  samples_per_sec: 14.0600  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:15:33 - mmengine - INFO - Epoch(train)  [1][ 1900/10000]  lr: 5.2565e-05  eta: 1 day, 19:57:17  time: 0.5495  data_time: 0.0172  memory: 12605  loss: 1.5313  loss_heatmap: 0.4436  layer_-1_loss_cls: 0.1044  layer_-1_loss_bbox: 0.3625  matched_ious: 0.1318  aux_depth_loss: 0.5735  moe_importance_loss: 0.0002  moe_router_z_loss: 0.0012  moe_ctx_aux_loss_weighted: 0.0458  grad_norm: 69.9436  sec_per_iter: 0.5695  iters_per_sec: 1.7600  samples_per_sec: 14.0500  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:16:02 - mmengine - INFO - Epoch(train)  [1][ 1950/10000]  lr: 5.2698e-05  eta: 1 day, 19:58:25  time: 0.5825  data_time: 0.0188  memory: 12492  loss: 1.6156  loss_heatmap: 0.4580  layer_-1_loss_cls: 0.0998  layer_-1_loss_bbox: 0.4355  matched_ious: 0.2714  aux_depth_loss: 0.5745  moe_importance_loss: 0.0002  moe_router_z_loss: 0.0013  moe_ctx_aux_loss_weighted: 0.0463  grad_norm: 65.6672  sec_per_iter: 0.5690  iters_per_sec: 1.7600  samples_per_sec: 14.0600  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:16:32 - mmengine - INFO - Exp name: zod_moe_fusion_then_20260522_195637
+05/22 20:16:32 - mmengine - INFO - Epoch(train)  [1][ 2000/10000]  lr: 5.2834e-05  eta: 1 day, 20:01:23  time: 0.5990  data_time: 0.0186  memory: 12664  loss: 1.5028  loss_heatmap: 0.4030  layer_-1_loss_cls: 0.0973  layer_-1_loss_bbox: 0.3394  matched_ious: 0.1257  aux_depth_loss: 0.6143  moe_importance_loss: 0.0002  moe_router_z_loss: 0.0013  moe_ctx_aux_loss_weighted: 0.0473  grad_norm: 73.5542  sec_per_iter: 0.5694  iters_per_sec: 1.7600  samples_per_sec: 14.0500  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:17:00 - mmengine - INFO - Epoch(train)  [1][ 2050/10000]  lr: 5.2974e-05  eta: 1 day, 19:59:44  time: 0.5598  data_time: 0.0181  memory: 12483  loss: 1.4426  loss_heatmap: 0.4077  layer_-1_loss_cls: 0.1010  layer_-1_loss_bbox: 0.3234  matched_ious: 0.1629  aux_depth_loss: 0.5642  moe_importance_loss: 0.0002  moe_router_z_loss: 0.0012  moe_ctx_aux_loss_weighted: 0.0448  grad_norm: 70.9597  sec_per_iter: 0.5701  iters_per_sec: 1.7500  samples_per_sec: 14.0300  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:17:29 - mmengine - INFO - Epoch(train)  [1][ 2100/10000]  lr: 5.3117e-05  eta: 1 day, 20:00:03  time: 0.5769  data_time: 0.0185  memory: 12547  loss: 1.4580  loss_heatmap: 0.3986  layer_-1_loss_cls: 0.1022  layer_-1_loss_bbox: 0.3467  matched_ious: 0.1672  aux_depth_loss: 0.5649  moe_importance_loss: 0.0003  moe_router_z_loss: 0.0012  moe_ctx_aux_loss_weighted: 0.0442  grad_norm: 55.0420  sec_per_iter: 0.5699  iters_per_sec: 1.7500  samples_per_sec: 14.0400  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:17:58 - mmengine - INFO - Epoch(train)  [1][ 2150/10000]  lr: 5.3264e-05  eta: 1 day, 20:00:31  time: 0.5787  data_time: 0.0197  memory: 12538  loss: 1.4558  loss_heatmap: 0.4141  layer_-1_loss_cls: 0.0978  layer_-1_loss_bbox: 0.3650  matched_ious: 0.3668  aux_depth_loss: 0.5326  moe_importance_loss: 0.0003  moe_router_z_loss: 0.0013  moe_ctx_aux_loss_weighted: 0.0448  grad_norm: 49.4692  sec_per_iter: 0.5700  iters_per_sec: 1.7500  samples_per_sec: 14.0300  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:18:27 - mmengine - INFO - Epoch(train)  [1][ 2200/10000]  lr: 5.3414e-05  eta: 1 day, 20:00:01  time: 0.5701  data_time: 0.0193  memory: 12625  loss: 1.5308  loss_heatmap: 0.4418  layer_-1_loss_cls: 0.1182  layer_-1_loss_bbox: 0.2983  matched_ious: 0.3841  aux_depth_loss: 0.6238  moe_importance_loss: 0.0005  moe_router_z_loss: 0.0014  moe_ctx_aux_loss_weighted: 0.0469  grad_norm: 111.8574  sec_per_iter: 0.5702  iters_per_sec: 1.7500  samples_per_sec: 14.0300  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:18:55 - mmengine - INFO - Epoch(train)  [1][ 2250/10000]  lr: 5.3568e-05  eta: 1 day, 20:00:03  time: 0.5751  data_time: 0.0212  memory: 12432  loss: 1.9479  loss_heatmap: 0.5054  layer_-1_loss_cls: 0.1237  layer_-1_loss_bbox: 0.5183  matched_ious: 0.3332  aux_depth_loss: 0.7496  moe_importance_loss: 0.0006  moe_router_z_loss: 0.0013  moe_ctx_aux_loss_weighted: 0.0491  grad_norm: 151.1843  sec_per_iter: 0.5702  iters_per_sec: 1.7500  samples_per_sec: 14.0300  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:19:24 - mmengine - INFO - Epoch(train)  [1][ 2300/10000]  lr: 5.3725e-05  eta: 1 day, 20:00:12  time: 0.5765  data_time: 0.0209  memory: 12589  loss: 1.5287  loss_heatmap: 0.4301  layer_-1_loss_cls: 0.1054  layer_-1_loss_bbox: 0.3644  matched_ious: 0.3481  aux_depth_loss: 0.5805  moe_importance_loss: 0.0005  moe_router_z_loss: 0.0012  moe_ctx_aux_loss_weighted: 0.0466  grad_norm: 95.4014  sec_per_iter: 0.5704  iters_per_sec: 1.7500  samples_per_sec: 14.0300  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:19:53 - mmengine - INFO - Epoch(train)  [1][ 2350/10000]  lr: 5.3885e-05  eta: 1 day, 20:00:10  time: 0.5749  data_time: 0.0189  memory: 12628  loss: 1.6389  loss_heatmap: 0.4827  layer_-1_loss_cls: 0.1187  layer_-1_loss_bbox: 0.4199  matched_ious: 0.2873  aux_depth_loss: 0.5692  moe_importance_loss: 0.0005  moe_router_z_loss: 0.0012  moe_ctx_aux_loss_weighted: 0.0467  grad_norm: 54.3399  sec_per_iter: 0.5705  iters_per_sec: 1.7500  samples_per_sec: 14.0200  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:20:21 - mmengine - INFO - Epoch(train)  [1][ 2400/10000]  lr: 5.4049e-05  eta: 1 day, 19:58:41  time: 0.5601  data_time: 0.0202  memory: 12539  loss: 1.5317  loss_heatmap: 0.4438  layer_-1_loss_cls: 0.1107  layer_-1_loss_bbox: 0.3585  matched_ious: 0.2491  aux_depth_loss: 0.5708  moe_importance_loss: 0.0007  moe_router_z_loss: 0.0013  moe_ctx_aux_loss_weighted: 0.0459  grad_norm: 48.0861  sec_per_iter: 0.5706  iters_per_sec: 1.7500  samples_per_sec: 14.0200  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:20:49 - mmengine - INFO - Epoch(train)  [1][ 2450/10000]  lr: 5.4216e-05  eta: 1 day, 19:56:49  time: 0.5556  data_time: 0.0195  memory: 12634  loss: 1.4537  loss_heatmap: 0.3785  layer_-1_loss_cls: 0.0952  layer_-1_loss_bbox: 0.3822  matched_ious: 0.1626  aux_depth_loss: 0.5518  moe_importance_loss: 0.0005  moe_router_z_loss: 0.0015  moe_ctx_aux_loss_weighted: 0.0440  grad_norm: 55.2478  sec_per_iter: 0.5703  iters_per_sec: 1.7500  samples_per_sec: 14.0300  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:21:17 - mmengine - INFO - Epoch(train)  [1][ 2500/10000]  lr: 5.4387e-05  eta: 1 day, 19:55:39  time: 0.5624  data_time: 0.0180  memory: 12586  loss: 1.4320  loss_heatmap: 0.4147  layer_-1_loss_cls: 0.1050  layer_-1_loss_bbox: 0.3248  matched_ious: 0.4088  aux_depth_loss: 0.5383  moe_importance_loss: 0.0005  moe_router_z_loss: 0.0013  moe_ctx_aux_loss_weighted: 0.0474  grad_norm: 68.7511  sec_per_iter: 0.5700  iters_per_sec: 1.7500  samples_per_sec: 14.0300  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:21:47 - mmengine - INFO - Epoch(train)  [1][ 2550/10000]  lr: 5.4561e-05  eta: 1 day, 19:58:31  time: 0.6069  data_time: 0.0228  memory: 12605  loss: 1.7413  loss_heatmap: 0.4388  layer_-1_loss_cls: 0.1035  layer_-1_loss_bbox: 0.5732  matched_ious: 0.2400  aux_depth_loss: 0.5779  moe_importance_loss: 0.0004  moe_router_z_loss: 0.0011  moe_ctx_aux_loss_weighted: 0.0466  grad_norm: 72.0813  sec_per_iter: 0.5699  iters_per_sec: 1.7500  samples_per_sec: 14.0400  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:22:15 - mmengine - INFO - Epoch(train)  [1][ 2600/10000]  lr: 5.4738e-05  eta: 1 day, 19:56:45  time: 0.5560  data_time: 0.0200  memory: 12681  loss: 1.4200  loss_heatmap: 0.3752  layer_-1_loss_cls: 0.0945  layer_-1_loss_bbox: 0.3237  matched_ious: 0.2107  aux_depth_loss: 0.5800  moe_importance_loss: 0.0003  moe_router_z_loss: 0.0013  moe_ctx_aux_loss_weighted: 0.0450  grad_norm: 50.6173  sec_per_iter: 0.5706  iters_per_sec: 1.7500  samples_per_sec: 14.0200  samples_per_sec_per_gpu: 3.5000  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:22:43 - mmengine - INFO - Epoch(train)  [1][ 2650/10000]  lr: 5.4919e-05  eta: 1 day, 19:55:04  time: 0.5565  data_time: 0.0210  memory: 12524  loss: 1.6066  loss_heatmap: 0.4761  layer_-1_loss_cls: 0.1109  layer_-1_loss_bbox: 0.4019  matched_ious: 0.2472  aux_depth_loss: 0.5687  moe_importance_loss: 0.0004  moe_router_z_loss: 0.0016  moe_ctx_aux_loss_weighted: 0.0469  grad_norm: 61.9320  sec_per_iter: 0.5704  iters_per_sec: 1.7500  samples_per_sec: 14.0300  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:23:11 - mmengine - INFO - Epoch(train)  [1][ 2700/10000]  lr: 5.5103e-05  eta: 1 day, 19:54:44  time: 0.5717  data_time: 0.0198  memory: 12572  loss: 1.4476  loss_heatmap: 0.4319  layer_-1_loss_cls: 0.1019  layer_-1_loss_bbox: 0.3317  matched_ious: 0.1687  aux_depth_loss: 0.5356  moe_importance_loss: 0.0003  moe_router_z_loss: 0.0015  moe_ctx_aux_loss_weighted: 0.0447  grad_norm: 73.6504  sec_per_iter: 0.5701  iters_per_sec: 1.7500  samples_per_sec: 14.0300  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:23:40 - mmengine - INFO - Epoch(train)  [1][ 2750/10000]  lr: 5.5290e-05  eta: 1 day, 19:54:38  time: 0.5746  data_time: 0.0172  memory: 12576  loss: 1.4579  loss_heatmap: 0.4352  layer_-1_loss_cls: 0.1083  layer_-1_loss_bbox: 0.3092  matched_ious: 0.2108  aux_depth_loss: 0.5563  moe_importance_loss: 0.0004  moe_router_z_loss: 0.0015  moe_ctx_aux_loss_weighted: 0.0469  grad_norm: 64.7236  sec_per_iter: 0.5701  iters_per_sec: 1.7500  samples_per_sec: 14.0300  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:24:09 - mmengine - INFO - Epoch(train)  [1][ 2800/10000]  lr: 5.5481e-05  eta: 1 day, 19:54:16  time: 0.5715  data_time: 0.0178  memory: 12792  loss: 1.5030  loss_heatmap: 0.4142  layer_-1_loss_cls: 0.0965  layer_-1_loss_bbox: 0.3706  matched_ious: 0.2503  aux_depth_loss: 0.5749  moe_importance_loss: 0.0003  moe_router_z_loss: 0.0012  moe_ctx_aux_loss_weighted: 0.0452  grad_norm: 119.4068  sec_per_iter: 0.5702  iters_per_sec: 1.7500  samples_per_sec: 14.0300  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:24:37 - mmengine - INFO - Epoch(train)  [1][ 2850/10000]  lr: 5.5676e-05  eta: 1 day, 19:53:19  time: 0.5644  data_time: 0.0178  memory: 12533  loss: 1.5171  loss_heatmap: 0.4334  layer_-1_loss_cls: 0.1054  layer_-1_loss_bbox: 0.3778  matched_ious: 0.2702  aux_depth_loss: 0.5546  moe_importance_loss: 0.0004  moe_router_z_loss: 0.0013  moe_ctx_aux_loss_weighted: 0.0442  grad_norm: 117.5242  sec_per_iter: 0.5702  iters_per_sec: 1.7500  samples_per_sec: 14.0300  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:25:05 - mmengine - INFO - Epoch(train)  [1][ 2900/10000]  lr: 5.5873e-05  eta: 1 day, 19:52:26  time: 0.5651  data_time: 0.0198  memory: 12616  loss: 1.7121  loss_heatmap: 0.4770  layer_-1_loss_cls: 0.1180  layer_-1_loss_bbox: 0.4102  matched_ious: 0.4255  aux_depth_loss: 0.6583  moe_importance_loss: 0.0003  moe_router_z_loss: 0.0015  moe_ctx_aux_loss_weighted: 0.0467  grad_norm: 155.2082  sec_per_iter: 0.5701  iters_per_sec: 1.7500  samples_per_sec: 14.0300  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:25:33 - mmengine - INFO - Epoch(train)  [1][ 2950/10000]  lr: 5.6075e-05  eta: 1 day, 19:50:59  time: 0.5574  data_time: 0.0200  memory: 12501  loss: 1.5865  loss_heatmap: 0.4516  layer_-1_loss_cls: 0.1040  layer_-1_loss_bbox: 0.3985  matched_ious: 0.2066  aux_depth_loss: 0.5846  moe_importance_loss: 0.0002  moe_router_z_loss: 0.0012  moe_ctx_aux_loss_weighted: 0.0463  grad_norm: 150.6590  sec_per_iter: 0.5700  iters_per_sec: 1.7500  samples_per_sec: 14.0300  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:26:03 - mmengine - INFO - Exp name: zod_moe_fusion_then_20260522_195637
+05/22 20:26:03 - mmengine - INFO - Epoch(train)  [1][ 3000/10000]  lr: 5.6279e-05  eta: 1 day, 19:52:39  time: 0.5977  data_time: 0.0179  memory: 12725  loss: 1.5227  loss_heatmap: 0.3833  layer_-1_loss_cls: 0.0844  layer_-1_loss_bbox: 0.4205  matched_ious: 0.1954  aux_depth_loss: 0.5884  moe_importance_loss: 0.0003  moe_router_z_loss: 0.0011  moe_ctx_aux_loss_weighted: 0.0447  grad_norm: 60.1371  sec_per_iter: 0.5698  iters_per_sec: 1.7500  samples_per_sec: 14.0400  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:26:32 - mmengine - INFO - Epoch(train)  [1][ 3050/10000]  lr: 5.6487e-05  eta: 1 day, 19:52:35  time: 0.5757  data_time: 0.0186  memory: 12525  loss: 1.4222  loss_heatmap: 0.3807  layer_-1_loss_cls: 0.0984  layer_-1_loss_bbox: 0.3517  matched_ious: 0.3215  aux_depth_loss: 0.5450  moe_importance_loss: 0.0003  moe_router_z_loss: 0.0010  moe_ctx_aux_loss_weighted: 0.0451  grad_norm: 69.8998  sec_per_iter: 0.5703  iters_per_sec: 1.7500  samples_per_sec: 14.0300  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:27:01 - mmengine - INFO - Epoch(train)  [1][ 3100/10000]  lr: 5.6698e-05  eta: 1 day, 19:52:40  time: 0.5777  data_time: 0.0189  memory: 12741  loss: 1.3358  loss_heatmap: 0.3506  layer_-1_loss_cls: 0.0884  layer_-1_loss_bbox: 0.3171  matched_ious: 0.2838  aux_depth_loss: 0.5336  moe_importance_loss: 0.0004  moe_router_z_loss: 0.0009  moe_ctx_aux_loss_weighted: 0.0447  grad_norm: 95.3442  sec_per_iter: 0.5704  iters_per_sec: 1.7500  samples_per_sec: 14.0300  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:27:30 - mmengine - INFO - Epoch(train)  [1][ 3150/10000]  lr: 5.6913e-05  eta: 1 day, 19:53:56  time: 0.5943  data_time: 0.0179  memory: 12477  loss: 1.5207  loss_heatmap: 0.4570  layer_-1_loss_cls: 0.1011  layer_-1_loss_bbox: 0.3718  matched_ious: 0.0903  aux_depth_loss: 0.5453  moe_importance_loss: 0.0002  moe_router_z_loss: 0.0009  moe_ctx_aux_loss_weighted: 0.0443  grad_norm: 96.9904  sec_per_iter: 0.5705  iters_per_sec: 1.7500  samples_per_sec: 14.0200  samples_per_sec_per_gpu: 3.5100  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:27:59 - mmengine - INFO - Epoch(train)  [1][ 3200/10000]  lr: 5.7131e-05  eta: 1 day, 19:53:42  time: 0.5742  data_time: 0.0172  memory: 12594  loss: 1.5022  loss_heatmap: 0.4368  layer_-1_loss_cls: 0.1126  layer_-1_loss_bbox: 0.3239  matched_ious: 0.4584  aux_depth_loss: 0.5828  moe_importance_loss: 0.0002  moe_router_z_loss: 0.0008  moe_ctx_aux_loss_weighted: 0.0451  grad_norm: 79.7668  sec_per_iter: 0.5709  iters_per_sec: 1.7500  samples_per_sec: 14.0100  samples_per_sec_per_gpu: 3.5000  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000
+05/22 20:28:27 - mmengine - INFO - Epoch(train)  [1][ 3250/10000]  lr: 5.7352e-05  eta: 1 day, 19:52:31  time: 0.5609  data_time: 0.0192  memory: 12555  loss: 1.5740  loss_heatmap: 0.4375  layer_-1_loss_cls: 0.1124  layer_-1_loss_bbox: 0.4122  matched_ious: 0.3213  aux_depth_loss: 0.5642  moe_importance_loss: 0.0002  moe_router_z_loss: 0.0010  moe_ctx_aux_loss_weighted: 0.0465  grad_norm: 146.0457  sec_per_iter: 0.5709  iters_per_sec: 1.7500  samples_per_sec: 14.0100  samples_per_sec_per_gpu: 3.5000  max_mem_allocated_mb: 996.7000  max_mem_reserved_mb: 16766.0000

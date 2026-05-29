@@ -1,0 +1,182 @@
+{
+  "overall": {
+    "num_samples": 2500,
+    "dense_mean_prob_per_expert": {
+      "expert_0": 0.19622907,
+      "expert_1": 0.29379285,
+      "expert_2": 0.22795941,
+      "expert_3": 0.28201868
+    },
+    "dispatch_mass_per_expert": {
+      "expert_0": 0.19622906,
+      "expert_1": 0.29379285,
+      "expert_2": 0.22795941,
+      "expert_3": 0.28201868
+    },
+    "top1_selection_freq_per_expert": {
+      "expert_0": 0.2108,
+      "expert_1": 0.318,
+      "expert_2": 0.1928,
+      "expert_3": 0.2784
+    },
+    "topk_selection_freq_per_expert": {
+      "expert_0": 1.0,
+      "expert_1": 1.0,
+      "expert_2": 1.0,
+      "expert_3": 1.0
+    },
+    "mean_gate_entropy": 1.064778
+  },
+  "per_context": {
+    "road_type": {
+      "arterial-rural": {
+        "num_samples": 240,
+        "dense_mean_prob_per_expert": {
+          "expert_0": 0.4791555,
+          "expert_1": 0.11587563,
+          "expert_2": 0.10616658,
+          "expert_3": 0.29880228
+        },
+        "dispatch_mass_per_expert": {
+          "expert_0": 0.4791555,
+          "expert_1": 0.11587563,
+          "expert_2": 0.10616658,
+          "expert_3": 0.29880228
+        },
+        "top1_selection_freq_per_expert": {
+          "expert_0": 0.65416667,
+          "expert_1": 0.02083333,
+          "expert_2": 0.0375,
+          "expert_3": 0.2875
+        },
+        "topk_selection_freq_per_expert": {
+          "expert_0": 1.0,
+          "expert_1": 1.0,
+          "expert_2": 1.0,
+          "expert_3": 1.0
+        },
+        "mean_gate_entropy": 1.016685
+      },
+      "arterial-urban": {
+        "num_samples": 592,
+        "dense_mean_prob_per_expert": {
+          "expert_0": 0.1625944,
+          "expert_1": 0.35074815,
+          "expert_2": 0.19580792,
+          "expert_3": 0.29084954
+        },
+        "dispatch_mass_per_expert": {
+          "expert_0": 0.1625944,
+          "expert_1": 0.35074815,
+          "expert_2": 0.19580792,
+          "expert_3": 0.29084954
+        },
+        "top1_selection_freq_per_expert": {
+          "expert_0": 0.12837838,
+          "expert_1": 0.45101351,
+          "expert_2": 0.12331081,
+          "expert_3": 0.2972973
+        },
+        "topk_selection_freq_per_expert": {
+          "expert_0": 1.0,
+          "expert_1": 1.0,
+          "expert_2": 1.0,
+          "expert_3": 1.0
+        },
+        "mean_gate_entropy": 1.137221
+      },
+      "city": {
+        "num_samples": 1267,
+        "dense_mean_prob_per_expert": {
+          "expert_0": 0.0464155,
+          "expert_1": 0.34896498,
+          "expert_2": 0.31706007,
+          "expert_3": 0.28755944
+        },
+        "dispatch_mass_per_expert": {
+          "expert_0": 0.04641551,
+          "expert_1": 0.34896498,
+          "expert_2": 0.31706007,
+          "expert_3": 0.28755944
+        },
+        "top1_selection_freq_per_expert": {
+          "expert_0": 0.00947119,
+          "expert_1": 0.40726125,
+          "expert_2": 0.308603,
+          "expert_3": 0.27466456
+        },
+        "topk_selection_freq_per_expert": {
+          "expert_0": 1.0,
+          "expert_1": 1.0,
+          "expert_2": 1.0,
+          "expert_3": 1.0
+        },
+        "mean_gate_entropy": 1.089569
+      },
+      "highway": {
+        "num_samples": 266,
+        "dense_mean_prob_per_expert": {
+          "expert_0": 0.69817532,
+          "expert_1": 0.13987356,
+          "expert_2": 0.02600877,
+          "expert_3": 0.13594236
+        },
+        "dispatch_mass_per_expert": {
+          "expert_0": 0.69817532,
+          "expert_1": 0.13987356,
+          "expert_2": 0.02600877,
+          "expert_3": 0.13594236
+        },
+        "top1_selection_freq_per_expert": {
+          "expert_0": 0.95864662,
+          "expert_1": 0.0075188,
+          "expert_2": 0.0112782,
+          "expert_3": 0.02255639
+        },
+        "topk_selection_freq_per_expert": {
+          "expert_0": 1.0,
+          "expert_1": 1.0,
+          "expert_2": 1.0,
+          "expert_3": 1.0
+        },
+        "mean_gate_entropy": 0.814398
+      },
+      "smaller-rural": {
+        "num_samples": 135,
+        "dense_mean_prob_per_expert": {
+          "expert_0": 0.25775095,
+          "expert_1": 0.14580785,
+          "expert_2": 0.14716152,
+          "expert_3": 0.44927968
+        },
+        "dispatch_mass_per_expert": {
+          "expert_0": 0.25775096,
+          "expert_1": 0.14580785,
+          "expert_2": 0.14716152,
+          "expert_3": 0.44927968
+        },
+        "top1_selection_freq_per_expert": {
+          "expert_0": 0.2,
+          "expert_1": 0.03703704,
+          "expert_2": 0.04444444,
+          "expert_3": 0.71851852
+        },
+        "topk_selection_freq_per_expert": {
+          "expert_0": 1.0,
+          "expert_1": 1.0,
+          "expert_2": 1.0,
+          "expert_3": 1.0
+        },
+        "mean_gate_entropy": 1.093271
+      }
+    }
+  },
+  "epoch": 28,
+  "moe_block": "bev_moe",
+  "context_keys": [
+    "road_type"
+  ],
+  "num_experts": 4
+}num_experts": 4
+}
+}

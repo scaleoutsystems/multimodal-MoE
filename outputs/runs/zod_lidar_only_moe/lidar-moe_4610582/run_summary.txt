@@ -1,0 +1,66 @@
+
+========================================================================
+  RUN SUMMARY
+========================================================================
+
+  A) Run Configuration
+     world_size           : 4
+     per_gpu_batch_size   : 4
+     global_batch_size    : 16
+     total_epochs         : 30
+
+  B) Validation Performance
+     best_epoch           : 28
+     best/pedestrian_AP_0.25: 0.7875
+     best/mAP_0.25          : 0.7875
+     best/pedestrian_rec_0.25: 0.9408
+     best/mAR_0.25          : 0.9408
+     best/pedestrian_AP_0.50: 0.5329
+     best/mAP_0.50          : 0.5329
+     best/pedestrian_rec_0.50: 0.6961
+     best/mAR_0.50          : 0.6961
+     best/pedestrian_AP_0.5m: 0.8109
+     best/pedestrian_rec_0.5m: 0.9698
+     best/pedestrian_AP_1.0m: 0.8197
+     best/pedestrian_rec_1.0m: 0.9760
+     best/pedestrian_AP_2.0m: 0.8242
+     best/pedestrian_rec_2.0m: 0.9794
+     best/mAP_0.5m          : 0.8109
+     best/mAR_0.5m          : 0.9698
+     best/mAP_1.0m          : 0.8197
+     best/mAR_1.0m          : 0.9760
+     best/mAP_2.0m          : 0.8242
+     best/mAR_2.0m          : 0.9794
+
+     final/pedestrian_AP_0.25: 0.7863
+     final/mAP_0.25         : 0.7863
+     final/pedestrian_rec_0.25: 0.9396
+     final/mAR_0.25         : 0.9396
+     final/pedestrian_AP_0.50: 0.5327
+     final/mAP_0.50         : 0.5327
+     final/pedestrian_rec_0.50: 0.6967
+     final/mAR_0.50         : 0.6967
+     final/pedestrian_AP_0.5m: 0.8097
+     final/pedestrian_rec_0.5m: 0.9688
+     final/pedestrian_AP_1.0m: 0.8184
+     final/pedestrian_rec_1.0m: 0.9753
+     final/pedestrian_AP_2.0m: 0.8230
+     final/pedestrian_rec_2.0m: 0.9789
+     final/mAP_0.5m         : 0.8097
+     final/mAR_0.5m         : 0.9688
+     final/mAP_1.0m         : 0.8184
+     final/mAR_1.0m         : 0.9753
+     final/mAP_2.0m         : 0.8230
+     final/mAR_2.0m         : 0.9789
+
+  C) Training Efficiency
+     total_wall_time      : 107003.7s  (29.72h)
+     total_iters          : 150000
+     avg_sec_per_iter     : 0.7134
+     avg_iters_per_sec    : 1.40
+     avg_samples_per_sec  : 22.43
+     avg_samples/s/gpu    : 5.61
+     peak_mem_allocated_mb: 16510
+     peak_mem_reserved_mb : 18544
+
+========================================================================

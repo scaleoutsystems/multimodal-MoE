@@ -1,0 +1,3 @@
+Using PYTHON=/home/users/u103958/miniconda3/envs/multimodal-moe/bin/python
+python /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python
+torch 2.4.0+cu121

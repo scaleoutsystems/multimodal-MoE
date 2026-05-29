@@ -1,0 +1,1045 @@
+2026/05/25 03:19:34 - mmengine - INFO - 
+------------------------------------------------------------
+System environment:
+    sys.platform: linux
+    Python: 3.10.20 | packaged by conda-forge | (main, Mar  5 2026, 16:42:22) [GCC 14.3.0]
+    CUDA available: True
+    MUSA available: False
+    numpy_random_seed: 97007912
+    GPU 0: NVIDIA A100-SXM4-40GB
+    CUDA_HOME: None
+    GCC: gcc (GCC) 8.5.0 20210514 (Red Hat 8.5.0-28)
+    PyTorch: 2.4.0+cu121
+    PyTorch compiling details: PyTorch built with:
+  - GCC 9.3
+  - C++ Version: 201703
+  - Intel(R) oneAPI Math Kernel Library Version 2022.2-Product Build 20220804 for Intel(R) 64 architecture applications
+  - Intel(R) MKL-DNN v3.4.2 (Git Hash 1137e04ec0b5251ca2b4400a4fd3c667ce843d67)
+  - OpenMP 201511 (a.k.a. OpenMP 4.5)
+  - LAPACK is enabled (usually provided by MKL)
+  - NNPACK is enabled
+  - CPU capability usage: AVX2
+  - CUDA Runtime 12.1
+  - NVCC architecture flags: -gencode;arch=compute_50,code=sm_50;-gencode;arch=compute_60,code=sm_60;-gencode;arch=compute_70,code=sm_70;-gencode;arch=compute_75,code=sm_75;-gencode;arch=compute_80,code=sm_80;-gencode;arch=compute_86,code=sm_86;-gencode;arch=compute_90,code=sm_90
+  - CuDNN 90.1  (built against CUDA 12.4)
+  - Magma 2.6.1
+  - Build settings: BLAS_INFO=mkl, BUILD_TYPE=Release, CUDA_VERSION=12.1, CUDNN_VERSION=9.1.0, CXX_COMPILER=/opt/rh/devtoolset-9/root/usr/bin/c++, CXX_FLAGS= -D_GLIBCXX_USE_CXX11_ABI=0 -fabi-version=11 -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -DNDEBUG -DUSE_KINETO -DLIBKINETO_NOROCTRACER -DUSE_FBGEMM -DUSE_PYTORCH_QNNPACK -DUSE_XNNPACK -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -O2 -fPIC -Wall -Wextra -Werror=return-type -Werror=non-virtual-dtor -Werror=bool-operation -Wnarrowing -Wno-missing-field-initializers -Wno-type-limits -Wno-array-bounds -Wno-unknown-pragmas -Wno-unused-parameter -Wno-unused-function -Wno-unused-result -Wno-strict-overflow -Wno-strict-aliasing -Wno-stringop-overflow -Wsuggest-override -Wno-psabi -Wno-error=pedantic -Wno-error=old-style-cast -Wno-missing-braces -fdiagnostics-color=always -faligned-new -Wno-unused-but-set-variable -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Wno-stringop-overflow, LAPACK_INFO=mkl, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, PERF_WITH_AVX512=1, TORCH_VERSION=2.4.0, USE_CUDA=ON, USE_CUDNN=ON, USE_CUSPARSELT=1, USE_EXCEPTION_PTR=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_GLOO=ON, USE_MKL=ON, USE_MKLDNN=ON, USE_MPI=OFF, USE_NCCL=1, USE_NNPACK=ON, USE_OPENMP=ON, USE_ROCM=OFF, USE_ROCM_KERNEL_ASSERT=OFF, 
+
+    TorchVision: 0.19.0+cu121
+    OpenCV: 4.9.0
+    MMEngine: 0.10.7
+
+Runtime environment:
+    cudnn_benchmark: False
+    mp_cfg: {'mp_start_method': 'fork', 'opencv_num_threads': 0}
+    dist_cfg: {'backend': 'nccl'}
+    seed: 97007912
+    Distributed launcher: none
+    Distributed training: False
+    GPU number: 1
+------------------------------------------------------------
+
+2026/05/25 03:19:34 - mmengine - INFO - Config:
+auto_scale_lr = dict(enable=False)
+backend_args = None
+bev_moe_cfg = dict(
+    channels=512,
+    context_aux_cfg=dict(
+        class_weights='inverse_frequency',
+        label_smoothing=0.05,
+        loss_coef=0.03,
+        loss_type='weighted_ce',
+        target_field='road_type'),
+    ctx_gate_temp_high=1.0,
+    ctx_gate_warmup_epochs=0,
+    expert_type='full',
+    gate_cfg=dict(temperature=1.0),
+    gate_type='dense',
+    importance_coef=0.005,
+    k=4,
+    load_coef=0.0,
+    num_convs=2,
+    num_experts=4,
+    residual_gain=1.0,
+    switch_balance_coef=0.0,
+    type='BEVMoEBlock',
+    z_loss_coef=0.002)
+class_names = [
+    'pedestrian',
+]
+custom_hooks = [
+    dict(type='BEVFeatureVisualizationHook'),
+    dict(score_thr=0.15, type='BEVPredictionVisualizationHook'),
+    dict(score_thr=0.15, type='BEVValPredictionVisualizationHook'),
+    dict(type='TrainingEfficiencyHook'),
+    dict(type='RunSummaryHook'),
+    dict(
+        filename='val_curve_ap_0_50_0_5m',
+        metric_keys=(
+            'mAP_0.50',
+            'mAP_0.5m',
+        ),
+        type='ValidationCurveHook'),
+    dict(
+        dead_threshold_ratio=0.1,
+        max_respawns=5,
+        num_experts=4,
+        perturbation_std=0.02,
+        skip_first_epoch=True,
+        type='ExpertRespawnHook'),
+    dict(
+        ap_metric_key='mAP_0.5m',
+        enable_hook_a=True,
+        enable_hook_b=True,
+        enable_hook_c=False,
+        num_experts=4,
+        type='MoERoutingHook'),
+    dict(type='ContextRoutingStatsHook'),
+    dict(type='ContextExpertUsageVisualizationHook'),
+]
+custom_imports = dict(
+    allow_failed_imports=False, imports=[
+        'projects.BEVFusion.bevfusion',
+    ])
+data_prefix = dict(pts='')
+data_root = '/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/'
+dataset_type = 'ZODDataset'
+default_hooks = dict(
+    checkpoint=dict(
+        interval=5,
+        rule='greater',
+        save_best='mAP_0.50',
+        type='CheckpointHook'),
+    logger=dict(interval=50, type='LoggerHook'),
+    param_scheduler=dict(type='ParamSchedulerHook'),
+    sampler_seed=dict(type='DistSamplerSeedHook'),
+    timer=dict(type='IterTimerHook'),
+    visualization=dict(type='Det3DVisualizationHook'))
+default_scope = 'mmdet3d'
+env_cfg = dict(
+    cudnn_benchmark=False,
+    dist_cfg=dict(backend='nccl'),
+    mp_cfg=dict(mp_start_method='fork', opencv_num_threads=0))
+grid_size = [
+    1440,
+    1440,
+    40,
+]
+input_modality = dict(use_camera=False, use_lidar=True)
+launcher = 'none'
+load_from = 'outputs/runs/zod_lidar_only_moe/lidar-moe_4610582/best_mAP_0.50_epoch_29.pth'
+log_level = 'INFO'
+log_processor = dict(by_epoch=True, type='LogProcessor', window_size=50)
+lr = 5e-05
+metainfo = dict(
+    box_type_3d='LiDAR', classes=[
+        'pedestrian',
+    ])
+model = dict(
+    bbox_head=dict(
+        auxiliary=True,
+        bbox_coder=dict(
+            code_size=8,
+            out_size_factor=8,
+            pc_range=[
+                0.0,
+                -54.0,
+            ],
+            post_center_range=[
+                0.0,
+                -54.0,
+                -10.0,
+                108.0,
+                54.0,
+                10.0,
+            ],
+            score_threshold=0.0,
+            type='TransFusionBBoxCoder',
+            voxel_size=[
+                0.075,
+                0.075,
+            ]),
+        bn_momentum=0.1,
+        common_heads=dict(
+            center=[
+                2,
+                2,
+            ], dim=[
+                3,
+                2,
+            ], height=[
+                1,
+                2,
+            ], rot=[
+                2,
+                2,
+            ]),
+        decoder_layer=dict(
+            cross_attn_cfg=dict(dropout=0.1, embed_dims=128, num_heads=8),
+            ffn_cfg=dict(
+                act_cfg=dict(inplace=True, type='ReLU'),
+                embed_dims=128,
+                feedforward_channels=256,
+                ffn_drop=0.1,
+                num_fcs=2),
+            norm_cfg=dict(type='LN'),
+            pos_encoding_cfg=dict(input_channel=2, num_pos_feats=128),
+            self_attn_cfg=dict(dropout=0.1, embed_dims=128, num_heads=8),
+            type='TransformerDecoderLayer'),
+        hidden_channel=128,
+        in_channels=512,
+        loss_bbox=dict(
+            loss_weight=0.25, reduction='mean', type='mmdet.L1Loss'),
+        loss_cls=dict(
+            alpha=0.25,
+            gamma=2.0,
+            loss_weight=1.0,
+            reduction='mean',
+            type='mmdet.FocalLoss',
+            use_sigmoid=True),
+        loss_heatmap=dict(
+            loss_weight=1.0, reduction='mean', type='mmdet.GaussianFocalLoss'),
+        nms_kernel_size=3,
+        num_classes=1,
+        num_decoder_layers=1,
+        num_proposals=500,
+        test_cfg=dict(
+            dataset='custom_zod',
+            grid_size=[
+                1440,
+                1440,
+                40,
+            ],
+            nms_type='circle',
+            out_size_factor=8,
+            pc_range=[
+                0.0,
+                -54.0,
+            ],
+            voxel_size=[
+                0.075,
+                0.075,
+            ]),
+        train_cfg=dict(
+            assigner=dict(
+                cls_cost=dict(
+                    alpha=0.25,
+                    gamma=2.0,
+                    type='mmdet.FocalLossCost',
+                    weight=0.15),
+                iou_calculator=dict(coordinate='lidar', type='BboxOverlaps3D'),
+                iou_cost=dict(type='IoU3DCost', weight=0.25),
+                reg_cost=dict(type='BBoxBEVL1Cost', weight=0.25),
+                type='HungarianAssigner3D'),
+            code_weights=[
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+            ],
+            dataset='custom_zod',
+            gaussian_overlap=0.1,
+            grid_size=[
+                1440,
+                1440,
+                40,
+            ],
+            min_radius=2,
+            out_size_factor=8,
+            point_cloud_range=[
+                0.0,
+                -54.0,
+                -5.0,
+                108.0,
+                54.0,
+                3.0,
+            ],
+            pos_weight=-1,
+            voxel_size=[
+                0.075,
+                0.075,
+                0.2,
+            ]),
+        type='TransFusionHead'),
+    bev_moe_cfg=dict(
+        channels=512,
+        context_aux_cfg=dict(
+            class_weights='inverse_frequency',
+            label_smoothing=0.05,
+            loss_coef=0.03,
+            loss_type='weighted_ce',
+            target_field='road_type'),
+        ctx_gate_temp_high=1.0,
+        ctx_gate_warmup_epochs=0,
+        expert_type='full',
+        gate_cfg=dict(temperature=1.0),
+        gate_type='dense',
+        importance_coef=0.005,
+        k=4,
+        load_coef=0.0,
+        num_convs=2,
+        num_experts=4,
+        residual_gain=1.0,
+        switch_balance_coef=0.0,
+        type='BEVMoEBlock',
+        z_loss_coef=0.002),
+    bev_moe_position='post_neck',
+    data_preprocessor=dict(
+        pad_size_divisor=32,
+        type='Det3DDataPreprocessor',
+        voxelize_cfg=dict(
+            max_num_points=10,
+            max_voxels=[
+                200000,
+                240000,
+            ],
+            point_cloud_range=[
+                0.0,
+                -54.0,
+                -5.0,
+                108.0,
+                54.0,
+                3.0,
+            ],
+            voxel_size=[
+                0.075,
+                0.075,
+                0.2,
+            ],
+            voxelize_reduce=True)),
+    pts_backbone=dict(
+        conv_cfg=dict(bias=False, type='Conv2d'),
+        in_channels=256,
+        layer_nums=[
+            5,
+            5,
+        ],
+        layer_strides=[
+            1,
+            2,
+        ],
+        norm_cfg=dict(eps=0.001, momentum=0.01, type='BN'),
+        out_channels=[
+            128,
+            256,
+        ],
+        type='SECOND'),
+    pts_middle_encoder=dict(
+        block_type='basicblock',
+        encoder_channels=(
+            (
+                16,
+                16,
+                32,
+            ),
+            (
+                32,
+                32,
+                64,
+            ),
+            (
+                64,
+                64,
+                128,
+            ),
+            (
+                128,
+                128,
+            ),
+        ),
+        encoder_paddings=(
+            (
+                0,
+                0,
+                1,
+            ),
+            (
+                0,
+                0,
+                1,
+            ),
+            (
+                0,
+                0,
+                (
+                    1,
+                    1,
+                    0,
+                ),
+            ),
+            (
+                0,
+                0,
+            ),
+        ),
+        in_channels=4,
+        norm_cfg=dict(eps=0.001, momentum=0.01, type='BN1d'),
+        order=(
+            'conv',
+            'norm',
+            'act',
+        ),
+        sparse_shape=[
+            1440,
+            1440,
+            41,
+        ],
+        type='BEVFusionSparseEncoder'),
+    pts_neck=dict(
+        in_channels=[
+            128,
+            256,
+        ],
+        norm_cfg=dict(eps=0.001, momentum=0.01, type='BN'),
+        out_channels=[
+            256,
+            256,
+        ],
+        type='SECONDFPN',
+        upsample_cfg=dict(bias=False, type='deconv'),
+        upsample_strides=[
+            1,
+            2,
+        ],
+        use_conv_for_no_stride=True),
+    pts_voxel_encoder=dict(num_features=4, type='HardSimpleVFE'),
+    type='BEVFusion')
+model_wrapper_cfg = dict(find_unused_parameters=True)
+num_experts = 4
+optim_wrapper = dict(
+    clip_grad=dict(max_norm=10, norm_type=2),
+    loss_scale='dynamic',
+    optimizer=dict(lr=5e-05, type='AdamW', weight_decay=0.01),
+    paramwise_cfg=dict(
+        custom_keys=dict(
+            {
+                'bbox_head': dict(lr_mult=1.0),
+                'bev_moe.context_head': dict(decay_mult=0.05, lr_mult=1.0),
+                'bev_moe.context_summary': dict(decay_mult=0.05, lr_mult=1.0),
+                'bev_moe.gate': dict(decay_mult=0.01, lr_mult=1.0),
+                'pts_backbone': dict(lr_mult=1.0),
+                'pts_neck': dict(lr_mult=1.0)
+            })),
+    type='AmpOptimWrapper')
+out_size_factor = 8
+param_scheduler = [
+    dict(
+        T_max=8,
+        begin=0,
+        by_epoch=True,
+        convert_to_iter_based=True,
+        end=8,
+        eta_min=0.0005,
+        type='CosineAnnealingLR'),
+    dict(
+        T_max=22,
+        begin=8,
+        by_epoch=True,
+        convert_to_iter_based=True,
+        end=30,
+        eta_min=5e-09,
+        type='CosineAnnealingLR'),
+    dict(
+        T_max=8,
+        begin=0,
+        by_epoch=True,
+        convert_to_iter_based=True,
+        end=8,
+        eta_min=0.8947368421052632,
+        type='CosineAnnealingMomentum'),
+    dict(
+        T_max=22,
+        begin=8,
+        by_epoch=True,
+        convert_to_iter_based=True,
+        end=30,
+        eta_min=1,
+        type='CosineAnnealingMomentum'),
+]
+point_cloud_range = [
+    0.0,
+    -54.0,
+    -5.0,
+    108.0,
+    54.0,
+    3.0,
+]
+resume = False
+sparse_shape = [
+    1440,
+    1440,
+    41,
+]
+test_cfg = dict()
+test_dataloader = dict(
+    batch_size=2,
+    dataset=dict(
+        ann_file=
+        '/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_test.pkl',
+        backend_args=None,
+        box_type_3d='LiDAR',
+        data_prefix=dict(pts=''),
+        data_root='/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/',
+        metainfo=dict(box_type_3d='LiDAR', classes=[
+            'pedestrian',
+        ]),
+        modality=dict(use_camera=False, use_lidar=True),
+        pipeline=[
+            dict(
+                backend_args=None,
+                coord_type='LIDAR',
+                load_dim=4,
+                type='LoadPointsFromFile',
+                use_dim=4),
+            dict(
+                point_cloud_range=[
+                    0.0,
+                    -54.0,
+                    -5.0,
+                    108.0,
+                    54.0,
+                    3.0,
+                ],
+                type='PointsRangeFilter'),
+            dict(
+                keys=[
+                    'points',
+                ],
+                meta_keys=[
+                    'box_type_3d',
+                    'sample_idx',
+                    'lidar_path',
+                    'num_pts_feats',
+                    'context',
+                ],
+                type='Pack3DDetInputs'),
+        ],
+        test_mode=True,
+        type='ZODDataset',
+        use_valid_flag=False,
+        with_velocity=False),
+    drop_last=False,
+    num_workers=4,
+    persistent_workers=True,
+    sampler=dict(shuffle=False, type='DefaultSampler'))
+test_evaluator = [
+    dict(iou_thr=[
+        0.25,
+        0.5,
+    ], type='IndoorMetric'),
+    dict(dist_thr=[
+        0.5,
+        1.0,
+        2.0,
+    ], type='CenterDistanceMetric'),
+]
+test_pipeline = [
+    dict(
+        backend_args=None,
+        coord_type='LIDAR',
+        load_dim=4,
+        type='LoadPointsFromFile',
+        use_dim=4),
+    dict(
+        point_cloud_range=[
+            0.0,
+            -54.0,
+            -5.0,
+            108.0,
+            54.0,
+            3.0,
+        ],
+        type='PointsRangeFilter'),
+    dict(
+        keys=[
+            'points',
+        ],
+        meta_keys=[
+            'box_type_3d',
+            'sample_idx',
+            'lidar_path',
+            'num_pts_feats',
+            'context',
+        ],
+        type='Pack3DDetInputs'),
+]
+train_cfg = dict(by_epoch=True, max_epochs=30, val_interval=1)
+train_dataloader = dict(
+    batch_size=4,
+    dataset=dict(
+        ann_file='infos/zod_nuscenes_infos_train.pkl',
+        box_type_3d='LiDAR',
+        data_prefix=dict(pts=''),
+        data_root='/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/',
+        filter_empty_gt=False,
+        metainfo=dict(box_type_3d='LiDAR', classes=[
+            'pedestrian',
+        ]),
+        modality=dict(use_camera=False, use_lidar=True),
+        pipeline=[
+            dict(
+                backend_args=None,
+                coord_type='LIDAR',
+                load_dim=4,
+                type='LoadPointsFromFile',
+                use_dim=4),
+            dict(
+                type='LoadAnnotations3D',
+                with_attr_label=False,
+                with_bbox_3d=True,
+                with_label_3d=True),
+            dict(
+                rot_range=[
+                    0,
+                    0,
+                ],
+                scale_ratio_range=[
+                    0.9,
+                    1.1,
+                ],
+                translation_std=0.5,
+                type='GlobalRotScaleTrans'),
+            dict(
+                point_cloud_range=[
+                    0.0,
+                    -54.0,
+                    -5.0,
+                    108.0,
+                    54.0,
+                    3.0,
+                ],
+                type='PointsRangeFilter'),
+            dict(
+                point_cloud_range=[
+                    0.0,
+                    -54.0,
+                    -5.0,
+                    108.0,
+                    54.0,
+                    3.0,
+                ],
+                type='ObjectRangeFilter'),
+            dict(classes=[
+                'pedestrian',
+            ], type='ObjectNameFilter'),
+            dict(type='PointShuffle'),
+            dict(
+                keys=[
+                    'points',
+                    'gt_bboxes_3d',
+                    'gt_labels_3d',
+                ],
+                meta_keys=[
+                    'box_type_3d',
+                    'sample_idx',
+                    'lidar_path',
+                    'transformation_3d_flow',
+                    'pcd_rotation',
+                    'pcd_scale_factor',
+                    'pcd_trans',
+                    'lidar_aug_matrix',
+                    'context',
+                ],
+                type='Pack3DDetInputs'),
+        ],
+        test_mode=False,
+        type='ZODDataset',
+        use_valid_flag=False,
+        with_velocity=False),
+    num_workers=4,
+    persistent_workers=True,
+    sampler=dict(shuffle=True, type='DefaultSampler'))
+train_pipeline = [
+    dict(
+        backend_args=None,
+        coord_type='LIDAR',
+        load_dim=4,
+        type='LoadPointsFromFile',
+        use_dim=4),
+    dict(
+        type='LoadAnnotations3D',
+        with_attr_label=False,
+        with_bbox_3d=True,
+        with_label_3d=True),
+    dict(
+        rot_range=[
+            0,
+            0,
+        ],
+        scale_ratio_range=[
+            0.9,
+            1.1,
+        ],
+        translation_std=0.5,
+        type='GlobalRotScaleTrans'),
+    dict(
+        point_cloud_range=[
+            0.0,
+            -54.0,
+            -5.0,
+            108.0,
+            54.0,
+            3.0,
+        ],
+        type='PointsRangeFilter'),
+    dict(
+        point_cloud_range=[
+            0.0,
+            -54.0,
+            -5.0,
+            108.0,
+            54.0,
+            3.0,
+        ],
+        type='ObjectRangeFilter'),
+    dict(classes=[
+        'pedestrian',
+    ], type='ObjectNameFilter'),
+    dict(type='PointShuffle'),
+    dict(
+        keys=[
+            'points',
+            'gt_bboxes_3d',
+            'gt_labels_3d',
+        ],
+        meta_keys=[
+            'box_type_3d',
+            'sample_idx',
+            'lidar_path',
+            'transformation_3d_flow',
+            'pcd_rotation',
+            'pcd_scale_factor',
+            'pcd_trans',
+            'lidar_aug_matrix',
+            'context',
+        ],
+        type='Pack3DDetInputs'),
+]
+val_cfg = dict()
+val_dataloader = dict(
+    batch_size=2,
+    dataset=dict(
+        ann_file='infos/zod_nuscenes_infos_val.pkl',
+        backend_args=None,
+        box_type_3d='LiDAR',
+        data_prefix=dict(pts=''),
+        data_root='/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/',
+        metainfo=dict(box_type_3d='LiDAR', classes=[
+            'pedestrian',
+        ]),
+        modality=dict(use_camera=False, use_lidar=True),
+        pipeline=[
+            dict(
+                backend_args=None,
+                coord_type='LIDAR',
+                load_dim=4,
+                type='LoadPointsFromFile',
+                use_dim=4),
+            dict(
+                point_cloud_range=[
+                    0.0,
+                    -54.0,
+                    -5.0,
+                    108.0,
+                    54.0,
+                    3.0,
+                ],
+                type='PointsRangeFilter'),
+            dict(
+                keys=[
+                    'points',
+                ],
+                meta_keys=[
+                    'box_type_3d',
+                    'sample_idx',
+                    'lidar_path',
+                    'num_pts_feats',
+                    'context',
+                ],
+                type='Pack3DDetInputs'),
+        ],
+        test_mode=True,
+        type='ZODDataset',
+        use_valid_flag=False,
+        with_velocity=False),
+    drop_last=False,
+    num_workers=4,
+    persistent_workers=True,
+    sampler=dict(shuffle=False, type='DefaultSampler'))
+val_evaluator = [
+    dict(iou_thr=[
+        0.25,
+        0.5,
+    ], type='IndoorMetric'),
+    dict(dist_thr=[
+        0.5,
+        1.0,
+        2.0,
+    ], type='CenterDistanceMetric'),
+]
+vis_backends = [
+    dict(type='LocalVisBackend'),
+]
+visualizer = dict(
+    name='visualizer',
+    type='Det3DLocalVisualizer',
+    vis_backends=[
+        dict(type='LocalVisBackend'),
+    ])
+voxel_size = [
+    0.075,
+    0.075,
+    0.2,
+]
+work_dir = 'outputs/runs/zod_lidar_only_moe/lidar-moe_4610582/eval/raw/test'
+
+2026/05/25 03:20:01 - mmengine - INFO - Distributed training is not used, all SyncBatchNorm (SyncBN) layers in the model will be automatically reverted to BatchNormXd layers if they are used.
+2026/05/25 03:20:01 - mmengine - INFO - Hooks will be executed in the following order:
+before_run:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) ExpertRespawnHook                  
+(BELOW_NORMAL) LoggerHook                         
+(BELOW_NORMAL) MoERoutingHook                     
+(BELOW_NORMAL) ContextRoutingStatsHook            
+(LOW         ) ValidationCurveHook                
+(LOW         ) ContextExpertUsageVisualizationHook
+ -------------------- 
+before_train:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+(BELOW_NORMAL) TrainingEfficiencyHook             
+(VERY_LOW    ) CheckpointHook                     
+(VERY_LOW    ) RunSummaryHook                     
+ -------------------- 
+before_train_epoch:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) DistSamplerSeedHook                
+(BELOW_NORMAL) TrainingEfficiencyHook             
+(BELOW_NORMAL) MoERoutingHook                     
+ -------------------- 
+before_train_iter:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+ -------------------- 
+after_train_iter:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) ExpertRespawnHook                  
+(BELOW_NORMAL) LoggerHook                         
+(BELOW_NORMAL) TrainingEfficiencyHook             
+(BELOW_NORMAL) MoERoutingHook                     
+(LOW         ) ParamSchedulerHook                 
+(VERY_LOW    ) CheckpointHook                     
+(VERY_LOW    ) RunSummaryHook                     
+ -------------------- 
+after_train_epoch:
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) ExpertRespawnHook                  
+(BELOW_NORMAL) TrainingEfficiencyHook             
+(BELOW_NORMAL) MoERoutingHook                     
+(LOW         ) ParamSchedulerHook                 
+(LOW         ) BEVFeatureVisualizationHook        
+(LOW         ) BEVPredictionVisualizationHook     
+(LOW         ) BEVValPredictionVisualizationHook  
+(VERY_LOW    ) CheckpointHook                     
+ -------------------- 
+before_val:
+(VERY_HIGH   ) RuntimeInfoHook                    
+ -------------------- 
+before_val_epoch:
+(NORMAL      ) IterTimerHook                      
+(BELOW_NORMAL) ContextRoutingStatsHook            
+(LOW         ) ContextExpertUsageVisualizationHook
+ -------------------- 
+before_val_iter:
+(NORMAL      ) IterTimerHook                      
+ -------------------- 
+after_val_iter:
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) Det3DVisualizationHook             
+(BELOW_NORMAL) LoggerHook                         
+(BELOW_NORMAL) MoERoutingHook                     
+(BELOW_NORMAL) ContextRoutingStatsHook            
+(LOW         ) ContextExpertUsageVisualizationHook
+ -------------------- 
+after_val_epoch:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+(BELOW_NORMAL) LoggerHook                         
+(BELOW_NORMAL) MoERoutingHook                     
+(BELOW_NORMAL) ContextRoutingStatsHook            
+(LOW         ) ParamSchedulerHook                 
+(LOW         ) ValidationCurveHook                
+(LOW         ) ContextExpertUsageVisualizationHook
+(VERY_LOW    ) CheckpointHook                     
+(VERY_LOW    ) RunSummaryHook                     
+ -------------------- 
+after_val:
+(VERY_HIGH   ) RuntimeInfoHook                    
+ -------------------- 
+after_train:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(VERY_LOW    ) CheckpointHook                     
+(VERY_LOW    ) RunSummaryHook                     
+ -------------------- 
+before_test:
+(VERY_HIGH   ) RuntimeInfoHook                    
+ -------------------- 
+before_test_epoch:
+(NORMAL      ) IterTimerHook                      
+ -------------------- 
+before_test_iter:
+(NORMAL      ) IterTimerHook                      
+ -------------------- 
+after_test_iter:
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) Det3DVisualizationHook             
+(BELOW_NORMAL) LoggerHook                         
+ -------------------- 
+after_test_epoch:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+(BELOW_NORMAL) LoggerHook                         
+ -------------------- 
+after_test:
+(VERY_HIGH   ) RuntimeInfoHook                    
+ -------------------- 
+after_run:
+(BELOW_NORMAL) LoggerHook                         
+ -------------------- 
+2026/05/25 03:20:02 - mmengine - WARNING - LiDAR is not a meta file, simply parsed as meta information
+2026/05/25 03:20:04 - mmengine - INFO - ------------------------------
+2026/05/25 03:20:04 - mmengine - INFO - The length of test dataset: 10000
+2026/05/25 03:20:04 - mmengine - INFO - The number of instances per category in the dataset:
++------------+--------+
+| category   | number |
++------------+--------+
+| pedestrian | 22536  |
++------------+--------+
+2026/05/25 03:20:05 - mmengine - WARNING - The prefix is not set in metric class IndoorMetric.
+2026/05/25 03:20:05 - mmengine - WARNING - The prefix is not set in metric class CenterDistanceMetric.
+2026/05/25 03:20:05 - mmengine - INFO - ExpertRespawnHook: dead threshold = 0.0250 (10% of uniform share), perturbation_std=0.02, max_respawns=5
+2026/05/25 03:20:05 - mmengine - INFO - MoERoutingHook: artifacts → /mnt/tier2/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only_moe/lidar-moe_4610582/eval/raw/test/moe_routing
+2026/05/25 03:20:06 - mmengine - INFO - Load checkpoint from outputs/runs/zod_lidar_only_moe/lidar-moe_4610582/best_mAP_0.50_epoch_29.pth
+2026/05/25 03:20:34 - mmengine - INFO - Epoch(test) [  50/5000]    eta: 0:46:19  time: 0.5615  data_time: 0.0141  memory: 2424  
+2026/05/25 03:20:42 - mmengine - INFO - Epoch(test) [ 100/5000]    eta: 0:29:38  time: 0.1645  data_time: 0.0035  memory: 2424  
+2026/05/25 03:20:51 - mmengine - INFO - Epoch(test) [ 150/5000]    eta: 0:24:00  time: 0.1650  data_time: 0.0026  memory: 2424  
+2026/05/25 03:20:59 - mmengine - INFO - Epoch(test) [ 200/5000]    eta: 0:21:02  time: 0.1610  data_time: 0.0019  memory: 2424  
+2026/05/25 03:21:07 - mmengine - INFO - Epoch(test) [ 250/5000]    eta: 0:19:11  time: 0.1606  data_time: 0.0026  memory: 2424  
+2026/05/25 03:21:15 - mmengine - INFO - Epoch(test) [ 300/5000]    eta: 0:17:58  time: 0.1641  data_time: 0.0029  memory: 2424  
+2026/05/25 03:21:23 - mmengine - INFO - Epoch(test) [ 350/5000]    eta: 0:17:05  time: 0.1675  data_time: 0.0025  memory: 2424  
+2026/05/25 03:21:32 - mmengine - INFO - Epoch(test) [ 400/5000]    eta: 0:16:22  time: 0.1650  data_time: 0.0022  memory: 2424  
+2026/05/25 03:21:40 - mmengine - INFO - Epoch(test) [ 450/5000]    eta: 0:15:47  time: 0.1647  data_time: 0.0022  memory: 2425  
+2026/05/25 03:21:48 - mmengine - INFO - Epoch(test) [ 500/5000]    eta: 0:15:20  time: 0.1709  data_time: 0.0030  memory: 2424  
+2026/05/25 03:21:57 - mmengine - INFO - Epoch(test) [ 550/5000]    eta: 0:14:56  time: 0.1709  data_time: 0.0033  memory: 2424  
+2026/05/25 03:22:05 - mmengine - INFO - Epoch(test) [ 600/5000]    eta: 0:14:33  time: 0.1657  data_time: 0.0027  memory: 2424  
+2026/05/25 03:22:14 - mmengine - INFO - Epoch(test) [ 650/5000]    eta: 0:14:13  time: 0.1702  data_time: 0.0022  memory: 2424  
+2026/05/25 03:22:22 - mmengine - INFO - Epoch(test) [ 700/5000]    eta: 0:13:55  time: 0.1678  data_time: 0.0024  memory: 2425  
+2026/05/25 03:22:30 - mmengine - INFO - Epoch(test) [ 750/5000]    eta: 0:13:37  time: 0.1652  data_time: 0.0021  memory: 2425  
+2026/05/25 03:22:39 - mmengine - INFO - Epoch(test) [ 800/5000]    eta: 0:13:21  time: 0.1691  data_time: 0.0035  memory: 2424  
+2026/05/25 03:22:47 - mmengine - INFO - Epoch(test) [ 850/5000]    eta: 0:13:07  time: 0.1725  data_time: 0.0020  memory: 2424  
+2026/05/25 03:22:56 - mmengine - INFO - Epoch(test) [ 900/5000]    eta: 0:12:53  time: 0.1707  data_time: 0.0026  memory: 2424  
+2026/05/25 03:23:05 - mmengine - INFO - Epoch(test) [ 950/5000]    eta: 0:12:40  time: 0.1717  data_time: 0.0030  memory: 2424  
+2026/05/25 03:23:13 - mmengine - INFO - Epoch(test) [1000/5000]    eta: 0:12:26  time: 0.1660  data_time: 0.0022  memory: 2424  
+2026/05/25 03:23:21 - mmengine - INFO - Epoch(test) [1050/5000]    eta: 0:12:13  time: 0.1623  data_time: 0.0028  memory: 2424  
+2026/05/25 03:23:30 - mmengine - INFO - Epoch(test) [1100/5000]    eta: 0:12:02  time: 0.1805  data_time: 0.0026  memory: 2424  
+2026/05/25 03:23:39 - mmengine - INFO - Epoch(test) [1150/5000]    eta: 0:11:53  time: 0.1847  data_time: 0.0026  memory: 2424  
+2026/05/25 03:23:48 - mmengine - INFO - Epoch(test) [1200/5000]    eta: 0:11:41  time: 0.1672  data_time: 0.0023  memory: 2424  
+2026/05/25 03:23:56 - mmengine - INFO - Epoch(test) [1250/5000]    eta: 0:11:30  time: 0.1713  data_time: 0.0028  memory: 2424  
+2026/05/25 03:24:05 - mmengine - INFO - Epoch(test) [1300/5000]    eta: 0:11:18  time: 0.1665  data_time: 0.0022  memory: 2424  
+2026/05/25 03:24:13 - mmengine - INFO - Epoch(test) [1350/5000]    eta: 0:11:07  time: 0.1683  data_time: 0.0029  memory: 2425  
+2026/05/25 03:24:21 - mmengine - INFO - Epoch(test) [1400/5000]    eta: 0:10:56  time: 0.1682  data_time: 0.0031  memory: 2424  
+2026/05/25 03:24:30 - mmengine - INFO - Epoch(test) [1450/5000]    eta: 0:10:45  time: 0.1665  data_time: 0.0024  memory: 2424  
+2026/05/25 03:24:38 - mmengine - INFO - Epoch(test) [1500/5000]    eta: 0:10:35  time: 0.1735  data_time: 0.0030  memory: 2424  
+2026/05/25 03:24:47 - mmengine - INFO - Epoch(test) [1550/5000]    eta: 0:10:24  time: 0.1664  data_time: 0.0020  memory: 2424  
+2026/05/25 03:24:55 - mmengine - INFO - Epoch(test) [1600/5000]    eta: 0:10:13  time: 0.1666  data_time: 0.0020  memory: 2424  
+2026/05/25 03:25:03 - mmengine - INFO - Epoch(test) [1650/5000]    eta: 0:10:03  time: 0.1666  data_time: 0.0023  memory: 2425  
+2026/05/25 03:25:12 - mmengine - INFO - Epoch(test) [1700/5000]    eta: 0:09:53  time: 0.1732  data_time: 0.0032  memory: 2424  
+2026/05/25 03:25:21 - mmengine - INFO - Epoch(test) [1750/5000]    eta: 0:09:44  time: 0.1767  data_time: 0.0024  memory: 2424  
+2026/05/25 03:25:29 - mmengine - INFO - Epoch(test) [1800/5000]    eta: 0:09:34  time: 0.1655  data_time: 0.0031  memory: 2424  
+2026/05/25 03:25:38 - mmengine - INFO - Epoch(test) [1850/5000]    eta: 0:09:24  time: 0.1716  data_time: 0.0021  memory: 2424  
+2026/05/25 03:25:46 - mmengine - INFO - Epoch(test) [1900/5000]    eta: 0:09:14  time: 0.1714  data_time: 0.0024  memory: 2424  
+2026/05/25 03:25:55 - mmengine - INFO - Epoch(test) [1950/5000]    eta: 0:09:05  time: 0.1675  data_time: 0.0028  memory: 2424  
+2026/05/25 03:26:03 - mmengine - INFO - Epoch(test) [2000/5000]    eta: 0:08:55  time: 0.1680  data_time: 0.0034  memory: 2425  
+2026/05/25 03:26:11 - mmengine - INFO - Epoch(test) [2050/5000]    eta: 0:08:45  time: 0.1664  data_time: 0.0021  memory: 2425  
+2026/05/25 03:26:20 - mmengine - INFO - Epoch(test) [2100/5000]    eta: 0:08:35  time: 0.1665  data_time: 0.0028  memory: 2424  
+2026/05/25 03:26:28 - mmengine - INFO - Epoch(test) [2150/5000]    eta: 0:08:26  time: 0.1672  data_time: 0.0029  memory: 2424  
+2026/05/25 03:26:36 - mmengine - INFO - Epoch(test) [2200/5000]    eta: 0:08:16  time: 0.1675  data_time: 0.0025  memory: 2424  
+2026/05/25 03:26:45 - mmengine - INFO - Epoch(test) [2250/5000]    eta: 0:08:07  time: 0.1675  data_time: 0.0030  memory: 2424  
+2026/05/25 03:26:53 - mmengine - INFO - Epoch(test) [2300/5000]    eta: 0:07:57  time: 0.1707  data_time: 0.0023  memory: 2424  
+2026/05/25 03:27:02 - mmengine - INFO - Epoch(test) [2350/5000]    eta: 0:07:48  time: 0.1639  data_time: 0.0026  memory: 2425  
+2026/05/25 03:27:10 - mmengine - INFO - Epoch(test) [2400/5000]    eta: 0:07:39  time: 0.1703  data_time: 0.0024  memory: 2424  
+2026/05/25 03:27:19 - mmengine - INFO - Epoch(test) [2450/5000]    eta: 0:07:30  time: 0.1742  data_time: 0.0033  memory: 2425  
+2026/05/25 03:27:27 - mmengine - INFO - Epoch(test) [2500/5000]    eta: 0:07:21  time: 0.1723  data_time: 0.0030  memory: 2424  
+2026/05/25 03:27:36 - mmengine - INFO - Epoch(test) [2550/5000]    eta: 0:07:11  time: 0.1677  data_time: 0.0020  memory: 2424  
+2026/05/25 03:27:44 - mmengine - INFO - Epoch(test) [2600/5000]    eta: 0:07:02  time: 0.1631  data_time: 0.0032  memory: 2424  
+2026/05/25 03:27:52 - mmengine - INFO - Epoch(test) [2650/5000]    eta: 0:06:53  time: 0.1624  data_time: 0.0020  memory: 2424  
+2026/05/25 03:28:00 - mmengine - INFO - Epoch(test) [2700/5000]    eta: 0:06:43  time: 0.1649  data_time: 0.0026  memory: 2424  
+2026/05/25 03:28:08 - mmengine - INFO - Epoch(test) [2750/5000]    eta: 0:06:34  time: 0.1617  data_time: 0.0020  memory: 2424  
+2026/05/25 03:28:17 - mmengine - INFO - Epoch(test) [2800/5000]    eta: 0:06:25  time: 0.1647  data_time: 0.0030  memory: 2424  
+2026/05/25 03:28:25 - mmengine - INFO - Epoch(test) [2850/5000]    eta: 0:06:16  time: 0.1667  data_time: 0.0025  memory: 2424  
+2026/05/25 03:28:34 - mmengine - INFO - Epoch(test) [2900/5000]    eta: 0:06:07  time: 0.1696  data_time: 0.0022  memory: 2424  
+2026/05/25 03:28:42 - mmengine - INFO - Epoch(test) [2950/5000]    eta: 0:05:58  time: 0.1606  data_time: 0.0021  memory: 2424  
+2026/05/25 03:28:50 - mmengine - INFO - Epoch(test) [3000/5000]    eta: 0:05:48  time: 0.1633  data_time: 0.0019  memory: 2424  
+2026/05/25 03:28:58 - mmengine - INFO - Epoch(test) [3050/5000]    eta: 0:05:40  time: 0.1685  data_time: 0.0025  memory: 2424  
+2026/05/25 03:29:06 - mmengine - INFO - Epoch(test) [3100/5000]    eta: 0:05:30  time: 0.1587  data_time: 0.0017  memory: 2424  
+2026/05/25 03:29:15 - mmengine - INFO - Epoch(test) [3150/5000]    eta: 0:05:22  time: 0.1725  data_time: 0.0025  memory: 2424  
+2026/05/25 03:29:23 - mmengine - INFO - Epoch(test) [3200/5000]    eta: 0:05:13  time: 0.1671  data_time: 0.0030  memory: 2424  
+2026/05/25 03:29:31 - mmengine - INFO - Epoch(test) [3250/5000]    eta: 0:05:04  time: 0.1636  data_time: 0.0028  memory: 2424  
+2026/05/25 03:29:40 - mmengine - INFO - Epoch(test) [3300/5000]    eta: 0:04:55  time: 0.1655  data_time: 0.0018  memory: 2424  
+2026/05/25 03:29:48 - mmengine - INFO - Epoch(test) [3350/5000]    eta: 0:04:46  time: 0.1624  data_time: 0.0020  memory: 2424  
+2026/05/25 03:29:56 - mmengine - INFO - Epoch(test) [3400/5000]    eta: 0:04:37  time: 0.1658  data_time: 0.0026  memory: 2424  
+2026/05/25 03:30:04 - mmengine - INFO - Epoch(test) [3450/5000]    eta: 0:04:28  time: 0.1664  data_time: 0.0028  memory: 2424  
+2026/05/25 03:30:12 - mmengine - INFO - Epoch(test) [3500/5000]    eta: 0:04:19  time: 0.1609  data_time: 0.0022  memory: 2424  
+2026/05/25 03:30:21 - mmengine - INFO - Epoch(test) [3550/5000]    eta: 0:04:10  time: 0.1664  data_time: 0.0025  memory: 2424  
+2026/05/25 03:30:29 - mmengine - INFO - Epoch(test) [3600/5000]    eta: 0:04:02  time: 0.1702  data_time: 0.0028  memory: 2424  
+2026/05/25 03:30:38 - mmengine - INFO - Epoch(test) [3650/5000]    eta: 0:03:53  time: 0.1681  data_time: 0.0028  memory: 2424  
+2026/05/25 03:30:46 - mmengine - INFO - Epoch(test) [3700/5000]    eta: 0:03:44  time: 0.1606  data_time: 0.0020  memory: 2424  
+2026/05/25 03:30:54 - mmengine - INFO - Epoch(test) [3750/5000]    eta: 0:03:35  time: 0.1689  data_time: 0.0019  memory: 2424  
+2026/05/25 03:31:02 - mmengine - INFO - Epoch(test) [3800/5000]    eta: 0:03:27  time: 0.1685  data_time: 0.0023  memory: 2424  
+2026/05/25 03:31:11 - mmengine - INFO - Epoch(test) [3850/5000]    eta: 0:03:18  time: 0.1628  data_time: 0.0019  memory: 2424  
+2026/05/25 03:31:19 - mmengine - INFO - Epoch(test) [3900/5000]    eta: 0:03:09  time: 0.1682  data_time: 0.0029  memory: 2424  
+2026/05/25 03:31:28 - mmengine - INFO - Epoch(test) [3950/5000]    eta: 0:03:01  time: 0.1700  data_time: 0.0026  memory: 2424  
+2026/05/25 03:31:36 - mmengine - INFO - Epoch(test) [4000/5000]    eta: 0:02:52  time: 0.1618  data_time: 0.0029  memory: 2424  
+2026/05/25 03:31:44 - mmengine - INFO - Epoch(test) [4050/5000]    eta: 0:02:43  time: 0.1725  data_time: 0.0022  memory: 2424  
+2026/05/25 03:31:53 - mmengine - INFO - Epoch(test) [4100/5000]    eta: 0:02:35  time: 0.1688  data_time: 0.0021  memory: 2424  
+2026/05/25 03:32:01 - mmengine - INFO - Epoch(test) [4150/5000]    eta: 0:02:26  time: 0.1692  data_time: 0.0019  memory: 2424  
+2026/05/25 03:32:09 - mmengine - INFO - Epoch(test) [4200/5000]    eta: 0:02:17  time: 0.1614  data_time: 0.0021  memory: 2424  
+2026/05/25 03:32:17 - mmengine - INFO - Epoch(test) [4250/5000]    eta: 0:02:08  time: 0.1591  data_time: 0.0020  memory: 2424  
+2026/05/25 03:32:26 - mmengine - INFO - Epoch(test) [4300/5000]    eta: 0:02:00  time: 0.1694  data_time: 0.0021  memory: 2424  
+2026/05/25 03:32:34 - mmengine - INFO - Epoch(test) [4350/5000]    eta: 0:01:51  time: 0.1659  data_time: 0.0020  memory: 2424  
+2026/05/25 03:32:43 - mmengine - INFO - Epoch(test) [4400/5000]    eta: 0:01:43  time: 0.1779  data_time: 0.0117  memory: 2424  
+2026/05/25 03:32:51 - mmengine - INFO - Epoch(test) [4450/5000]    eta: 0:01:34  time: 0.1693  data_time: 0.0031  memory: 2424  
+2026/05/25 03:32:59 - mmengine - INFO - Epoch(test) [4500/5000]    eta: 0:01:25  time: 0.1604  data_time: 0.0021  memory: 2424  
+2026/05/25 03:33:08 - mmengine - INFO - Epoch(test) [4550/5000]    eta: 0:01:17  time: 0.1675  data_time: 0.0028  memory: 2424  
+2026/05/25 03:33:16 - mmengine - INFO - Epoch(test) [4600/5000]    eta: 0:01:08  time: 0.1719  data_time: 0.0023  memory: 2424  
+2026/05/25 03:33:25 - mmengine - INFO - Epoch(test) [4650/5000]    eta: 0:01:00  time: 0.1704  data_time: 0.0030  memory: 2425  
+2026/05/25 03:33:33 - mmengine - INFO - Epoch(test) [4700/5000]    eta: 0:00:51  time: 0.1588  data_time: 0.0018  memory: 2424  
+2026/05/25 03:33:41 - mmengine - INFO - Epoch(test) [4750/5000]    eta: 0:00:42  time: 0.1713  data_time: 0.0025  memory: 2424  
+2026/05/25 03:33:49 - mmengine - INFO - Epoch(test) [4800/5000]    eta: 0:00:34  time: 0.1599  data_time: 0.0018  memory: 2424  
+2026/05/25 03:33:58 - mmengine - INFO - Epoch(test) [4850/5000]    eta: 0:00:25  time: 0.1690  data_time: 0.0023  memory: 2424  
+2026/05/25 03:34:06 - mmengine - INFO - Epoch(test) [4900/5000]    eta: 0:00:17  time: 0.1706  data_time: 0.0020  memory: 2424  
+2026/05/25 03:34:15 - mmengine - INFO - Epoch(test) [4950/5000]    eta: 0:00:08  time: 0.1660  data_time: 0.0022  memory: 2424  
+2026/05/25 03:34:23 - mmengine - INFO - Epoch(test) [5000/5000]    eta: 0:00:00  time: 0.1667  data_time: 0.0024  memory: 2424  
+2026/05/25 03:35:29 - mmengine - INFO - 
++------------+---------+---------+---------+---------+
+| classes    | AP_0.25 | AR_0.25 | AP_0.50 | AR_0.50 |
++------------+---------+---------+---------+---------+
+| pedestrian | 0.7813  | 0.9409  | 0.5293  | 0.6978  |
++------------+---------+---------+---------+---------+
+| Overall    | 0.7813  | 0.9409  | 0.5293  | 0.6978  |
++------------+---------+---------+---------+---------+
+2026/05/25 03:35:47 - mmengine - INFO - 
++------------+---------+---------+---------+---------+---------+---------+
+| classes    | AP_0.5m | AR_0.5m | AP_1.0m | AR_1.0m | AP_2.0m | AR_2.0m |
++------------+---------+---------+---------+---------+---------+---------+
+| pedestrian | 0.8052  | 0.9700  | 0.8138  | 0.9770  | 0.8186  | 0.9811  |
++------------+---------+---------+---------+---------+---------+---------+
+| Overall    | 0.8052  | 0.9700  | 0.8138  | 0.9770  | 0.8186  | 0.9811  |
++------------+---------+---------+---------+---------+---------+---------+
+2026/05/25 03:35:48 - mmengine - INFO - Epoch(test) [5000/5000]    pedestrian_AP_0.25: 0.7813  mAP_0.25: 0.7813  pedestrian_rec_0.25: 0.9409  mAR_0.25: 0.9409  pedestrian_AP_0.50: 0.5293  mAP_0.50: 0.5293  pedestrian_rec_0.50: 0.6978  mAR_0.50: 0.6978  pedestrian_AP_0.5m: 0.8052  pedestrian_rec_0.5m: 0.9700  pedestrian_AP_1.0m: 0.8138  pedestrian_rec_1.0m: 0.9770  pedestrian_AP_2.0m: 0.8186  pedestrian_rec_2.0m: 0.9811  mAP_0.5m: 0.8052  mAR_0.5m: 0.9700  mAP_1.0m: 0.8138  mAR_1.0m: 0.9770  mAP_2.0m: 0.8186  mAR_2.0m: 0.9811  data_time: 0.0027  time: 0.1713

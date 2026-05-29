@@ -1,0 +1,90 @@
+{
+  "epoch": 30,
+  "split": "val",
+  "num_samples": 2500,
+  "dispatch_mass_per_expert": {
+    "expert_0": 0.19199288,
+    "expert_1": 0.28749086,
+    "expert_2": 0.22859589,
+    "expert_3": 0.29192037
+  },
+  "dense_mean_prob_per_expert": {
+    "expert_0": 0.19199288,
+    "expert_1": 0.28749086,
+    "expert_2": 0.22859589,
+    "expert_3": 0.29192037
+  },
+  "top1_selection_freq_per_expert": {
+    "expert_0": 0.21,
+    "expert_1": 0.3036,
+    "expert_2": 0.1896,
+    "expert_3": 0.2968
+  },
+  "topk_selection_freq_per_expert": {
+    "expert_0": 1.0,
+    "expert_1": 1.0,
+    "expert_2": 1.0,
+    "expert_3": 1.0
+  },
+  "mean_gate_entropy": 1.069902,
+  "clean_top1_selection_freq_per_expert": {
+    "expert_0": 0.21,
+    "expert_1": 0.3036,
+    "expert_2": 0.1896,
+    "expert_3": 0.2968
+  },
+  "clean_topk_selection_freq_per_expert": {
+    "expert_0": 1.0,
+    "expert_1": 1.0,
+    "expert_2": 1.0,
+    "expert_3": 1.0
+  },
+  "importance_loss": 0.00193826,
+  "load_loss": 0.0,
+  "switch_balance_loss": 0.0,
+  "router_z_loss": 0.00028949,
+  "ctx_aux_loss": 1.20732747,
+  "ctx_aux_loss_weighted": 0.03621982,
+  "ctx_aux_acc": 0.7584,
+  "ctx_loss_type": "weighted_ce",
+  "ctx_class_weights": [
+    0.8586626139817628,
+    0.3571428571428571,
+    0.13677811550151975,
+    1.3677811550151975,
+    2.2796352583586623
+  ],
+  "router_scale_diagnostics": {
+    "clean_logits_mean": -1.7712797,
+    "clean_logits_std": 1.1077327,
+    "clean_logits_abs_mean": 1.79300501,
+    "clean_logits_min": -3.74422988,
+    "clean_logits_max": -0.32531794,
+    "clean_logits_lse_mean": 0.07667894,
+    "ctx_logits_mean_abs": 1.09341249,
+    "router_temperature": 1.0
+  },
+  "ctx_target_field": "road_type",
+  "ctx_pred_hist": [
+    240,
+    688,
+    1091,
+    292,
+    189
+  ],
+  "ctx_label_hist": [
+    289,
+    567,
+    1271,
+    260,
+    113
+  ],
+  "ctx_aux_acc_per_class_lower_bound": [
+    0.66436,
+    0.731922,
+    0.771833,
+    0.946154,
+    0.690265
+  ],
+  "ctx_aux_acc_overall_lower_bound": 0.7648
+}

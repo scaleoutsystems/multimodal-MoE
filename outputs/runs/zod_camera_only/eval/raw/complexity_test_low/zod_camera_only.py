@@ -1,0 +1,945 @@
+_VIS_EPOCHS = (
+    1,
+    3,
+    5,
+    7,
+    10,
+    12,
+)
+auto_scale_lr = dict(enable=False)
+backend_args = None
+class_names = [
+    'pedestrian',
+]
+custom_hooks = [
+    dict(
+        score_thr=0.15,
+        type='BEVPredictionVisualizationHook',
+        vis_epochs=(
+            1,
+            3,
+            5,
+            7,
+            10,
+            12,
+        )),
+    dict(
+        score_thr=0.15,
+        type='BEVValPredictionVisualizationHook',
+        vis_epochs=(
+            1,
+            3,
+            5,
+            7,
+            10,
+            12,
+        )),
+    dict(
+        type='BEVCameraFeatureVisualizationHook',
+        vis_epochs=(
+            1,
+            3,
+            5,
+            7,
+            10,
+            12,
+        )),
+    dict(
+        type='DepthTransformDiagnosticHook', vis_epochs=(
+            1,
+            3,
+            5,
+            7,
+            10,
+            12,
+        )),
+    dict(type='TrainingEfficiencyHook'),
+    dict(type='RunSummaryHook'),
+    dict(type='DepthProjectionDebugHook', vis_epochs=(
+        1,
+        3,
+        5,
+        7,
+        10,
+        12,
+    )),
+    dict(
+        filename='val_curve_ap_0_50_0_5m',
+        metric_keys=(
+            'mAP_0.50',
+            'mAP_0.5m',
+        ),
+        type='ValidationCurveHook'),
+]
+custom_imports = dict(
+    allow_failed_imports=False, imports=[
+        'projects.BEVFusion.bevfusion',
+    ])
+data_prefix = dict(CAM_FRONT='', pts='')
+data_root = '/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/'
+dataset_type = 'ZODDataset'
+default_hooks = dict(
+    checkpoint=dict(
+        interval=2,
+        rule='greater',
+        save_best='mAP_0.50',
+        type='CheckpointHook'),
+    logger=dict(interval=50, type='LoggerHook'),
+    param_scheduler=dict(type='ParamSchedulerHook'),
+    sampler_seed=dict(type='DistSamplerSeedHook'),
+    timer=dict(type='IterTimerHook'),
+    visualization=dict(type='Det3DVisualizationHook'))
+default_scope = 'mmdet3d'
+env_cfg = dict(
+    cudnn_benchmark=False,
+    dist_cfg=dict(backend='nccl'),
+    mp_cfg=dict(mp_start_method='fork', opencv_num_threads=0))
+grid_size = [
+    1440,
+    1440,
+    40,
+]
+input_modality = dict(use_camera=True, use_lidar=True)
+launcher = 'none'
+load_from = 'outputs/runs/zod_camera_only/zod-cam-only_4469392/best_mAP_0.50_epoch_11.pth'
+log_level = 'INFO'
+log_processor = dict(by_epoch=True, type='LogProcessor', window_size=50)
+lr = 5e-05
+metainfo = dict(
+    box_type_3d='LiDAR', classes=[
+        'pedestrian',
+    ])
+model = dict(
+    bbox_head=dict(
+        auxiliary=True,
+        bbox_coder=dict(
+            code_size=8,
+            out_size_factor=8,
+            pc_range=[
+                0.0,
+                -54.0,
+            ],
+            post_center_range=[
+                0.0,
+                -54.0,
+                -10.0,
+                108.0,
+                54.0,
+                10.0,
+            ],
+            score_threshold=0.0,
+            type='TransFusionBBoxCoder',
+            voxel_size=[
+                0.075,
+                0.075,
+            ]),
+        bn_momentum=0.1,
+        common_heads=dict(
+            center=[
+                2,
+                2,
+            ], dim=[
+                3,
+                2,
+            ], height=[
+                1,
+                2,
+            ], rot=[
+                2,
+                2,
+            ]),
+        decoder_layer=dict(
+            cross_attn_cfg=dict(dropout=0.1, embed_dims=128, num_heads=8),
+            ffn_cfg=dict(
+                act_cfg=dict(inplace=True, type='ReLU'),
+                embed_dims=128,
+                feedforward_channels=256,
+                ffn_drop=0.1,
+                num_fcs=2),
+            norm_cfg=dict(type='LN'),
+            pos_encoding_cfg=dict(input_channel=2, num_pos_feats=128),
+            self_attn_cfg=dict(dropout=0.1, embed_dims=128, num_heads=8),
+            type='TransformerDecoderLayer'),
+        hidden_channel=128,
+        in_channels=512,
+        loss_bbox=dict(
+            loss_weight=0.25, reduction='mean', type='mmdet.L1Loss'),
+        loss_cls=dict(
+            alpha=0.25,
+            gamma=2.0,
+            loss_weight=1.0,
+            reduction='mean',
+            type='mmdet.FocalLoss',
+            use_sigmoid=True),
+        loss_heatmap=dict(
+            loss_weight=1.0, reduction='mean', type='mmdet.GaussianFocalLoss'),
+        nms_kernel_size=3,
+        num_classes=1,
+        num_decoder_layers=1,
+        num_proposals=500,
+        test_cfg=dict(
+            dataset='custom_zod',
+            grid_size=[
+                1440,
+                1440,
+                40,
+            ],
+            nms_type='circle',
+            out_size_factor=8,
+            pc_range=[
+                0.0,
+                -54.0,
+            ],
+            voxel_size=[
+                0.075,
+                0.075,
+            ]),
+        train_cfg=dict(
+            assigner=dict(
+                cls_cost=dict(
+                    alpha=0.25,
+                    gamma=2.0,
+                    type='mmdet.FocalLossCost',
+                    weight=0.15),
+                iou_calculator=dict(coordinate='lidar', type='BboxOverlaps3D'),
+                iou_cost=dict(type='IoU3DCost', weight=0.25),
+                reg_cost=dict(type='BBoxBEVL1Cost', weight=0.25),
+                type='HungarianAssigner3D'),
+            code_weights=[
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+            ],
+            dataset='custom_zod',
+            gaussian_overlap=0.1,
+            grid_size=[
+                1440,
+                1440,
+                40,
+            ],
+            min_radius=2,
+            out_size_factor=8,
+            point_cloud_range=[
+                0.0,
+                -54.0,
+                -5.0,
+                108.0,
+                54.0,
+                3.0,
+            ],
+            pos_weight=-1,
+            voxel_size=[
+                0.075,
+                0.075,
+                0.2,
+            ]),
+        type='TransFusionHead'),
+    data_preprocessor=dict(
+        bgr_to_rgb=False,
+        mean=[
+            123.675,
+            116.28,
+            103.53,
+        ],
+        pad_size_divisor=32,
+        std=[
+            58.395,
+            57.12,
+            57.375,
+        ],
+        type='Det3DDataPreprocessor'),
+    img_backbone=dict(
+        attn_drop_rate=0.0,
+        convert_weights=True,
+        depths=[
+            2,
+            2,
+            6,
+            2,
+        ],
+        drop_path_rate=0.2,
+        drop_rate=0.0,
+        embed_dims=96,
+        init_cfg=dict(
+            checkpoint=
+            '/mnt/tier2/project/p201222/u103958/checkpoints/swin_tiny_patch4_window7_224.pth',
+            type='Pretrained'),
+        mlp_ratio=4,
+        num_heads=[
+            3,
+            6,
+            12,
+            24,
+        ],
+        out_indices=[
+            1,
+            2,
+            3,
+        ],
+        patch_norm=True,
+        qk_scale=None,
+        qkv_bias=True,
+        type='mmdet.SwinTransformer',
+        window_size=7,
+        with_cp=False),
+    img_neck=dict(
+        act_cfg=dict(inplace=True, type='ReLU'),
+        in_channels=[
+            192,
+            384,
+            768,
+        ],
+        norm_cfg=dict(requires_grad=True, type='BN2d'),
+        num_outs=3,
+        out_channels=256,
+        start_level=0,
+        type='GeneralizedLSSFPN',
+        upsample_cfg=dict(align_corners=False, mode='bilinear')),
+    pts_backbone=dict(
+        conv_cfg=dict(bias=False, type='Conv2d'),
+        in_channels=80,
+        layer_nums=[
+            5,
+            5,
+        ],
+        layer_strides=[
+            1,
+            2,
+        ],
+        norm_cfg=dict(eps=0.001, momentum=0.01, type='BN'),
+        out_channels=[
+            128,
+            256,
+        ],
+        type='SECOND'),
+    pts_neck=dict(
+        in_channels=[
+            128,
+            256,
+        ],
+        norm_cfg=dict(eps=0.001, momentum=0.01, type='BN'),
+        out_channels=[
+            256,
+            256,
+        ],
+        type='SECONDFPN',
+        upsample_cfg=dict(bias=False, type='deconv'),
+        upsample_strides=[
+            1,
+            2,
+        ],
+        use_conv_for_no_stride=True),
+    type='CameraOnlyBEVFusion',
+    view_transform=dict(
+        aux_depth_loss_weight=0.5,
+        dbound=[
+            1.0,
+            90.0,
+            0.5,
+        ],
+        downsample=2,
+        feature_size=[
+            88,
+            156,
+        ],
+        image_size=[
+            704,
+            1248,
+        ],
+        in_channels=256,
+        out_channels=80,
+        splat_radius=1,
+        type='DepthLSSTransform',
+        xbound=[
+            0.0,
+            108.0,
+            0.3,
+        ],
+        ybound=[
+            -54.0,
+            54.0,
+            0.3,
+        ],
+        zbound=[
+            -10.0,
+            10.0,
+            20.0,
+        ]))
+optim_wrapper = dict(
+    clip_grad=dict(max_norm=10, norm_type=2),
+    loss_scale='dynamic',
+    optimizer=dict(lr=5e-05, type='AdamW', weight_decay=0.01),
+    type='AmpOptimWrapper')
+out_size_factor = 8
+param_scheduler = [
+    dict(
+        begin=0,
+        by_epoch=False,
+        end=500,
+        start_factor=0.33333333,
+        type='LinearLR'),
+    dict(
+        T_max=4,
+        begin=0,
+        by_epoch=True,
+        convert_to_iter_based=True,
+        end=4,
+        eta_min=0.0001,
+        type='CosineAnnealingLR'),
+    dict(
+        T_max=8,
+        begin=4,
+        by_epoch=True,
+        convert_to_iter_based=True,
+        end=12,
+        eta_min=5e-10,
+        type='CosineAnnealingLR'),
+    dict(
+        T_max=4,
+        begin=0,
+        by_epoch=True,
+        convert_to_iter_based=True,
+        end=4,
+        eta_min=0.8947368421052632,
+        type='CosineAnnealingMomentum'),
+    dict(
+        T_max=8,
+        begin=4,
+        by_epoch=True,
+        convert_to_iter_based=True,
+        end=12,
+        eta_min=1,
+        type='CosineAnnealingMomentum'),
+]
+point_cloud_range = [
+    0.0,
+    -54.0,
+    -5.0,
+    108.0,
+    54.0,
+    3.0,
+]
+resume = False
+test_cfg = dict()
+test_dataloader = dict(
+    batch_size=2,
+    dataset=dict(
+        ann_file=
+        '/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_complexity_test_low.pkl',
+        backend_args=None,
+        box_type_3d='LiDAR',
+        data_prefix=dict(CAM_FRONT='', pts=''),
+        data_root='/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/',
+        metainfo=dict(box_type_3d='LiDAR', classes=[
+            'pedestrian',
+        ]),
+        modality=dict(use_camera=True, use_lidar=True),
+        pipeline=[
+            dict(
+                backend_args=None,
+                color_type='color',
+                num_views=1,
+                to_float32=True,
+                type='BEVLoadMultiViewImageFromFiles'),
+            dict(
+                backend_args=None,
+                coord_type='LIDAR',
+                load_dim=4,
+                type='LoadPointsFromFile',
+                use_dim=4),
+            dict(
+                bot_pct_lim=[
+                    0.0,
+                    0.0,
+                ],
+                final_dim=[
+                    704,
+                    1248,
+                ],
+                is_train=False,
+                rand_flip=False,
+                resize_lim=[
+                    1.0,
+                    1.0,
+                ],
+                rot_lim=[
+                    0.0,
+                    0.0,
+                ],
+                type='ImageAug3D'),
+            dict(
+                point_cloud_range=[
+                    0.0,
+                    -54.0,
+                    -5.0,
+                    108.0,
+                    54.0,
+                    3.0,
+                ],
+                type='PointsRangeFilter'),
+            dict(
+                keys=[
+                    'img',
+                    'points',
+                    'gt_bboxes_3d',
+                    'gt_labels_3d',
+                ],
+                meta_keys=[
+                    'cam2img',
+                    'ori_cam2img',
+                    'lidar2cam',
+                    'lidar2img',
+                    'cam2lidar',
+                    'img_aug_matrix',
+                    'box_type_3d',
+                    'sample_idx',
+                    'lidar_path',
+                    'img_path',
+                    'num_pts_feats',
+                ],
+                type='Pack3DDetInputs'),
+        ],
+        test_mode=True,
+        type='ZODDataset',
+        use_valid_flag=False,
+        with_velocity=False),
+    drop_last=False,
+    num_workers=4,
+    persistent_workers=True,
+    sampler=dict(shuffle=False, type='DefaultSampler'))
+test_evaluator = [
+    dict(iou_thr=[
+        0.25,
+        0.5,
+    ], type='IndoorMetric'),
+    dict(dist_thr=[
+        0.5,
+        1.0,
+        2.0,
+        4.0,
+    ], type='CenterDistanceMetric'),
+]
+test_pipeline = [
+    dict(
+        backend_args=None,
+        color_type='color',
+        num_views=1,
+        to_float32=True,
+        type='BEVLoadMultiViewImageFromFiles'),
+    dict(
+        backend_args=None,
+        coord_type='LIDAR',
+        load_dim=4,
+        type='LoadPointsFromFile',
+        use_dim=4),
+    dict(
+        bot_pct_lim=[
+            0.0,
+            0.0,
+        ],
+        final_dim=[
+            704,
+            1248,
+        ],
+        is_train=False,
+        rand_flip=False,
+        resize_lim=[
+            1.0,
+            1.0,
+        ],
+        rot_lim=[
+            0.0,
+            0.0,
+        ],
+        type='ImageAug3D'),
+    dict(
+        point_cloud_range=[
+            0.0,
+            -54.0,
+            -5.0,
+            108.0,
+            54.0,
+            3.0,
+        ],
+        type='PointsRangeFilter'),
+    dict(
+        keys=[
+            'img',
+            'points',
+            'gt_bboxes_3d',
+            'gt_labels_3d',
+        ],
+        meta_keys=[
+            'cam2img',
+            'ori_cam2img',
+            'lidar2cam',
+            'lidar2img',
+            'cam2lidar',
+            'img_aug_matrix',
+            'box_type_3d',
+            'sample_idx',
+            'lidar_path',
+            'img_path',
+            'num_pts_feats',
+        ],
+        type='Pack3DDetInputs'),
+]
+train_cfg = dict(by_epoch=True, max_epochs=12, val_interval=1)
+train_dataloader = dict(
+    batch_size=4,
+    dataset=dict(
+        ann_file='infos/zod_nuscenes_infos_train.pkl',
+        box_type_3d='LiDAR',
+        data_prefix=dict(CAM_FRONT='', pts=''),
+        data_root='/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/',
+        metainfo=dict(box_type_3d='LiDAR', classes=[
+            'pedestrian',
+        ]),
+        modality=dict(use_camera=True, use_lidar=True),
+        pipeline=[
+            dict(
+                backend_args=None,
+                color_type='color',
+                num_views=1,
+                to_float32=True,
+                type='BEVLoadMultiViewImageFromFiles'),
+            dict(
+                backend_args=None,
+                coord_type='LIDAR',
+                load_dim=4,
+                type='LoadPointsFromFile',
+                use_dim=4),
+            dict(
+                type='LoadAnnotations3D',
+                with_attr_label=False,
+                with_bbox_3d=True,
+                with_label_3d=True),
+            dict(
+                bot_pct_lim=[
+                    0.0,
+                    0.0,
+                ],
+                final_dim=[
+                    704,
+                    1248,
+                ],
+                is_train=True,
+                rand_flip=False,
+                resize_lim=[
+                    1.0,
+                    1.0,
+                ],
+                rot_lim=[
+                    0.0,
+                    0.0,
+                ],
+                type='ImageAug3D'),
+            dict(
+                rot_range=[
+                    0,
+                    0,
+                ],
+                scale_ratio_range=[
+                    0.9,
+                    1.1,
+                ],
+                translation_std=0.5,
+                type='BEVFusionGlobalRotScaleTrans'),
+            dict(
+                point_cloud_range=[
+                    0.0,
+                    -54.0,
+                    -5.0,
+                    108.0,
+                    54.0,
+                    3.0,
+                ],
+                type='PointsRangeFilter'),
+            dict(
+                point_cloud_range=[
+                    0.0,
+                    -54.0,
+                    -5.0,
+                    108.0,
+                    54.0,
+                    3.0,
+                ],
+                type='ObjectRangeFilter'),
+            dict(classes=[
+                'pedestrian',
+            ], type='ObjectNameFilter'),
+            dict(
+                fixed_prob=True,
+                max_epoch=10,
+                mode=1,
+                offset=False,
+                prob=0.0,
+                ratio=0.5,
+                rotate=1,
+                type='GridMask',
+                use_h=True,
+                use_w=True),
+            dict(type='PointShuffle'),
+            dict(
+                keys=[
+                    'points',
+                    'img',
+                    'gt_bboxes_3d',
+                    'gt_labels_3d',
+                ],
+                meta_keys=[
+                    'cam2img',
+                    'ori_cam2img',
+                    'lidar2cam',
+                    'lidar2img',
+                    'cam2lidar',
+                    'img_aug_matrix',
+                    'box_type_3d',
+                    'sample_idx',
+                    'lidar_path',
+                    'img_path',
+                    'transformation_3d_flow',
+                    'pcd_rotation',
+                    'pcd_scale_factor',
+                    'pcd_trans',
+                    'lidar_aug_matrix',
+                    'num_pts_feats',
+                ],
+                type='Pack3DDetInputs'),
+        ],
+        test_mode=False,
+        type='ZODDataset',
+        use_valid_flag=False,
+        with_velocity=False),
+    num_workers=4,
+    persistent_workers=True,
+    sampler=dict(shuffle=True, type='DefaultSampler'))
+train_pipeline = [
+    dict(
+        backend_args=None,
+        color_type='color',
+        num_views=1,
+        to_float32=True,
+        type='BEVLoadMultiViewImageFromFiles'),
+    dict(
+        backend_args=None,
+        coord_type='LIDAR',
+        load_dim=4,
+        type='LoadPointsFromFile',
+        use_dim=4),
+    dict(
+        type='LoadAnnotations3D',
+        with_attr_label=False,
+        with_bbox_3d=True,
+        with_label_3d=True),
+    dict(
+        bot_pct_lim=[
+            0.0,
+            0.0,
+        ],
+        final_dim=[
+            704,
+            1248,
+        ],
+        is_train=True,
+        rand_flip=False,
+        resize_lim=[
+            1.0,
+            1.0,
+        ],
+        rot_lim=[
+            0.0,
+            0.0,
+        ],
+        type='ImageAug3D'),
+    dict(
+        rot_range=[
+            0,
+            0,
+        ],
+        scale_ratio_range=[
+            0.9,
+            1.1,
+        ],
+        translation_std=0.5,
+        type='BEVFusionGlobalRotScaleTrans'),
+    dict(
+        point_cloud_range=[
+            0.0,
+            -54.0,
+            -5.0,
+            108.0,
+            54.0,
+            3.0,
+        ],
+        type='PointsRangeFilter'),
+    dict(
+        point_cloud_range=[
+            0.0,
+            -54.0,
+            -5.0,
+            108.0,
+            54.0,
+            3.0,
+        ],
+        type='ObjectRangeFilter'),
+    dict(classes=[
+        'pedestrian',
+    ], type='ObjectNameFilter'),
+    dict(
+        fixed_prob=True,
+        max_epoch=10,
+        mode=1,
+        offset=False,
+        prob=0.0,
+        ratio=0.5,
+        rotate=1,
+        type='GridMask',
+        use_h=True,
+        use_w=True),
+    dict(type='PointShuffle'),
+    dict(
+        keys=[
+            'points',
+            'img',
+            'gt_bboxes_3d',
+            'gt_labels_3d',
+        ],
+        meta_keys=[
+            'cam2img',
+            'ori_cam2img',
+            'lidar2cam',
+            'lidar2img',
+            'cam2lidar',
+            'img_aug_matrix',
+            'box_type_3d',
+            'sample_idx',
+            'lidar_path',
+            'img_path',
+            'transformation_3d_flow',
+            'pcd_rotation',
+            'pcd_scale_factor',
+            'pcd_trans',
+            'lidar_aug_matrix',
+            'num_pts_feats',
+        ],
+        type='Pack3DDetInputs'),
+]
+val_cfg = dict()
+val_dataloader = dict(
+    batch_size=2,
+    dataset=dict(
+        ann_file='infos/zod_nuscenes_infos_val.pkl',
+        backend_args=None,
+        box_type_3d='LiDAR',
+        data_prefix=dict(CAM_FRONT='', pts=''),
+        data_root='/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/',
+        metainfo=dict(box_type_3d='LiDAR', classes=[
+            'pedestrian',
+        ]),
+        modality=dict(use_camera=True, use_lidar=True),
+        pipeline=[
+            dict(
+                backend_args=None,
+                color_type='color',
+                num_views=1,
+                to_float32=True,
+                type='BEVLoadMultiViewImageFromFiles'),
+            dict(
+                backend_args=None,
+                coord_type='LIDAR',
+                load_dim=4,
+                type='LoadPointsFromFile',
+                use_dim=4),
+            dict(
+                bot_pct_lim=[
+                    0.0,
+                    0.0,
+                ],
+                final_dim=[
+                    704,
+                    1248,
+                ],
+                is_train=False,
+                rand_flip=False,
+                resize_lim=[
+                    1.0,
+                    1.0,
+                ],
+                rot_lim=[
+                    0.0,
+                    0.0,
+                ],
+                type='ImageAug3D'),
+            dict(
+                point_cloud_range=[
+                    0.0,
+                    -54.0,
+                    -5.0,
+                    108.0,
+                    54.0,
+                    3.0,
+                ],
+                type='PointsRangeFilter'),
+            dict(
+                keys=[
+                    'img',
+                    'points',
+                    'gt_bboxes_3d',
+                    'gt_labels_3d',
+                ],
+                meta_keys=[
+                    'cam2img',
+                    'ori_cam2img',
+                    'lidar2cam',
+                    'lidar2img',
+                    'cam2lidar',
+                    'img_aug_matrix',
+                    'box_type_3d',
+                    'sample_idx',
+                    'lidar_path',
+                    'img_path',
+                    'num_pts_feats',
+                ],
+                type='Pack3DDetInputs'),
+        ],
+        test_mode=True,
+        type='ZODDataset',
+        use_valid_flag=False,
+        with_velocity=False),
+    drop_last=False,
+    num_workers=4,
+    persistent_workers=True,
+    sampler=dict(shuffle=False, type='DefaultSampler'))
+val_evaluator = [
+    dict(iou_thr=[
+        0.25,
+        0.5,
+    ], type='IndoorMetric'),
+    dict(dist_thr=[
+        0.5,
+        1.0,
+        2.0,
+        4.0,
+    ], type='CenterDistanceMetric'),
+]
+vis_backends = [
+    dict(type='LocalVisBackend'),
+]
+visualizer = dict(
+    name='visualizer',
+    type='Det3DLocalVisualizer',
+    vis_backends=[
+        dict(type='LocalVisBackend'),
+    ])
+voxel_size = [
+    0.075,
+    0.075,
+    0.2,
+]
+work_dir = '/mnt/tier2/users/u103958/projects/multimodal-MoE/outputs/runs/zod_camera_only/eval/raw/complexity_test_low'

@@ -1,0 +1,74 @@
+
+========================================================================
+  RUN SUMMARY
+========================================================================
+
+  A) Run Configuration
+     world_size           : 4
+     per_gpu_batch_size   : 4
+     global_batch_size    : 16
+     total_epochs         : 12
+
+  B) Validation Performance
+     best_epoch           : 8
+     best/pedestrian_AP_0.25: 0.7799
+     best/mAP_0.25          : 0.7799
+     best/pedestrian_rec_0.25: 0.9373
+     best/mAR_0.25          : 0.9373
+     best/pedestrian_AP_0.50: 0.5490
+     best/mAP_0.50          : 0.5490
+     best/pedestrian_rec_0.50: 0.7087
+     best/mAR_0.50          : 0.7087
+     best/pedestrian_AP_0.5m: 0.7989
+     best/pedestrian_rec_0.5m: 0.9639
+     best/pedestrian_AP_1.0m: 0.8070
+     best/pedestrian_rec_1.0m: 0.9712
+     best/pedestrian_AP_2.0m: 0.8116
+     best/pedestrian_rec_2.0m: 0.9750
+     best/pedestrian_AP_4.0m: 0.8180
+     best/pedestrian_rec_4.0m: 0.9814
+     best/mAP_0.5m          : 0.7989
+     best/mAR_0.5m          : 0.9639
+     best/mAP_1.0m          : 0.8070
+     best/mAR_1.0m          : 0.9712
+     best/mAP_2.0m          : 0.8116
+     best/mAR_2.0m          : 0.9750
+     best/mAP_4.0m          : 0.8180
+     best/mAR_4.0m          : 0.9814
+
+     final/pedestrian_AP_0.25: 0.7762
+     final/mAP_0.25         : 0.7762
+     final/pedestrian_rec_0.25: 0.9362
+     final/mAR_0.25         : 0.9362
+     final/pedestrian_AP_0.50: 0.5705
+     final/mAP_0.50         : 0.5705
+     final/pedestrian_rec_0.50: 0.7313
+     final/mAR_0.50         : 0.7313
+     final/pedestrian_AP_0.5m: 0.7933
+     final/pedestrian_rec_0.5m: 0.9599
+     final/pedestrian_AP_1.0m: 0.8008
+     final/pedestrian_rec_1.0m: 0.9667
+     final/pedestrian_AP_2.0m: 0.8054
+     final/pedestrian_rec_2.0m: 0.9706
+     final/pedestrian_AP_4.0m: 0.8124
+     final/pedestrian_rec_4.0m: 0.9776
+     final/mAP_0.5m         : 0.7933
+     final/mAR_0.5m         : 0.9599
+     final/mAP_1.0m         : 0.8008
+     final/mAR_1.0m         : 0.9667
+     final/mAP_2.0m         : 0.8054
+     final/mAR_2.0m         : 0.9706
+     final/mAP_4.0m         : 0.8124
+     final/mAR_4.0m         : 0.9776
+
+  C) Training Efficiency
+     total_wall_time      : 60273.6s  (16.74h)
+     total_iters          : 60000
+     avg_sec_per_iter     : 1.0046
+     avg_iters_per_sec    : 1.00
+     avg_samples_per_sec  : 15.93
+     avg_samples/s/gpu    : 3.98
+     peak_mem_allocated_mb: 18170
+     peak_mem_reserved_mb : 22048
+
+========================================================================

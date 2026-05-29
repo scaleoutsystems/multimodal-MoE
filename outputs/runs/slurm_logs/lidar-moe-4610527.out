@@ -1,0 +1,1510 @@
+Using PYTHON=/home/users/u103958/miniconda3/envs/multimodal-moe/bin/python
+python /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python
+torch 2.4.0+cu121
+BEVFusion + BEVMoEBlock registered OK
+MoE hooks registered OK
+=== Slurm job 4610527 on mel2070 ===
+MMDET3D_ROOT=/home/users/u103958/projects/multimodal-MoE/mmdetection3d
+CONFIG=configs/zod/zod_lidar_only_moe_dense4_30ep.py
+WORK_DIR=/home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only_moe/lidar-moe_4610527
+CUDA_VISIBLE_DEVICES (step 0): 0,1,2,3     
+GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-7f80f0cd-8a51-21c6-6e76-1176aa430e5e)
+GPU 1: NVIDIA A100-SXM4-40GB (UUID: GPU-0a3b3837-4ade-4601-ccc1-be42b0017871)
+GPU 2: NVIDIA A100-SXM4-40GB (UUID: GPU-72a08ca0-a2d4-66cb-8611-80ebf9709cef)
+GPU 3: NVIDIA A100-SXM4-40GB (UUID: GPU-fc0fdab1-5df2-8231-94b5-50a1b935d685)
+NCCL version 2.20.5+cuda12.4
+05/22 19:56:46 - mmengine - INFO - 
+------------------------------------------------------------
+System environment:
+    sys.platform: linux
+    Python: 3.10.20 | packaged by conda-forge | (main, Mar  5 2026, 16:42:22) [GCC 14.3.0]
+    CUDA available: True
+    MUSA available: False
+    numpy_random_seed: 1632304166
+    GPU 0: NVIDIA A100-SXM4-40GB
+    CUDA_HOME: None
+    GCC: gcc (GCC) 8.5.0 20210514 (Red Hat 8.5.0-28)
+    PyTorch: 2.4.0+cu121
+    PyTorch compiling details: PyTorch built with:
+  - GCC 9.3
+  - C++ Version: 201703
+  - Intel(R) oneAPI Math Kernel Library Version 2022.2-Product Build 20220804 for Intel(R) 64 architecture applications
+  - Intel(R) MKL-DNN v3.4.2 (Git Hash 1137e04ec0b5251ca2b4400a4fd3c667ce843d67)
+  - OpenMP 201511 (a.k.a. OpenMP 4.5)
+  - LAPACK is enabled (usually provided by MKL)
+  - NNPACK is enabled
+  - CPU capability usage: AVX2
+  - CUDA Runtime 12.1
+  - NVCC architecture flags: -gencode;arch=compute_50,code=sm_50;-gencode;arch=compute_60,code=sm_60;-gencode;arch=compute_70,code=sm_70;-gencode;arch=compute_75,code=sm_75;-gencode;arch=compute_80,code=sm_80;-gencode;arch=compute_86,code=sm_86;-gencode;arch=compute_90,code=sm_90
+  - CuDNN 90.1  (built against CUDA 12.4)
+  - Magma 2.6.1
+  - Build settings: BLAS_INFO=mkl, BUILD_TYPE=Release, CUDA_VERSION=12.1, CUDNN_VERSION=9.1.0, CXX_COMPILER=/opt/rh/devtoolset-9/root/usr/bin/c++, CXX_FLAGS= -D_GLIBCXX_USE_CXX11_ABI=0 -fabi-version=11 -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -DNDEBUG -DUSE_KINETO -DLIBKINETO_NOROCTRACER -DUSE_FBGEMM -DUSE_PYTORCH_QNNPACK -DUSE_XNNPACK -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -O2 -fPIC -Wall -Wextra -Werror=return-type -Werror=non-virtual-dtor -Werror=bool-operation -Wnarrowing -Wno-missing-field-initializers -Wno-type-limits -Wno-array-bounds -Wno-unknown-pragmas -Wno-unused-parameter -Wno-unused-function -Wno-unused-result -Wno-strict-overflow -Wno-strict-aliasing -Wno-stringop-overflow -Wsuggest-override -Wno-psabi -Wno-error=pedantic -Wno-error=old-style-cast -Wno-missing-braces -fdiagnostics-color=always -faligned-new -Wno-unused-but-set-variable -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Wno-stringop-overflow, LAPACK_INFO=mkl, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, PERF_WITH_AVX512=1, TORCH_VERSION=2.4.0, USE_CUDA=ON, USE_CUDNN=ON, USE_CUSPARSELT=1, USE_EXCEPTION_PTR=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_GLOO=ON, USE_MKL=ON, USE_MKLDNN=ON, USE_MPI=OFF, USE_NCCL=1, USE_NNPACK=ON, USE_OPENMP=ON, USE_ROCM=OFF, USE_ROCM_KERNEL_ASSERT=OFF, 
+
+    TorchVision: 0.19.0+cu121
+    OpenCV: 4.9.0
+    MMEngine: 0.10.7
+
+Runtime environment:
+    cudnn_benchmark: False
+    mp_cfg: {'mp_start_method': 'fork', 'opencv_num_threads': 0}
+    dist_cfg: {'backend': 'nccl'}
+    seed: 1632304166
+    Distributed launcher: slurm
+    Distributed training: True
+    GPU number: 4
+------------------------------------------------------------
+
+05/22 19:56:47 - mmengine - INFO - Config:
+auto_scale_lr = dict(enable=False)
+backend_args = None
+bev_moe_cfg = dict(
+    channels=512,
+    context_aux_cfg=dict(
+        class_weights='inverse_frequency',
+        label_smoothing=0.05,
+        loss_coef=0.03,
+        loss_type='weighted_ce',
+        target_field='road_type'),
+    ctx_gate_temp_high=1.0,
+    ctx_gate_warmup_epochs=0,
+    expert_type='full',
+    gate_cfg=dict(temperature=1.0),
+    gate_type='dense',
+    importance_coef=0.005,
+    k=4,
+    load_coef=0.0,
+    num_convs=2,
+    num_experts=4,
+    residual_gain=1.0,
+    switch_balance_coef=0.0,
+    type='BEVMoEBlock',
+    z_loss_coef=0.002)
+class_names = [
+    'pedestrian',
+]
+custom_hooks = [
+    dict(type='BEVFeatureVisualizationHook'),
+    dict(score_thr=0.15, type='BEVPredictionVisualizationHook'),
+    dict(score_thr=0.15, type='BEVValPredictionVisualizationHook'),
+    dict(type='TrainingEfficiencyHook'),
+    dict(type='RunSummaryHook'),
+    dict(
+        filename='val_curve_ap_0_50_0_5m',
+        metric_keys=(
+            'mAP_0.50',
+            'mAP_0.5m',
+        ),
+        type='ValidationCurveHook'),
+    dict(
+        dead_threshold_ratio=0.1,
+        max_respawns=5,
+        num_experts=4,
+        perturbation_std=0.02,
+        skip_first_epoch=True,
+        type='ExpertRespawnHook'),
+    dict(
+        ap_metric_key='mAP_0.5m',
+        enable_hook_a=True,
+        enable_hook_b=True,
+        enable_hook_c=False,
+        num_experts=4,
+        type='MoERoutingHook'),
+    dict(type='ContextRoutingStatsHook'),
+    dict(type='ContextExpertUsageVisualizationHook'),
+]
+custom_imports = dict(
+    allow_failed_imports=False, imports=[
+        'projects.BEVFusion.bevfusion',
+    ])
+data_prefix = dict(pts='')
+data_root = '/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/'
+dataset_type = 'ZODDataset'
+default_hooks = dict(
+    checkpoint=dict(
+        interval=5,
+        rule='greater',
+        save_best='mAP_0.50',
+        type='CheckpointHook'),
+    logger=dict(interval=50, type='LoggerHook'),
+    param_scheduler=dict(type='ParamSchedulerHook'),
+    sampler_seed=dict(type='DistSamplerSeedHook'),
+    timer=dict(type='IterTimerHook'),
+    visualization=dict(type='Det3DVisualizationHook'))
+default_scope = 'mmdet3d'
+env_cfg = dict(
+    cudnn_benchmark=False,
+    dist_cfg=dict(backend='nccl'),
+    mp_cfg=dict(mp_start_method='fork', opencv_num_threads=0))
+grid_size = [
+    1440,
+    1440,
+    40,
+]
+input_modality = dict(use_camera=False, use_lidar=True)
+launcher = 'slurm'
+load_from = '/mnt/tier2/project/p201222/u103958/checkpoints/bevfusion_lidar_voxel0075_second_secfpn_8xb4-cyclic-20e_nus-3d-2628f933.pth'
+log_level = 'INFO'
+log_processor = dict(by_epoch=True, type='LogProcessor', window_size=50)
+lr = 5e-05
+metainfo = dict(
+    box_type_3d='LiDAR', classes=[
+        'pedestrian',
+    ])
+model = dict(
+    bbox_head=dict(
+        auxiliary=True,
+        bbox_coder=dict(
+            code_size=8,
+            out_size_factor=8,
+            pc_range=[
+                0.0,
+                -54.0,
+            ],
+            post_center_range=[
+                0.0,
+                -54.0,
+                -10.0,
+                108.0,
+                54.0,
+                10.0,
+            ],
+            score_threshold=0.0,
+            type='TransFusionBBoxCoder',
+            voxel_size=[
+                0.075,
+                0.075,
+            ]),
+        bn_momentum=0.1,
+        common_heads=dict(
+            center=[
+                2,
+                2,
+            ], dim=[
+                3,
+                2,
+            ], height=[
+                1,
+                2,
+            ], rot=[
+                2,
+                2,
+            ]),
+        decoder_layer=dict(
+            cross_attn_cfg=dict(dropout=0.1, embed_dims=128, num_heads=8),
+            ffn_cfg=dict(
+                act_cfg=dict(inplace=True, type='ReLU'),
+                embed_dims=128,
+                feedforward_channels=256,
+                ffn_drop=0.1,
+                num_fcs=2),
+            norm_cfg=dict(type='LN'),
+            pos_encoding_cfg=dict(input_channel=2, num_pos_feats=128),
+            self_attn_cfg=dict(dropout=0.1, embed_dims=128, num_heads=8),
+            type='TransformerDecoderLayer'),
+        hidden_channel=128,
+        in_channels=512,
+        loss_bbox=dict(
+            loss_weight=0.25, reduction='mean', type='mmdet.L1Loss'),
+        loss_cls=dict(
+            alpha=0.25,
+            gamma=2.0,
+            loss_weight=1.0,
+            reduction='mean',
+            type='mmdet.FocalLoss',
+            use_sigmoid=True),
+        loss_heatmap=dict(
+            loss_weight=1.0, reduction='mean', type='mmdet.GaussianFocalLoss'),
+        nms_kernel_size=3,
+        num_classes=1,
+        num_decoder_layers=1,
+        num_proposals=500,
+        test_cfg=dict(
+            dataset='custom_zod',
+            grid_size=[
+                1440,
+                1440,
+                40,
+            ],
+            nms_type='circle',
+            out_size_factor=8,
+            pc_range=[
+                0.0,
+                -54.0,
+            ],
+            voxel_size=[
+                0.075,
+                0.075,
+            ]),
+        train_cfg=dict(
+            assigner=dict(
+                cls_cost=dict(
+                    alpha=0.25,
+                    gamma=2.0,
+                    type='mmdet.FocalLossCost',
+                    weight=0.15),
+                iou_calculator=dict(coordinate='lidar', type='BboxOverlaps3D'),
+                iou_cost=dict(type='IoU3DCost', weight=0.25),
+                reg_cost=dict(type='BBoxBEVL1Cost', weight=0.25),
+                type='HungarianAssigner3D'),
+            code_weights=[
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+            ],
+            dataset='custom_zod',
+            gaussian_overlap=0.1,
+            grid_size=[
+                1440,
+                1440,
+                40,
+            ],
+            min_radius=2,
+            out_size_factor=8,
+            point_cloud_range=[
+                0.0,
+                -54.0,
+                -5.0,
+                108.0,
+                54.0,
+                3.0,
+            ],
+            pos_weight=-1,
+            voxel_size=[
+                0.075,
+                0.075,
+                0.2,
+            ]),
+        type='TransFusionHead'),
+    bev_moe_cfg=dict(
+        channels=512,
+        context_aux_cfg=dict(
+            class_weights='inverse_frequency',
+            label_smoothing=0.05,
+            loss_coef=0.03,
+            loss_type='weighted_ce',
+            target_field='road_type'),
+        ctx_gate_temp_high=1.0,
+        ctx_gate_warmup_epochs=0,
+        expert_type='full',
+        gate_cfg=dict(temperature=1.0),
+        gate_type='dense',
+        importance_coef=0.005,
+        k=4,
+        load_coef=0.0,
+        num_convs=2,
+        num_experts=4,
+        residual_gain=1.0,
+        switch_balance_coef=0.0,
+        type='BEVMoEBlock',
+        z_loss_coef=0.002),
+    bev_moe_position='post_neck',
+    data_preprocessor=dict(
+        pad_size_divisor=32,
+        type='Det3DDataPreprocessor',
+        voxelize_cfg=dict(
+            max_num_points=10,
+            max_voxels=[
+                200000,
+                240000,
+            ],
+            point_cloud_range=[
+                0.0,
+                -54.0,
+                -5.0,
+                108.0,
+                54.0,
+                3.0,
+            ],
+            voxel_size=[
+                0.075,
+                0.075,
+                0.2,
+            ],
+            voxelize_reduce=True)),
+    pts_backbone=dict(
+        conv_cfg=dict(bias=False, type='Conv2d'),
+        in_channels=256,
+        layer_nums=[
+            5,
+            5,
+        ],
+        layer_strides=[
+            1,
+            2,
+        ],
+        norm_cfg=dict(eps=0.001, momentum=0.01, type='BN'),
+        out_channels=[
+            128,
+            256,
+        ],
+        type='SECOND'),
+    pts_middle_encoder=dict(
+        block_type='basicblock',
+        encoder_channels=(
+            (
+                16,
+                16,
+                32,
+            ),
+            (
+                32,
+                32,
+                64,
+            ),
+            (
+                64,
+                64,
+                128,
+            ),
+            (
+                128,
+                128,
+            ),
+        ),
+        encoder_paddings=(
+            (
+                0,
+                0,
+                1,
+            ),
+            (
+                0,
+                0,
+                1,
+            ),
+            (
+                0,
+                0,
+                (
+                    1,
+                    1,
+                    0,
+                ),
+            ),
+            (
+                0,
+                0,
+            ),
+        ),
+        in_channels=4,
+        norm_cfg=dict(eps=0.001, momentum=0.01, type='BN1d'),
+        order=(
+            'conv',
+            'norm',
+            'act',
+        ),
+        sparse_shape=[
+            1440,
+            1440,
+            41,
+        ],
+        type='BEVFusionSparseEncoder'),
+    pts_neck=dict(
+        in_channels=[
+            128,
+            256,
+        ],
+        norm_cfg=dict(eps=0.001, momentum=0.01, type='BN'),
+        out_channels=[
+            256,
+            256,
+        ],
+        type='SECONDFPN',
+        upsample_cfg=dict(bias=False, type='deconv'),
+        upsample_strides=[
+            1,
+            2,
+        ],
+        use_conv_for_no_stride=True),
+    pts_voxel_encoder=dict(num_features=4, type='HardSimpleVFE'),
+    type='BEVFusion')
+model_wrapper_cfg = dict(find_unused_parameters=True)
+num_experts = 4
+optim_wrapper = dict(
+    clip_grad=dict(max_norm=10, norm_type=2),
+    loss_scale='dynamic',
+    optimizer=dict(lr=5e-05, type='AdamW', weight_decay=0.01),
+    paramwise_cfg=dict(
+        custom_keys=dict(
+            {
+                'bbox_head': dict(lr_mult=1.0),
+                'bev_moe.context_head': dict(decay_mult=0.05, lr_mult=1.0),
+                'bev_moe.context_summary': dict(decay_mult=0.05, lr_mult=1.0),
+                'bev_moe.gate': dict(decay_mult=0.01, lr_mult=1.0),
+                'pts_backbone': dict(lr_mult=1.0),
+                'pts_neck': dict(lr_mult=1.0)
+            })),
+    type='AmpOptimWrapper')
+out_size_factor = 8
+param_scheduler = [
+    dict(
+        T_max=8,
+        begin=0,
+        by_epoch=True,
+        convert_to_iter_based=True,
+        end=8,
+        eta_min=0.0005,
+        type='CosineAnnealingLR'),
+    dict(
+        T_max=22,
+        begin=8,
+        by_epoch=True,
+        convert_to_iter_based=True,
+        end=30,
+        eta_min=5e-09,
+        type='CosineAnnealingLR'),
+    dict(
+        T_max=8,
+        begin=0,
+        by_epoch=True,
+        convert_to_iter_based=True,
+        end=8,
+        eta_min=0.8947368421052632,
+        type='CosineAnnealingMomentum'),
+    dict(
+        T_max=22,
+        begin=8,
+        by_epoch=True,
+        convert_to_iter_based=True,
+        end=30,
+        eta_min=1,
+        type='CosineAnnealingMomentum'),
+]
+point_cloud_range = [
+    0.0,
+    -54.0,
+    -5.0,
+    108.0,
+    54.0,
+    3.0,
+]
+resume = False
+sparse_shape = [
+    1440,
+    1440,
+    41,
+]
+test_cfg = dict()
+test_dataloader = dict(
+    batch_size=2,
+    dataset=dict(
+        ann_file='infos/zod_nuscenes_infos_test.pkl',
+        backend_args=None,
+        box_type_3d='LiDAR',
+        data_prefix=dict(pts=''),
+        data_root='/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/',
+        metainfo=dict(box_type_3d='LiDAR', classes=[
+            'pedestrian',
+        ]),
+        modality=dict(use_camera=False, use_lidar=True),
+        pipeline=[
+            dict(
+                backend_args=None,
+                coord_type='LIDAR',
+                load_dim=4,
+                type='LoadPointsFromFile',
+                use_dim=4),
+            dict(
+                point_cloud_range=[
+                    0.0,
+                    -54.0,
+                    -5.0,
+                    108.0,
+                    54.0,
+                    3.0,
+                ],
+                type='PointsRangeFilter'),
+            dict(
+                keys=[
+                    'points',
+                ],
+                meta_keys=[
+                    'box_type_3d',
+                    'sample_idx',
+                    'lidar_path',
+                    'num_pts_feats',
+                    'context',
+                ],
+                type='Pack3DDetInputs'),
+        ],
+        test_mode=True,
+        type='ZODDataset',
+        use_valid_flag=False,
+        with_velocity=False),
+    drop_last=False,
+    num_workers=4,
+    persistent_workers=True,
+    sampler=dict(shuffle=False, type='DefaultSampler'))
+test_evaluator = [
+    dict(iou_thr=[
+        0.25,
+        0.5,
+    ], type='IndoorMetric'),
+    dict(dist_thr=[
+        0.5,
+        1.0,
+        2.0,
+    ], type='CenterDistanceMetric'),
+]
+test_pipeline = [
+    dict(
+        backend_args=None,
+        coord_type='LIDAR',
+        load_dim=4,
+        type='LoadPointsFromFile',
+        use_dim=4),
+    dict(
+        point_cloud_range=[
+            0.0,
+            -54.0,
+            -5.0,
+            108.0,
+            54.0,
+            3.0,
+        ],
+        type='PointsRangeFilter'),
+    dict(
+        keys=[
+            'points',
+        ],
+        meta_keys=[
+            'box_type_3d',
+            'sample_idx',
+            'lidar_path',
+            'num_pts_feats',
+            'context',
+        ],
+        type='Pack3DDetInputs'),
+]
+train_cfg = dict(by_epoch=True, max_epochs=30, val_interval=1)
+train_dataloader = dict(
+    batch_size=4,
+    dataset=dict(
+        ann_file='infos/zod_nuscenes_infos_train.pkl',
+        box_type_3d='LiDAR',
+        data_prefix=dict(pts=''),
+        data_root='/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/',
+        filter_empty_gt=False,
+        metainfo=dict(box_type_3d='LiDAR', classes=[
+            'pedestrian',
+        ]),
+        modality=dict(use_camera=False, use_lidar=True),
+        pipeline=[
+            dict(
+                backend_args=None,
+                coord_type='LIDAR',
+                load_dim=4,
+                type='LoadPointsFromFile',
+                use_dim=4),
+            dict(
+                type='LoadAnnotations3D',
+                with_attr_label=False,
+                with_bbox_3d=True,
+                with_label_3d=True),
+            dict(
+                rot_range=[
+                    0,
+                    0,
+                ],
+                scale_ratio_range=[
+                    0.9,
+                    1.1,
+                ],
+                translation_std=0.5,
+                type='GlobalRotScaleTrans'),
+            dict(
+                point_cloud_range=[
+                    0.0,
+                    -54.0,
+                    -5.0,
+                    108.0,
+                    54.0,
+                    3.0,
+                ],
+                type='PointsRangeFilter'),
+            dict(
+                point_cloud_range=[
+                    0.0,
+                    -54.0,
+                    -5.0,
+                    108.0,
+                    54.0,
+                    3.0,
+                ],
+                type='ObjectRangeFilter'),
+            dict(classes=[
+                'pedestrian',
+            ], type='ObjectNameFilter'),
+            dict(type='PointShuffle'),
+            dict(
+                keys=[
+                    'points',
+                    'gt_bboxes_3d',
+                    'gt_labels_3d',
+                ],
+                meta_keys=[
+                    'box_type_3d',
+                    'sample_idx',
+                    'lidar_path',
+                    'transformation_3d_flow',
+                    'pcd_rotation',
+                    'pcd_scale_factor',
+                    'pcd_trans',
+                    'lidar_aug_matrix',
+                    'context',
+                ],
+                type='Pack3DDetInputs'),
+        ],
+        test_mode=False,
+        type='ZODDataset',
+        use_valid_flag=False,
+        with_velocity=False),
+    num_workers=4,
+    persistent_workers=True,
+    sampler=dict(shuffle=True, type='DefaultSampler'))
+train_pipeline = [
+    dict(
+        backend_args=None,
+        coord_type='LIDAR',
+        load_dim=4,
+        type='LoadPointsFromFile',
+        use_dim=4),
+    dict(
+        type='LoadAnnotations3D',
+        with_attr_label=False,
+        with_bbox_3d=True,
+        with_label_3d=True),
+    dict(
+        rot_range=[
+            0,
+            0,
+        ],
+        scale_ratio_range=[
+            0.9,
+            1.1,
+        ],
+        translation_std=0.5,
+        type='GlobalRotScaleTrans'),
+    dict(
+        point_cloud_range=[
+            0.0,
+            -54.0,
+            -5.0,
+            108.0,
+            54.0,
+            3.0,
+        ],
+        type='PointsRangeFilter'),
+    dict(
+        point_cloud_range=[
+            0.0,
+            -54.0,
+            -5.0,
+            108.0,
+            54.0,
+            3.0,
+        ],
+        type='ObjectRangeFilter'),
+    dict(classes=[
+        'pedestrian',
+    ], type='ObjectNameFilter'),
+    dict(type='PointShuffle'),
+    dict(
+        keys=[
+            'points',
+            'gt_bboxes_3d',
+            'gt_labels_3d',
+        ],
+        meta_keys=[
+            'box_type_3d',
+            'sample_idx',
+            'lidar_path',
+            'transformation_3d_flow',
+            'pcd_rotation',
+            'pcd_scale_factor',
+            'pcd_trans',
+            'lidar_aug_matrix',
+            'context',
+        ],
+        type='Pack3DDetInputs'),
+]
+val_cfg = dict()
+val_dataloader = dict(
+    batch_size=2,
+    dataset=dict(
+        ann_file='infos/zod_nuscenes_infos_val.pkl',
+        backend_args=None,
+        box_type_3d='LiDAR',
+        data_prefix=dict(pts=''),
+        data_root='/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/',
+        metainfo=dict(box_type_3d='LiDAR', classes=[
+            'pedestrian',
+        ]),
+        modality=dict(use_camera=False, use_lidar=True),
+        pipeline=[
+            dict(
+                backend_args=None,
+                coord_type='LIDAR',
+                load_dim=4,
+                type='LoadPointsFromFile',
+                use_dim=4),
+            dict(
+                point_cloud_range=[
+                    0.0,
+                    -54.0,
+                    -5.0,
+                    108.0,
+                    54.0,
+                    3.0,
+                ],
+                type='PointsRangeFilter'),
+            dict(
+                keys=[
+                    'points',
+                ],
+                meta_keys=[
+                    'box_type_3d',
+                    'sample_idx',
+                    'lidar_path',
+                    'num_pts_feats',
+                    'context',
+                ],
+                type='Pack3DDetInputs'),
+        ],
+        test_mode=True,
+        type='ZODDataset',
+        use_valid_flag=False,
+        with_velocity=False),
+    drop_last=False,
+    num_workers=4,
+    persistent_workers=True,
+    sampler=dict(shuffle=False, type='DefaultSampler'))
+val_evaluator = [
+    dict(iou_thr=[
+        0.25,
+        0.5,
+    ], type='IndoorMetric'),
+    dict(dist_thr=[
+        0.5,
+        1.0,
+        2.0,
+    ], type='CenterDistanceMetric'),
+]
+vis_backends = [
+    dict(type='LocalVisBackend'),
+]
+visualizer = dict(
+    name='visualizer',
+    type='Det3DLocalVisualizer',
+    vis_backends=[
+        dict(type='LocalVisBackend'),
+    ])
+voxel_size = [
+    0.075,
+    0.075,
+    0.2,
+]
+work_dir = '/home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only_moe/lidar-moe_4610527'
+
+05/22 19:57:14 - mmengine - INFO - Hooks will be executed in the following order:
+before_run:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) ExpertRespawnHook                  
+(BELOW_NORMAL) LoggerHook                         
+(BELOW_NORMAL) MoERoutingHook                     
+(BELOW_NORMAL) ContextRoutingStatsHook            
+(LOW         ) ValidationCurveHook                
+(LOW         ) ContextExpertUsageVisualizationHook
+ -------------------- 
+before_train:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+(BELOW_NORMAL) TrainingEfficiencyHook             
+(VERY_LOW    ) CheckpointHook                     
+(VERY_LOW    ) RunSummaryHook                     
+ -------------------- 
+before_train_epoch:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) DistSamplerSeedHook                
+(BELOW_NORMAL) TrainingEfficiencyHook             
+(BELOW_NORMAL) MoERoutingHook                     
+ -------------------- 
+before_train_iter:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+ -------------------- 
+after_train_iter:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) ExpertRespawnHook                  
+(BELOW_NORMAL) LoggerHook                         
+(BELOW_NORMAL) TrainingEfficiencyHook             
+(BELOW_NORMAL) MoERoutingHook                     
+(LOW         ) ParamSchedulerHook                 
+(VERY_LOW    ) CheckpointHook                     
+(VERY_LOW    ) RunSummaryHook                     
+ -------------------- 
+after_train_epoch:
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) ExpertRespawnHook                  
+(BELOW_NORMAL) TrainingEfficiencyHook             
+(BELOW_NORMAL) MoERoutingHook                     
+(LOW         ) ParamSchedulerHook                 
+(LOW         ) BEVFeatureVisualizationHook        
+(LOW         ) BEVPredictionVisualizationHook     
+(LOW         ) BEVValPredictionVisualizationHook  
+(VERY_LOW    ) CheckpointHook                     
+ -------------------- 
+before_val:
+(VERY_HIGH   ) RuntimeInfoHook                    
+ -------------------- 
+before_val_epoch:
+(NORMAL      ) IterTimerHook                      
+(BELOW_NORMAL) ContextRoutingStatsHook            
+(LOW         ) ContextExpertUsageVisualizationHook
+ -------------------- 
+before_val_iter:
+(NORMAL      ) IterTimerHook                      
+ -------------------- 
+after_val_iter:
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) Det3DVisualizationHook             
+(BELOW_NORMAL) LoggerHook                         
+(BELOW_NORMAL) MoERoutingHook                     
+(BELOW_NORMAL) ContextRoutingStatsHook            
+(LOW         ) ContextExpertUsageVisualizationHook
+ -------------------- 
+after_val_epoch:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+(BELOW_NORMAL) LoggerHook                         
+(BELOW_NORMAL) MoERoutingHook                     
+(BELOW_NORMAL) ContextRoutingStatsHook            
+(LOW         ) ParamSchedulerHook                 
+(LOW         ) ValidationCurveHook                
+(LOW         ) ContextExpertUsageVisualizationHook
+(VERY_LOW    ) CheckpointHook                     
+(VERY_LOW    ) RunSummaryHook                     
+ -------------------- 
+after_val:
+(VERY_HIGH   ) RuntimeInfoHook                    
+ -------------------- 
+after_train:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(VERY_LOW    ) CheckpointHook                     
+(VERY_LOW    ) RunSummaryHook                     
+ -------------------- 
+before_test:
+(VERY_HIGH   ) RuntimeInfoHook                    
+ -------------------- 
+before_test_epoch:
+(NORMAL      ) IterTimerHook                      
+ -------------------- 
+before_test_iter:
+(NORMAL      ) IterTimerHook                      
+ -------------------- 
+after_test_iter:
+(NORMAL      ) IterTimerHook                      
+(NORMAL      ) Det3DVisualizationHook             
+(BELOW_NORMAL) LoggerHook                         
+ -------------------- 
+after_test_epoch:
+(VERY_HIGH   ) RuntimeInfoHook                    
+(NORMAL      ) IterTimerHook                      
+(BELOW_NORMAL) LoggerHook                         
+ -------------------- 
+after_test:
+(VERY_HIGH   ) RuntimeInfoHook                    
+ -------------------- 
+after_run:
+(BELOW_NORMAL) LoggerHook                         
+ -------------------- 
+05/22 19:57:14 - mmengine - WARNING - LiDAR is not a meta file, simply parsed as meta information
+05/22 19:57:27 - mmengine - INFO - ------------------------------
+05/22 19:57:27 - mmengine - INFO - The length of training dataset: 79999
+05/22 19:57:27 - mmengine - INFO - The number of instances per category in the dataset:
++------------+--------+
+| category   | number |
++------------+--------+
+| pedestrian | 182784 |
++------------+--------+
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.0.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.0.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.0.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.1.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.1.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.3.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.3.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.3.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.4.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.4.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.4.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.4.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.4.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.4.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.6.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.6.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.6.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.7.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.7.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.7.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.7.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.7.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.7.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.9.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.9.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.9.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.10.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.10.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.10.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.10.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.10.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.10.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.12.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.12.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.12.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.13.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.13.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.13.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.13.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.13.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.13.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.15.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.15.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.15.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.16.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.16.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.16.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.16.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.16.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.0.16.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.0.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.0.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.0.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.1.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.1.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.3.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.3.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.3.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.4.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.4.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.4.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.4.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.4.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.4.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.6.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.6.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.6.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.7.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.7.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.7.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.7.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.7.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.7.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.9.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.9.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.9.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.10.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.10.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.10.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.10.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.10.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.10.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.12.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.12.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.12.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.13.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.13.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.13.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.13.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.13.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.13.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.15.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.15.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.15.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.16.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.16.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.16.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.16.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.16.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_backbone.blocks.1.16.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.0.0.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.0.0.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.0.0.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.0.1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.0.1.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.0.1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.0.1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.0.1.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.0.1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.1.0.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.1.0.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.1.0.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.1.1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.1.1.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.1.1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.1.1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.1.1.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- pts_neck.deblocks.1.1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.shared_conv.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.shared_conv.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.shared_conv.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.shared_conv.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.shared_conv.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.shared_conv.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.heatmap_head.0.conv.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.heatmap_head.0.conv.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.heatmap_head.0.conv.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.heatmap_head.0.bn.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.heatmap_head.0.bn.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.heatmap_head.0.bn.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.heatmap_head.0.bn.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.heatmap_head.0.bn.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.heatmap_head.0.bn.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.heatmap_head.1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.heatmap_head.1.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.heatmap_head.1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.heatmap_head.1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.heatmap_head.1.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.heatmap_head.1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.class_encoding.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.class_encoding.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.class_encoding.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.class_encoding.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.class_encoding.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.class_encoding.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_attn.attn.in_proj_weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_attn.attn.in_proj_weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_attn.attn.in_proj_weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_attn.attn.in_proj_bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_attn.attn.in_proj_bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_attn.attn.in_proj_bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_attn.attn.out_proj.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_attn.attn.out_proj.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_attn.attn.out_proj.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_attn.attn.out_proj.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_attn.attn.out_proj.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_attn.attn.out_proj.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_attn.attn.in_proj_weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_attn.attn.in_proj_weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_attn.attn.in_proj_weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_attn.attn.in_proj_bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_attn.attn.in_proj_bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_attn.attn.in_proj_bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_attn.attn.out_proj.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_attn.attn.out_proj.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_attn.attn.out_proj.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_attn.attn.out_proj.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_attn.attn.out_proj.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_attn.attn.out_proj.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.ffn.layers.0.0.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.ffn.layers.0.0.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.ffn.layers.0.0.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.ffn.layers.0.0.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.ffn.layers.0.0.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.ffn.layers.0.0.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.ffn.layers.1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.ffn.layers.1.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.ffn.layers.1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.ffn.layers.1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.ffn.layers.1.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.ffn.layers.1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.0.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.0.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.0.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.0.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.0.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.0.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.1.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.1.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.2.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.2.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.2.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.2.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.2.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.norms.2.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.0.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.0.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.0.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.0.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.0.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.0.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.1.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.1.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.3.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.3.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.3.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.3.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.3.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.self_posembed.position_embedding_head.3.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.0.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.0.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.0.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.0.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.0.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.0.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.1.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.1.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.3.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.3.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.3.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.3.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.3.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.decoder.0.cross_posembed.position_embedding_head.3.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.center.0.conv.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.center.0.conv.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.center.0.conv.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.center.0.bn.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.center.0.bn.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.center.0.bn.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.center.0.bn.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.center.0.bn.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.center.0.bn.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.center.1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.center.1.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.center.1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.center.1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.center.1.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.center.1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.height.0.conv.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.height.0.conv.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.height.0.conv.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.height.0.bn.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.height.0.bn.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.height.0.bn.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.height.0.bn.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.height.0.bn.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.height.0.bn.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.height.1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.height.1.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.height.1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.height.1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.height.1.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.height.1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.dim.0.conv.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.dim.0.conv.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.dim.0.conv.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.dim.0.bn.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.dim.0.bn.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.dim.0.bn.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.dim.0.bn.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.dim.0.bn.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.dim.0.bn.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.dim.1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.dim.1.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.dim.1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.dim.1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.dim.1.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.dim.1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.rot.0.conv.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.rot.0.conv.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.rot.0.conv.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.rot.0.bn.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.rot.0.bn.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.rot.0.bn.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.rot.0.bn.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.rot.0.bn.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.rot.0.bn.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.rot.1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.rot.1.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.rot.1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.rot.1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.rot.1.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.rot.1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.heatmap.0.conv.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.heatmap.0.conv.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.heatmap.0.conv.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.heatmap.0.bn.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.heatmap.0.bn.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.heatmap.0.bn.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.heatmap.0.bn.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.heatmap.0.bn.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.heatmap.0.bn.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.heatmap.1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.heatmap.1.weight:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.heatmap.1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.heatmap.1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.heatmap.1.bias:weight_decay=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bbox_head.prediction_heads.0.heatmap.1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.stem.0.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.stem.0.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.stem.0.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.stem.0.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.stem.1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.stem.1.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.stem.1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.stem.1.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.stem.1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.stem.1.bias:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.stem.1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.stem.1.bias:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.conv1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.conv1.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.conv1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.conv1.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.gn1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.gn1.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.gn1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.gn1.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.gn1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.gn1.bias:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.gn1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.gn1.bias:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.conv2.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.conv2.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.conv2.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.conv2.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.gn2.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.gn2.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.gn2.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.gn2.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.gn2.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.gn2.bias:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.gn2.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.0.gn2.bias:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.conv1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.conv1.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.conv1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.conv1.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.gn1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.gn1.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.gn1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.gn1.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.gn1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.gn1.bias:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.gn1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.gn1.bias:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.conv2.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.conv2.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.conv2.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.conv2.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.gn2.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.gn2.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.gn2.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.gn2.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.gn2.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.gn2.bias:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.gn2.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.1.gn2.bias:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.conv1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.conv1.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.conv1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.conv1.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.gn1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.gn1.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.gn1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.gn1.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.gn1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.gn1.bias:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.gn1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.gn1.bias:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.conv2.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.conv2.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.conv2.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.conv2.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.gn2.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.gn2.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.gn2.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.gn2.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.gn2.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.gn2.bias:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.gn2.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.gn2.bias:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.shortcut.0.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.shortcut.0.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.shortcut.0.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.shortcut.0.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.shortcut.1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.shortcut.1.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.shortcut.1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.shortcut.1.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.shortcut.1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.shortcut.1.bias:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.shortcut.1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.res_blocks.2.shortcut.1.bias:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.proj.1.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.proj.1.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.proj.1.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.proj.1.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.proj.1.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.proj.1.bias:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.proj.1.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.proj.1.bias:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.proj.2.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.proj.2.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.proj.2.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.proj.2.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.proj.2.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.proj.2.bias:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.proj.2.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_summary.proj.2.bias:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.0.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.0.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.0.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.0.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.0.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.0.bias:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.0.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.0.bias:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.2.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.2.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.2.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.2.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.2.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.2.bias:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.2.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.2.bias:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.4.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.4.weight:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.4.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.4.weight:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.4.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.4.bias:weight_decay=0.0005
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.4.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.context_head.4.bias:decay_mult=0.05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.gate.gate.weight:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.gate.gate.weight:weight_decay=0.0001
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.gate.gate.weight:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.gate.gate.weight:decay_mult=0.01
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.gate.gate.bias:lr=5e-05
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.gate.gate.bias:weight_decay=0.0001
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.gate.gate.bias:lr_mult=1.0
+05/22 19:57:27 - mmengine - INFO - paramwise_options -- bev_moe.gate.gate.bias:decay_mult=0.01
+05/22 19:57:29 - mmengine - INFO - ------------------------------
+05/22 19:57:29 - mmengine - INFO - The length of test dataset: 10000
+05/22 19:57:29 - mmengine - INFO - The number of instances per category in the dataset:
++------------+--------+
+| category   | number |
++------------+--------+
+| pedestrian | 23478  |
++------------+--------+
+05/22 19:57:29 - mmengine - WARNING - The prefix is not set in metric class IndoorMetric.
+05/22 19:57:29 - mmengine - WARNING - The prefix is not set in metric class CenterDistanceMetric.
+05/22 19:57:29 - mmengine - INFO - ExpertRespawnHook: dead threshold = 0.0250 (10% of uniform share), perturbation_std=0.02, max_respawns=5
+05/22 19:57:29 - mmengine - INFO - MoERoutingHook: artifacts → /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only_moe/lidar-moe_4610527/moe_routing
+Loads checkpoint by local backend from path: /mnt/tier2/project/p201222/u103958/checkpoints/bevfusion_lidar_voxel0075_second_secfpn_8xb4-cyclic-20e_nus-3d-2628f933.pth
+Loads checkpoint by local backend from path: /mnt/tier2/project/p201222/u103958/checkpoints/bevfusion_lidar_voxel0075_second_secfpn_8xb4-cyclic-20e_nus-3d-2628f933.pth
+Loads checkpoint by local backend from path: /mnt/tier2/project/p201222/u103958/checkpoints/bevfusion_lidar_voxel0075_second_secfpn_8xb4-cyclic-20e_nus-3d-2628f933.pth
+Loads checkpoint by local backend from path: /mnt/tier2/project/p201222/u103958/checkpoints/bevfusion_lidar_voxel0075_second_secfpn_8xb4-cyclic-20e_nus-3d-2628f933.pth
+The model and loaded state dict do not match exactly
+
+size mismatch for pts_middle_encoder.conv_input.0.weight: copying a param with shape torch.Size([16, 3, 3, 3, 5]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 4, 16]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer1.0.conv1.weight: copying a param with shape torch.Size([16, 3, 3, 3, 16]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 16, 16]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer1.0.conv2.weight: copying a param with shape torch.Size([16, 3, 3, 3, 16]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 16, 16]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer1.1.conv1.weight: copying a param with shape torch.Size([16, 3, 3, 3, 16]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 16, 16]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer1.1.conv2.weight: copying a param with shape torch.Size([16, 3, 3, 3, 16]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 16, 16]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer1.2.0.weight: copying a param with shape torch.Size([32, 3, 3, 3, 16]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 16, 32]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer2.0.conv1.weight: copying a param with shape torch.Size([32, 3, 3, 3, 32]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 32, 32]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer2.0.conv2.weight: copying a param with shape torch.Size([32, 3, 3, 3, 32]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 32, 32]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer2.1.conv1.weight: copying a param with shape torch.Size([32, 3, 3, 3, 32]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 32, 32]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer2.1.conv2.weight: copying a param with shape torch.Size([32, 3, 3, 3, 32]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 32, 32]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer2.2.0.weight: copying a param with shape torch.Size([64, 3, 3, 3, 32]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 32, 64]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer3.0.conv1.weight: copying a param with shape torch.Size([64, 3, 3, 3, 64]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 64, 64]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer3.0.conv2.weight: copying a param with shape torch.Size([64, 3, 3, 3, 64]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 64, 64]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer3.1.conv1.weight: copying a param with shape torch.Size([64, 3, 3, 3, 64]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 64, 64]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer3.1.conv2.weight: copying a param with shape torch.Size([64, 3, 3, 3, 64]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 64, 64]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer3.2.0.weight: copying a param with shape torch.Size([128, 3, 3, 3, 64]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 64, 128]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer4.0.conv1.weight: copying a param with shape torch.Size([128, 3, 3, 3, 128]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 128, 128]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer4.0.conv2.weight: copying a param with shape torch.Size([128, 3, 3, 3, 128]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 128, 128]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer4.1.conv1.weight: copying a param with shape torch.Size([128, 3, 3, 3, 128]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 128, 128]).
+size mismatch for pts_middle_encoder.encoder_layers.encoder_layer4.1.conv2.weight: copying a param with shape torch.Size([128, 3, 3, 3, 128]) from checkpoint, the shape in current model is torch.Size([3, 3, 3, 128, 128]).
+size mismatch for pts_middle_encoder.conv_out.0.weight: copying a param with shape torch.Size([128, 1, 1, 3, 128]) from checkpoint, the shape in current model is torch.Size([1, 1, 3, 128, 128]).
+size mismatch for bbox_head.heatmap_head.1.weight: copying a param with shape torch.Size([10, 128, 3, 3]) from checkpoint, the shape in current model is torch.Size([1, 128, 3, 3]).
+size mismatch for bbox_head.heatmap_head.1.bias: copying a param with shape torch.Size([10]) from checkpoint, the shape in current model is torch.Size([1]).
+size mismatch for bbox_head.class_encoding.weight: copying a param with shape torch.Size([128, 10, 1]) from checkpoint, the shape in current model is torch.Size([128, 1, 1]).
+size mismatch for bbox_head.prediction_heads.0.heatmap.1.weight: copying a param with shape torch.Size([10, 64, 1]) from checkpoint, the shape in current model is torch.Size([1, 64, 1]).
+size mismatch for bbox_head.prediction_heads.0.heatmap.1.bias: copying a param with shape torch.Size([10]) from checkpoint, the shape in current model is torch.Size([1]).
+unexpected key in source state_dict: bbox_head.prediction_heads.0.vel.0.conv.weight, bbox_head.prediction_heads.0.vel.0.bn.weight, bbox_head.prediction_heads.0.vel.0.bn.bias, bbox_head.prediction_heads.0.vel.0.bn.running_mean, bbox_head.prediction_heads.0.vel.0.bn.running_var, bbox_head.prediction_heads.0.vel.0.bn.num_batches_tracked, bbox_head.prediction_heads.0.vel.1.weight, bbox_head.prediction_heads.0.vel.1.bias
+
+missing keys in source state_dict: bev_moe.experts.0.block.0.weight, bev_moe.experts.0.block.1.weight, bev_moe.experts.0.block.1.bias, bev_moe.experts.0.block.1.running_mean, bev_moe.experts.0.block.1.running_var, bev_moe.experts.0.block.3.weight, bev_moe.experts.0.block.4.weight, bev_moe.experts.0.block.4.bias, bev_moe.experts.0.block.4.running_mean, bev_moe.experts.0.block.4.running_var, bev_moe.experts.1.block.0.weight, bev_moe.experts.1.block.1.weight, bev_moe.experts.1.block.1.bias, bev_moe.experts.1.block.1.running_mean, bev_moe.experts.1.block.1.running_var, bev_moe.experts.1.block.3.weight, bev_moe.experts.1.block.4.weight, bev_moe.experts.1.block.4.bias, bev_moe.experts.1.block.4.running_mean, bev_moe.experts.1.block.4.running_var, bev_moe.experts.2.block.0.weight, bev_moe.experts.2.block.1.weight, bev_moe.experts.2.block.1.bias, bev_moe.experts.2.block.1.running_mean, bev_moe.experts.2.block.1.running_var, bev_moe.experts.2.block.3.weight, bev_moe.experts.2.block.4.weight, bev_moe.experts.2.block.4.bias, bev_moe.experts.2.block.4.running_mean, bev_moe.experts.2.block.4.running_var, bev_moe.experts.3.block.0.weight, bev_moe.experts.3.block.1.weight, bev_moe.experts.3.block.1.bias, bev_moe.experts.3.block.1.running_mean, bev_moe.experts.3.block.1.running_var, bev_moe.experts.3.block.3.weight, bev_moe.experts.3.block.4.weight, bev_moe.experts.3.block.4.bias, bev_moe.experts.3.block.4.running_mean, bev_moe.experts.3.block.4.running_var, bev_moe.context_summary.stem.0.weight, bev_moe.context_summary.stem.1.weight, bev_moe.context_summary.stem.1.bias, bev_moe.context_summary.res_blocks.0.conv1.weight, bev_moe.context_summary.res_blocks.0.gn1.weight, bev_moe.context_summary.res_blocks.0.gn1.bias, bev_moe.context_summary.res_blocks.0.conv2.weight, bev_moe.context_summary.res_blocks.0.gn2.weight, bev_moe.context_summary.res_blocks.0.gn2.bias, bev_moe.context_summary.res_blocks.1.conv1.weight, bev_moe.context_summary.res_blocks.1.gn1.weight, bev_moe.context_summary.res_blocks.1.gn1.bias, bev_moe.context_summary.res_blocks.1.conv2.weight, bev_moe.context_summary.res_blocks.1.gn2.weight, bev_moe.context_summary.res_blocks.1.gn2.bias, bev_moe.context_summary.res_blocks.2.conv1.weight, bev_moe.context_summary.res_blocks.2.gn1.weight, bev_moe.context_summary.res_blocks.2.gn1.bias, bev_moe.context_summary.res_blocks.2.conv2.weight, bev_moe.context_summary.res_blocks.2.gn2.weight, bev_moe.context_summary.res_blocks.2.gn2.bias, bev_moe.context_summary.res_blocks.2.shortcut.0.weight, bev_moe.context_summary.res_blocks.2.shortcut.1.weight, bev_moe.context_summary.res_blocks.2.shortcut.1.bias, bev_moe.context_summary.proj.1.weight, bev_moe.context_summary.proj.1.bias, bev_moe.context_summary.proj.2.weight, bev_moe.context_summary.proj.2.bias, bev_moe.context_head.0.weight, bev_moe.context_head.0.bias, bev_moe.context_head.2.weight, bev_moe.context_head.2.bias, bev_moe.context_head.4.weight, bev_moe.context_head.4.bias, bev_moe.gate.gate.weight, bev_moe.gate.gate.bias
+
+05/22 19:57:30 - mmengine - INFO - Load checkpoint from /mnt/tier2/project/p201222/u103958/checkpoints/bevfusion_lidar_voxel0075_second_secfpn_8xb4-cyclic-20e_nus-3d-2628f933.pth
+05/22 19:57:30 - mmengine - WARNING - "FileClient" will be deprecated in future. Please use io functions in https://mmengine.readthedocs.io/en/latest/api/fileio.html#file-io
+05/22 19:57:30 - mmengine - WARNING - "HardDiskBackend" is the alias of "LocalBackend" and the former will be deprecated in future.
+05/22 19:57:30 - mmengine - INFO - Checkpoints will be saved to /home/users/u103958/projects/multimodal-MoE/outputs/runs/zod_lidar_only_moe/lidar-moe_4610527.
+05/22 19:58:17 - mmengine - INFO - Epoch(train)  [1][  50/5000]  base_lr: 5.0002e-05 lr: 5.0002e-05  eta: 1 day, 15:04:47  time: 0.9382  data_time: 0.0394  memory: 16082  grad_norm: nan  loss: 4172.2180  loss_heatmap: 4124.2318  layer_-1_loss_cls: 42.7232  layer_-1_loss_bbox: 5.2007  matched_ious: 0.0040  moe_importance_loss: 0.0011  moe_router_z_loss: 0.0059  moe_ctx_aux_loss_weighted: 0.0552
+05/22 19:58:48 - mmengine - INFO - Epoch(train)  [1][ 100/5000]  base_lr: 5.0007e-05 lr: 5.0007e-05  eta: 1 day, 8:28:57  time: 0.6220  data_time: 0.0117  memory: 16089  grad_norm: 11860.2734  loss: 1078.0502  loss_heatmap: 1046.3001  layer_-1_loss_cls: 27.3057  layer_-1_loss_bbox: 4.3834  matched_ious: 0.0048  moe_importance_loss: 0.0005  moe_router_z_loss: 0.0062  moe_ctx_aux_loss_weighted: 0.0542  sec_per_iter: 0.9384  iters_per_sec: 1.0700  samples_per_sec: 17.0500  samples_per_sec_per_gpu: 4.2600  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 19:59:20 - mmengine - INFO - Epoch(train)  [1][ 150/5000]  base_lr: 5.0015e-05 lr: 5.0015e-05  eta: 1 day, 6:27:49  time: 0.6354  data_time: 0.0182  memory: 16034  grad_norm: 4511.3055  loss: 353.7607  loss_heatmap: 329.3993  layer_-1_loss_cls: 17.9406  layer_-1_loss_bbox: 6.3588  matched_ious: 0.0014  moe_importance_loss: 0.0014  moe_router_z_loss: 0.0064  moe_ctx_aux_loss_weighted: 0.0543  sec_per_iter: 0.7827  iters_per_sec: 1.2800  samples_per_sec: 20.4400  samples_per_sec_per_gpu: 5.1100  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 19:59:51 - mmengine - INFO - Epoch(train)  [1][ 200/5000]  base_lr: 5.0027e-05 lr: 5.0027e-05  eta: 1 day, 5:21:00  time: 0.6258  data_time: 0.0124  memory: 16004  grad_norm: 1547.7257  loss: 114.7294  loss_heatmap: 95.0024  layer_-1_loss_cls: 11.6573  layer_-1_loss_bbox: 8.0072  matched_ious: 0.0036  moe_importance_loss: 0.0019  moe_router_z_loss: 0.0066  moe_ctx_aux_loss_weighted: 0.0541  sec_per_iter: 0.7322  iters_per_sec: 1.3700  samples_per_sec: 21.8500  samples_per_sec_per_gpu: 5.4600  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:00:22 - mmengine - INFO - Epoch(train)  [1][ 250/5000]  base_lr: 5.0043e-05 lr: 5.0043e-05  eta: 1 day, 4:34:44  time: 0.6138  data_time: 0.0112  memory: 16121  grad_norm: 692.0996  loss: 46.2421  loss_heatmap: 31.5165  layer_-1_loss_cls: 8.8188  layer_-1_loss_bbox: 5.8458  matched_ious: 0.0280  moe_importance_loss: 0.0015  moe_router_z_loss: 0.0055  moe_ctx_aux_loss_weighted: 0.0540  sec_per_iter: 0.7056  iters_per_sec: 1.4200  samples_per_sec: 22.6800  samples_per_sec_per_gpu: 5.6700  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:00:53 - mmengine - INFO - Epoch(train)  [1][ 300/5000]  base_lr: 5.0062e-05 lr: 5.0062e-05  eta: 1 day, 4:06:11  time: 0.6198  data_time: 0.0133  memory: 16039  grad_norm: 185.9396  loss: 17.4978  loss_heatmap: 9.1406  layer_-1_loss_cls: 6.1690  layer_-1_loss_bbox: 2.1266  matched_ious: 0.0425  moe_importance_loss: 0.0021  moe_router_z_loss: 0.0059  moe_ctx_aux_loss_weighted: 0.0537  sec_per_iter: 0.6873  iters_per_sec: 1.4600  samples_per_sec: 23.2800  samples_per_sec_per_gpu: 5.8200  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:01:23 - mmengine - INFO - Epoch(train)  [1][ 350/5000]  base_lr: 5.0085e-05 lr: 5.0085e-05  eta: 1 day, 3:41:58  time: 0.6094  data_time: 0.0112  memory: 16064  grad_norm: 106.7824  loss: 11.0695  loss_heatmap: 4.9861  layer_-1_loss_cls: 4.6498  layer_-1_loss_bbox: 1.3720  matched_ious: 0.1099  moe_importance_loss: 0.0018  moe_router_z_loss: 0.0066  moe_ctx_aux_loss_weighted: 0.0532  sec_per_iter: 0.6759  iters_per_sec: 1.4800  samples_per_sec: 23.6700  samples_per_sec_per_gpu: 5.9200  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:01:56 - mmengine - INFO - Epoch(train)  [1][ 400/5000]  base_lr: 5.0110e-05 lr: 5.0110e-05  eta: 1 day, 3:38:20  time: 0.6565  data_time: 0.0117  memory: 16033  grad_norm: 77.8063  loss: 6.9593  loss_heatmap: 3.0327  layer_-1_loss_cls: 2.7798  layer_-1_loss_bbox: 1.0858  matched_ious: 0.1616  moe_importance_loss: 0.0018  moe_router_z_loss: 0.0069  moe_ctx_aux_loss_weighted: 0.0524  sec_per_iter: 0.6665  iters_per_sec: 1.5000  samples_per_sec: 24.0100  samples_per_sec_per_gpu: 6.0000  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:02:27 - mmengine - INFO - Epoch(train)  [1][ 450/5000]  base_lr: 5.0140e-05 lr: 5.0140e-05  eta: 1 day, 3:24:05  time: 0.6157  data_time: 0.0126  memory: 15913  grad_norm: 54.3742  loss: 5.2416  loss_heatmap: 2.2727  layer_-1_loss_cls: 2.0318  layer_-1_loss_bbox: 0.8765  matched_ious: 0.1949  moe_importance_loss: 0.0019  moe_router_z_loss: 0.0066  moe_ctx_aux_loss_weighted: 0.0521  sec_per_iter: 0.6652  iters_per_sec: 1.5000  samples_per_sec: 24.0500  samples_per_sec_per_gpu: 6.0100  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:02:58 - mmengine - INFO - Epoch(train)  [1][ 500/5000]  base_lr: 5.0173e-05 lr: 5.0173e-05  eta: 1 day, 3:14:15  time: 0.6223  data_time: 0.0127  memory: 16051  grad_norm: 68.3134  loss: 4.5251  loss_heatmap: 1.9934  layer_-1_loss_cls: 1.6211  layer_-1_loss_bbox: 0.8474  matched_ious: 0.1064  moe_importance_loss: 0.0024  moe_router_z_loss: 0.0074  moe_ctx_aux_loss_weighted: 0.0534  sec_per_iter: 0.6597  iters_per_sec: 1.5200  samples_per_sec: 24.2500  samples_per_sec_per_gpu: 6.0600  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:03:30 - mmengine - INFO - Epoch(train)  [1][ 550/5000]  base_lr: 5.0209e-05 lr: 5.0209e-05  eta: 1 day, 3:08:41  time: 0.6337  data_time: 0.0115  memory: 16084  grad_norm: 35.4518  loss: 3.7981  loss_heatmap: 1.7297  layer_-1_loss_cls: 1.2771  layer_-1_loss_bbox: 0.7297  matched_ious: 0.1778  moe_importance_loss: 0.0020  moe_router_z_loss: 0.0072  moe_ctx_aux_loss_weighted: 0.0523  sec_per_iter: 0.6559  iters_per_sec: 1.5200  samples_per_sec: 24.3900  samples_per_sec_per_gpu: 6.1000  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:04:01 - mmengine - INFO - Epoch(train)  [1][ 600/5000]  base_lr: 5.0249e-05 lr: 5.0249e-05  eta: 1 day, 3:04:09  time: 0.6346  data_time: 0.0119  memory: 15915  grad_norm: 35.2257  loss: 3.2825  loss_heatmap: 1.4809  layer_-1_loss_cls: 1.0026  layer_-1_loss_bbox: 0.7390  matched_ious: 0.2502  moe_importance_loss: 0.0016  moe_router_z_loss: 0.0062  moe_ctx_aux_loss_weighted: 0.0523  sec_per_iter: 0.6539  iters_per_sec: 1.5300  samples_per_sec: 24.4700  samples_per_sec_per_gpu: 6.1200  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:04:32 - mmengine - INFO - Epoch(train)  [1][ 650/5000]  base_lr: 5.0292e-05 lr: 5.0292e-05  eta: 1 day, 2:57:00  time: 0.6177  data_time: 0.0102  memory: 15921  grad_norm: 31.3302  loss: 3.0811  loss_heatmap: 1.4203  layer_-1_loss_cls: 0.9113  layer_-1_loss_bbox: 0.6905  matched_ious: 0.1918  moe_importance_loss: 0.0015  moe_router_z_loss: 0.0061  moe_ctx_aux_loss_weighted: 0.0515  sec_per_iter: 0.6523  iters_per_sec: 1.5300  samples_per_sec: 24.5300  samples_per_sec_per_gpu: 6.1300  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:05:04 - mmengine - INFO - Epoch(train)  [1][ 700/5000]  base_lr: 5.0339e-05 lr: 5.0339e-05  eta: 1 day, 2:53:04  time: 0.6306  data_time: 0.0117  memory: 16028  grad_norm: 28.9038  loss: 2.8644  loss_heatmap: 1.3468  layer_-1_loss_cls: 0.7483  layer_-1_loss_bbox: 0.7122  matched_ious: 0.2038  moe_importance_loss: 0.0015  moe_router_z_loss: 0.0059  moe_ctx_aux_loss_weighted: 0.0499  sec_per_iter: 0.6497  iters_per_sec: 1.5400  samples_per_sec: 24.6300  samples_per_sec_per_gpu: 6.1600  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:05:35 - mmengine - INFO - Epoch(train)  [1][ 750/5000]  base_lr: 5.0389e-05 lr: 5.0389e-05  eta: 1 day, 2:50:19  time: 0.6349  data_time: 0.0130  memory: 16002  grad_norm: 28.9354  loss: 2.6398  loss_heatmap: 1.2575  layer_-1_loss_cls: 0.6580  layer_-1_loss_bbox: 0.6690  matched_ious: 0.2370  moe_importance_loss: 0.0011  moe_router_z_loss: 0.0049  moe_ctx_aux_loss_weighted: 0.0492  sec_per_iter: 0.6483  iters_per_sec: 1.5400  samples_per_sec: 24.6800  samples_per_sec_per_gpu: 6.1700  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:06:07 - mmengine - INFO - Epoch(train)  [1][ 800/5000]  base_lr: 5.0443e-05 lr: 5.0443e-05  eta: 1 day, 2:46:52  time: 0.6287  data_time: 0.0114  memory: 16103  grad_norm: 29.6251  loss: 2.6622  loss_heatmap: 1.2616  layer_-1_loss_cls: 0.6622  layer_-1_loss_bbox: 0.6812  matched_ious: 0.1263  moe_importance_loss: 0.0014  moe_router_z_loss: 0.0053  moe_ctx_aux_loss_weighted: 0.0505  sec_per_iter: 0.6474  iters_per_sec: 1.5400  samples_per_sec: 24.7100  samples_per_sec_per_gpu: 6.1800  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:06:38 - mmengine - INFO - Epoch(train)  [1][ 850/5000]  base_lr: 5.0500e-05 lr: 5.0500e-05  eta: 1 day, 2:42:59  time: 0.6233  data_time: 0.0120  memory: 16034  grad_norm: 32.7134  loss: 2.6316  loss_heatmap: 1.2531  layer_-1_loss_cls: 0.6518  layer_-1_loss_bbox: 0.6724  matched_ious: 0.2735  moe_importance_loss: 0.0015  moe_router_z_loss: 0.0049  moe_ctx_aux_loss_weighted: 0.0481  sec_per_iter: 0.6463  iters_per_sec: 1.5500  samples_per_sec: 24.7600  samples_per_sec_per_gpu: 6.1900  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:07:10 - mmengine - INFO - Epoch(train)  [1][ 900/5000]  base_lr: 5.0561e-05 lr: 5.0561e-05  eta: 1 day, 2:40:46  time: 0.6326  data_time: 0.0130  memory: 16061  grad_norm: 29.5075  loss: 2.5144  loss_heatmap: 1.2473  layer_-1_loss_cls: 0.5827  layer_-1_loss_bbox: 0.6299  matched_ious: 0.1753  moe_importance_loss: 0.0014  moe_router_z_loss: 0.0047  moe_ctx_aux_loss_weighted: 0.0485  sec_per_iter: 0.6449  iters_per_sec: 1.5500  samples_per_sec: 24.8100  samples_per_sec_per_gpu: 6.2000  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:07:41 - mmengine - INFO - Epoch(train)  [1][ 950/5000]  base_lr: 5.0625e-05 lr: 5.0625e-05  eta: 1 day, 2:37:57  time: 0.6268  data_time: 0.0125  memory: 16108  grad_norm: 30.6866  loss: 2.5389  loss_heatmap: 1.2372  layer_-1_loss_cls: 0.5875  layer_-1_loss_bbox: 0.6597  matched_ious: 0.2586  moe_importance_loss: 0.0015  moe_router_z_loss: 0.0046  moe_ctx_aux_loss_weighted: 0.0484  sec_per_iter: 0.6442  iters_per_sec: 1.5500  samples_per_sec: 24.8400  samples_per_sec_per_gpu: 6.2100  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:08:13 - mmengine - INFO - Exp name: zod_lidar_only_moe_dense4_30ep_20260522_195637
+05/22 20:08:13 - mmengine - INFO - Epoch(train)  [1][1000/5000]  base_lr: 5.0692e-05 lr: 5.0692e-05  eta: 1 day, 2:37:03  time: 0.6403  data_time: 0.0113  memory: 16053  grad_norm: 27.7601  loss: 2.7094  loss_heatmap: 1.2641  layer_-1_loss_cls: 0.5538  layer_-1_loss_bbox: 0.8370  matched_ious: 0.2357  moe_importance_loss: 0.0014  moe_router_z_loss: 0.0051  moe_ctx_aux_loss_weighted: 0.0480  sec_per_iter: 0.6433  iters_per_sec: 1.5500  samples_per_sec: 24.8700  samples_per_sec_per_gpu: 6.2200  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:08:44 - mmengine - INFO - Epoch(train)  [1][1050/5000]  base_lr: 5.0763e-05 lr: 5.0763e-05  eta: 1 day, 2:32:29  time: 0.6090  data_time: 0.0111  memory: 16335  grad_norm: 26.8689  loss: 2.4028  loss_heatmap: 1.1807  layer_-1_loss_cls: 0.5046  layer_-1_loss_bbox: 0.6651  matched_ious: 0.3404  moe_importance_loss: 0.0012  moe_router_z_loss: 0.0047  moe_ctx_aux_loss_weighted: 0.0466  sec_per_iter: 0.6432  iters_per_sec: 1.5500  samples_per_sec: 24.8800  samples_per_sec_per_gpu: 6.2200  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 16626.0000
+05/22 20:09:14 - mmengine - INFO - Epoch(train)  [1][1100/5000]  base_lr: 5.0838e-05 lr: 5.0838e-05  eta: 1 day, 2:28:58  time: 0.6150  data_time: 0.0118  memory: 15866  grad_norm: 28.3992  loss: 2.2691  loss_heatmap: 1.1007  layer_-1_loss_cls: 0.4905  layer_-1_loss_bbox: 0.6258  matched_ious: 0.1192  moe_importance_loss: 0.0012  moe_router_z_loss: 0.0052  moe_ctx_aux_loss_weighted: 0.0456  sec_per_iter: 0.6415  iters_per_sec: 1.5600  samples_per_sec: 24.9400  samples_per_sec_per_gpu: 6.2400  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:09:46 - mmengine - INFO - Epoch(train)  [1][1150/5000]  base_lr: 5.0916e-05 lr: 5.0916e-05  eta: 1 day, 2:27:05  time: 0.6278  data_time: 0.0113  memory: 16197  grad_norm: 24.8328  loss: 2.2720  loss_heatmap: 1.1179  layer_-1_loss_cls: 0.4801  layer_-1_loss_bbox: 0.6214  matched_ious: 0.2654  moe_importance_loss: 0.0012  moe_router_z_loss: 0.0054  moe_ctx_aux_loss_weighted: 0.0459  sec_per_iter: 0.6403  iters_per_sec: 1.5600  samples_per_sec: 24.9900  samples_per_sec_per_gpu: 6.2500  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:10:16 - mmengine - INFO - Epoch(train)  [1][1200/5000]  base_lr: 5.0997e-05 lr: 5.0997e-05  eta: 1 day, 2:23:25  time: 0.6095  data_time: 0.0109  memory: 16079  grad_norm: 25.6840  loss: 2.1845  loss_heatmap: 1.0506  layer_-1_loss_cls: 0.4397  layer_-1_loss_bbox: 0.6412  matched_ious: 0.1091  moe_importance_loss: 0.0009  moe_router_z_loss: 0.0051  moe_ctx_aux_loss_weighted: 0.0469  sec_per_iter: 0.6398  iters_per_sec: 1.5600  samples_per_sec: 25.0100  samples_per_sec_per_gpu: 6.2500  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:10:47 - mmengine - INFO - Epoch(train)  [1][1250/5000]  base_lr: 5.1082e-05 lr: 5.1082e-05  eta: 1 day, 2:20:05  time: 0.6101  data_time: 0.0109  memory: 16060  grad_norm: 26.6029  loss: 2.2804  loss_heatmap: 1.1250  layer_-1_loss_cls: 0.4521  layer_-1_loss_bbox: 0.6532  matched_ious: 0.1954  moe_importance_loss: 0.0008  moe_router_z_loss: 0.0049  moe_ctx_aux_loss_weighted: 0.0445  sec_per_iter: 0.6385  iters_per_sec: 1.5700  samples_per_sec: 25.0600  samples_per_sec_per_gpu: 6.2600  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:11:18 - mmengine - INFO - Epoch(train)  [1][1300/5000]  base_lr: 5.1170e-05 lr: 5.1170e-05  eta: 1 day, 2:18:09  time: 0.6227  data_time: 0.0113  memory: 16078  grad_norm: 25.8611  loss: 2.2487  loss_heatmap: 1.1165  layer_-1_loss_cls: 0.4337  layer_-1_loss_bbox: 0.6484  matched_ious: 0.2382  moe_importance_loss: 0.0008  moe_router_z_loss: 0.0043  moe_ctx_aux_loss_weighted: 0.0450  sec_per_iter: 0.6374  iters_per_sec: 1.5700  samples_per_sec: 25.1000  samples_per_sec_per_gpu: 6.2800  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:11:49 - mmengine - INFO - Epoch(train)  [1][1350/5000]  base_lr: 5.1262e-05 lr: 5.1262e-05  eta: 1 day, 2:15:47  time: 0.6167  data_time: 0.0109  memory: 16030  grad_norm: 21.8866  loss: 2.1194  loss_heatmap: 1.0070  layer_-1_loss_cls: 0.3936  layer_-1_loss_bbox: 0.6680  matched_ious: 0.2250  moe_importance_loss: 0.0007  moe_router_z_loss: 0.0043  moe_ctx_aux_loss_weighted: 0.0458  sec_per_iter: 0.6368  iters_per_sec: 1.5700  samples_per_sec: 25.1200  samples_per_sec_per_gpu: 6.2800  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:12:20 - mmengine - INFO - Epoch(train)  [1][1400/5000]  base_lr: 5.1357e-05 lr: 5.1357e-05  eta: 1 day, 2:14:35  time: 0.6285  data_time: 0.0115  memory: 15951  grad_norm: 22.9224  loss: 2.0923  loss_heatmap: 1.0307  layer_-1_loss_cls: 0.3869  layer_-1_loss_bbox: 0.6246  matched_ious: 0.1521  moe_importance_loss: 0.0007  moe_router_z_loss: 0.0042  moe_ctx_aux_loss_weighted: 0.0452  sec_per_iter: 0.6361  iters_per_sec: 1.5700  samples_per_sec: 25.1500  samples_per_sec_per_gpu: 6.2900  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:12:51 - mmengine - INFO - Epoch(train)  [1][1450/5000]  base_lr: 5.1455e-05 lr: 5.1455e-05  eta: 1 day, 2:13:12  time: 0.6257  data_time: 0.0118  memory: 16016  grad_norm: 30.5383  loss: 2.1114  loss_heatmap: 1.0624  layer_-1_loss_cls: 0.3915  layer_-1_loss_bbox: 0.6068  matched_ious: 0.2327  moe_importance_loss: 0.0008  moe_router_z_loss: 0.0042  moe_ctx_aux_loss_weighted: 0.0456  sec_per_iter: 0.6358  iters_per_sec: 1.5700  samples_per_sec: 25.1600  samples_per_sec_per_gpu: 6.2900  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:13:23 - mmengine - INFO - Epoch(train)  [1][1500/5000]  base_lr: 5.1558e-05 lr: 5.1558e-05  eta: 1 day, 2:13:05  time: 0.6405  data_time: 0.0111  memory: 16068  grad_norm: 24.3126  loss: 2.1761  loss_heatmap: 1.0847  layer_-1_loss_cls: 0.3817  layer_-1_loss_bbox: 0.6587  matched_ious: 0.2478  moe_importance_loss: 0.0010  moe_router_z_loss: 0.0044  moe_ctx_aux_loss_weighted: 0.0456  sec_per_iter: 0.6355  iters_per_sec: 1.5700  samples_per_sec: 25.1800  samples_per_sec_per_gpu: 6.2900  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:13:57 - mmengine - INFO - Epoch(train)  [1][1550/5000]  base_lr: 5.1663e-05 lr: 5.1663e-05  eta: 1 day, 2:15:19  time: 0.6703  data_time: 0.0117  memory: 16193  grad_norm: 28.6398  loss: 2.1001  loss_heatmap: 1.0242  layer_-1_loss_cls: 0.3738  layer_-1_loss_bbox: 0.6515  matched_ious: 0.2577  moe_importance_loss: 0.0012  moe_router_z_loss: 0.0042  moe_ctx_aux_loss_weighted: 0.0451  sec_per_iter: 0.6356  iters_per_sec: 1.5700  samples_per_sec: 25.1700  samples_per_sec_per_gpu: 6.2900  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:14:28 - mmengine - INFO - Epoch(train)  [1][1600/5000]  base_lr: 5.1772e-05 lr: 5.1772e-05  eta: 1 day, 2:13:32  time: 0.6205  data_time: 0.0105  memory: 15883  grad_norm: 26.3114  loss: 2.1106  loss_heatmap: 1.0139  layer_-1_loss_cls: 0.3627  layer_-1_loss_bbox: 0.6837  matched_ious: 0.1554  moe_importance_loss: 0.0014  moe_router_z_loss: 0.0047  moe_ctx_aux_loss_weighted: 0.0442  sec_per_iter: 0.6367  iters_per_sec: 1.5700  samples_per_sec: 25.1300  samples_per_sec_per_gpu: 6.2800  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:14:59 - mmengine - INFO - Epoch(train)  [1][1650/5000]  base_lr: 5.1884e-05 lr: 5.1884e-05  eta: 1 day, 2:12:42  time: 0.6321  data_time: 0.0120  memory: 15917  grad_norm: 20.4475  loss: 2.0652  loss_heatmap: 0.9891  layer_-1_loss_cls: 0.3570  layer_-1_loss_bbox: 0.6681  matched_ious: 0.1514  moe_importance_loss: 0.0013  moe_router_z_loss: 0.0039  moe_ctx_aux_loss_weighted: 0.0458  sec_per_iter: 0.6362  iters_per_sec: 1.5700  samples_per_sec: 25.1500  samples_per_sec_per_gpu: 6.2900  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:15:32 - mmengine - INFO - Epoch(train)  [1][1700/5000]  base_lr: 5.2000e-05 lr: 5.2000e-05  eta: 1 day, 2:13:20  time: 0.6521  data_time: 0.0118  memory: 16000  grad_norm: 20.1548  loss: 1.9389  loss_heatmap: 0.9465  layer_-1_loss_cls: 0.3563  layer_-1_loss_bbox: 0.5869  matched_ious: 0.2209  moe_importance_loss: 0.0011  moe_router_z_loss: 0.0036  moe_ctx_aux_loss_weighted: 0.0443  sec_per_iter: 0.6361  iters_per_sec: 1.5700  samples_per_sec: 25.1500  samples_per_sec_per_gpu: 6.2900  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:16:03 - mmengine - INFO - Epoch(train)  [1][1750/5000]  base_lr: 5.2119e-05 lr: 5.2119e-05  eta: 1 day, 2:12:00  time: 0.6253  data_time: 0.0126  memory: 15995  grad_norm: 19.6113  loss: 2.0548  loss_heatmap: 0.9643  layer_-1_loss_cls: 0.3341  layer_-1_loss_bbox: 0.7066  matched_ious: 0.2137  moe_importance_loss: 0.0012  moe_router_z_loss: 0.0041  moe_ctx_aux_loss_weighted: 0.0445  sec_per_iter: 0.6366  iters_per_sec: 1.5700  samples_per_sec: 25.1300  samples_per_sec_per_gpu: 6.2800  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:16:36 - mmengine - INFO - Epoch(train)  [1][1800/5000]  base_lr: 5.2242e-05 lr: 5.2242e-05  eta: 1 day, 2:12:46  time: 0.6551  data_time: 0.0124  memory: 16045  grad_norm: 23.2049  loss: 2.0383  loss_heatmap: 0.9890  layer_-1_loss_cls: 0.3529  layer_-1_loss_bbox: 0.6465  matched_ious: 0.1408  moe_importance_loss: 0.0015  moe_router_z_loss: 0.0045  moe_ctx_aux_loss_weighted: 0.0440  sec_per_iter: 0.6363  iters_per_sec: 1.5700  samples_per_sec: 25.1500  samples_per_sec_per_gpu: 6.2900  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:17:08 - mmengine - INFO - Epoch(train)  [1][1850/5000]  base_lr: 5.2368e-05 lr: 5.2368e-05  eta: 1 day, 2:11:50  time: 0.6307  data_time: 0.0114  memory: 16071  grad_norm: 19.7353  loss: 2.0301  loss_heatmap: 0.9931  layer_-1_loss_cls: 0.3491  layer_-1_loss_bbox: 0.6381  matched_ious: 0.2001  moe_importance_loss: 0.0014  moe_router_z_loss: 0.0046  moe_ctx_aux_loss_weighted: 0.0438  sec_per_iter: 0.6368  iters_per_sec: 1.5700  samples_per_sec: 25.1300  samples_per_sec_per_gpu: 6.2800  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:17:39 - mmengine - INFO - Epoch(train)  [1][1900/5000]  base_lr: 5.2498e-05 lr: 5.2498e-05  eta: 1 day, 2:10:28  time: 0.6236  data_time: 0.0164  memory: 15938  grad_norm: 21.5621  loss: 2.0858  loss_heatmap: 1.0513  layer_-1_loss_cls: 0.3555  layer_-1_loss_bbox: 0.6285  matched_ious: 0.1657  moe_importance_loss: 0.0011  moe_router_z_loss: 0.0040  moe_ctx_aux_loss_weighted: 0.0455  sec_per_iter: 0.6367  iters_per_sec: 1.5700  samples_per_sec: 25.1300  samples_per_sec_per_gpu: 6.2800  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:18:12 - mmengine - INFO - Epoch(train)  [1][1950/5000]  base_lr: 5.2631e-05 lr: 5.2631e-05  eta: 1 day, 2:11:16  time: 0.6573  data_time: 0.0144  memory: 16129  grad_norm: 20.8941  loss: 1.8932  loss_heatmap: 0.9397  layer_-1_loss_cls: 0.3199  layer_-1_loss_bbox: 0.5854  matched_ious: 0.1817  moe_importance_loss: 0.0013  moe_router_z_loss: 0.0045  moe_ctx_aux_loss_weighted: 0.0424  sec_per_iter: 0.6363  iters_per_sec: 1.5700  samples_per_sec: 25.1500  samples_per_sec_per_gpu: 6.2900  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:18:44 - mmengine - INFO - Exp name: zod_lidar_only_moe_dense4_30ep_20260522_195637
+05/22 20:18:44 - mmengine - INFO - Epoch(train)  [1][2000/5000]  base_lr: 5.2767e-05 lr: 5.2767e-05  eta: 1 day, 2:11:46  time: 0.6535  data_time: 0.0111  memory: 16116  grad_norm: 19.7902  loss: 1.8863  loss_heatmap: 0.9123  layer_-1_loss_cls: 0.3236  layer_-1_loss_bbox: 0.6039  matched_ious: 0.1344  moe_importance_loss: 0.0010  moe_router_z_loss: 0.0041  moe_ctx_aux_loss_weighted: 0.0412  sec_per_iter: 0.6368  iters_per_sec: 1.5700  samples_per_sec: 25.1300  samples_per_sec_per_gpu: 6.2800  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:19:16 - mmengine - INFO - Epoch(train)  [1][2050/5000]  base_lr: 5.2907e-05 lr: 5.2907e-05  eta: 1 day, 2:11:03  time: 0.6342  data_time: 0.0118  memory: 16012  grad_norm: 19.9594  loss: 1.9445  loss_heatmap: 0.9391  layer_-1_loss_cls: 0.3136  layer_-1_loss_bbox: 0.6406  matched_ious: 0.2097  moe_importance_loss: 0.0011  moe_router_z_loss: 0.0037  moe_ctx_aux_loss_weighted: 0.0464  sec_per_iter: 0.6372  iters_per_sec: 1.5700  samples_per_sec: 25.1100  samples_per_sec_per_gpu: 6.2800  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:19:47 - mmengine - INFO - Epoch(train)  [1][2100/5000]  base_lr: 5.3051e-05 lr: 5.3051e-05  eta: 1 day, 2:09:28  time: 0.6192  data_time: 0.0131  memory: 16042  grad_norm: 21.9810  loss: 1.9580  loss_heatmap: 0.9424  layer_-1_loss_cls: 0.3175  layer_-1_loss_bbox: 0.6487  matched_ious: 0.3215  moe_importance_loss: 0.0011  moe_router_z_loss: 0.0040  moe_ctx_aux_loss_weighted: 0.0443  sec_per_iter: 0.6372  iters_per_sec: 1.5700  samples_per_sec: 25.1100  samples_per_sec_per_gpu: 6.2800  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:20:19 - mmengine - INFO - Epoch(train)  [1][2150/5000]  base_lr: 5.3197e-05 lr: 5.3197e-05  eta: 1 day, 2:09:10  time: 0.6406  data_time: 0.0116  memory: 16013  grad_norm: 21.3662  loss: 1.9135  loss_heatmap: 0.9463  layer_-1_loss_cls: 0.3150  layer_-1_loss_bbox: 0.6025  matched_ious: 0.3298  moe_importance_loss: 0.0009  moe_router_z_loss: 0.0036  moe_ctx_aux_loss_weighted: 0.0452  sec_per_iter: 0.6367  iters_per_sec: 1.5700  samples_per_sec: 25.1300  samples_per_sec_per_gpu: 6.2800  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:20:52 - mmengine - INFO - Epoch(train)  [1][2200/5000]  base_lr: 5.3347e-05 lr: 5.3347e-05  eta: 1 day, 2:09:56  time: 0.6599  data_time: 0.0132  memory: 15825  grad_norm: 21.4107  loss: 2.1060  loss_heatmap: 1.0070  layer_-1_loss_cls: 0.3236  layer_-1_loss_bbox: 0.7284  matched_ious: 0.2466  moe_importance_loss: 0.0008  moe_router_z_loss: 0.0034  moe_ctx_aux_loss_weighted: 0.0427  sec_per_iter: 0.6368  iters_per_sec: 1.5700  samples_per_sec: 25.1200  samples_per_sec_per_gpu: 6.2800  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:21:24 - mmengine - INFO - Epoch(train)  [1][2250/5000]  base_lr: 5.3501e-05 lr: 5.3501e-05  eta: 1 day, 2:09:51  time: 0.6456  data_time: 0.0126  memory: 15886  grad_norm: 21.0556  loss: 2.0265  loss_heatmap: 0.9851  layer_-1_loss_cls: 0.3157  layer_-1_loss_bbox: 0.6782  matched_ious: 0.2545  moe_importance_loss: 0.0010  moe_router_z_loss: 0.0037  moe_ctx_aux_loss_weighted: 0.0429  sec_per_iter: 0.6373  iters_per_sec: 1.5700  samples_per_sec: 25.1000  samples_per_sec_per_gpu: 6.2800  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:21:57 - mmengine - INFO - Epoch(train)  [1][2300/5000]  base_lr: 5.3658e-05 lr: 5.3658e-05  eta: 1 day, 2:09:59  time: 0.6499  data_time: 0.0119  memory: 16062  grad_norm: 20.0670  loss: 1.8958  loss_heatmap: 0.8916  layer_-1_loss_cls: 0.3007  layer_-1_loss_bbox: 0.6565  matched_ious: 0.3517  moe_importance_loss: 0.0011  moe_router_z_loss: 0.0033  moe_ctx_aux_loss_weighted: 0.0427  sec_per_iter: 0.6376  iters_per_sec: 1.5700  samples_per_sec: 25.1000  samples_per_sec_per_gpu: 6.2700  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:22:28 - mmengine - INFO - Epoch(train)  [1][2350/5000]  base_lr: 5.3818e-05 lr: 5.3818e-05  eta: 1 day, 2:08:22  time: 0.6172  data_time: 0.0111  memory: 16115  grad_norm: 19.3616  loss: 1.8827  loss_heatmap: 0.9015  layer_-1_loss_cls: 0.2964  layer_-1_loss_bbox: 0.6369  matched_ious: 0.2335  moe_importance_loss: 0.0011  moe_router_z_loss: 0.0033  moe_ctx_aux_loss_weighted: 0.0435  sec_per_iter: 0.6378  iters_per_sec: 1.5700  samples_per_sec: 25.0900  samples_per_sec_per_gpu: 6.2700  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:23:00 - mmengine - INFO - Epoch(train)  [1][2400/5000]  base_lr: 5.3982e-05 lr: 5.3982e-05  eta: 1 day, 2:08:22  time: 0.6475  data_time: 0.0145  memory: 15969  grad_norm: 21.4387  loss: 1.8782  loss_heatmap: 0.9156  layer_-1_loss_cls: 0.3116  layer_-1_loss_bbox: 0.6029  matched_ious: 0.1576  moe_importance_loss: 0.0009  moe_router_z_loss: 0.0033  moe_ctx_aux_loss_weighted: 0.0439  sec_per_iter: 0.6374  iters_per_sec: 1.5700  samples_per_sec: 25.1000  samples_per_sec_per_gpu: 6.2800  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:23:32 - mmengine - INFO - Epoch(train)  [1][2450/5000]  base_lr: 5.4149e-05 lr: 5.4149e-05  eta: 1 day, 2:08:22  time: 0.6482  data_time: 0.0129  memory: 15966  grad_norm: 17.0964  loss: 1.8969  loss_heatmap: 0.9198  layer_-1_loss_cls: 0.3044  layer_-1_loss_bbox: 0.6261  matched_ious: 0.3243  moe_importance_loss: 0.0009  moe_router_z_loss: 0.0033  moe_ctx_aux_loss_weighted: 0.0424  sec_per_iter: 0.6376  iters_per_sec: 1.5700  samples_per_sec: 25.1000  samples_per_sec_per_gpu: 6.2700  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:24:04 - mmengine - INFO - Epoch(train)  [1][2500/5000]  base_lr: 5.4320e-05 lr: 5.4320e-05  eta: 1 day, 2:07:19  time: 0.6272  data_time: 0.0114  memory: 16012  grad_norm: 17.1844  loss: 1.8588  loss_heatmap: 0.9118  layer_-1_loss_cls: 0.2963  layer_-1_loss_bbox: 0.6030  matched_ious: 0.2396  moe_importance_loss: 0.0009  moe_router_z_loss: 0.0035  moe_ctx_aux_loss_weighted: 0.0433  sec_per_iter: 0.6378  iters_per_sec: 1.5700  samples_per_sec: 25.0900  samples_per_sec_per_gpu: 6.2700  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:24:36 - mmengine - INFO - Epoch(train)  [1][2550/5000]  base_lr: 5.4494e-05 lr: 5.4494e-05  eta: 1 day, 2:06:43  time: 0.6363  data_time: 0.0113  memory: 16237  grad_norm: 17.8901  loss: 1.7868  loss_heatmap: 0.8308  layer_-1_loss_cls: 0.2762  layer_-1_loss_bbox: 0.6332  matched_ious: 0.2894  moe_importance_loss: 0.0010  moe_router_z_loss: 0.0033  moe_ctx_aux_loss_weighted: 0.0424  sec_per_iter: 0.6376  iters_per_sec: 1.5700  samples_per_sec: 25.1000  samples_per_sec_per_gpu: 6.2700  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:25:06 - mmengine - INFO - Epoch(train)  [1][2600/5000]  base_lr: 5.4671e-05 lr: 5.4671e-05  eta: 1 day, 2:04:58  time: 0.6115  data_time: 0.0102  memory: 15930  grad_norm: 16.3882  loss: 1.7792  loss_heatmap: 0.8615  layer_-1_loss_cls: 0.2761  layer_-1_loss_bbox: 0.5953  matched_ious: 0.2889  moe_importance_loss: 0.0007  moe_router_z_loss: 0.0033  moe_ctx_aux_loss_weighted: 0.0423  sec_per_iter: 0.6375  iters_per_sec: 1.5700  samples_per_sec: 25.1000  samples_per_sec_per_gpu: 6.2700  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:25:37 - mmengine - INFO - Epoch(train)  [1][2650/5000]  base_lr: 5.4852e-05 lr: 5.4852e-05  eta: 1 day, 2:03:46  time: 0.6229  data_time: 0.0118  memory: 16026  grad_norm: 17.2207  loss: 1.9688  loss_heatmap: 0.9593  layer_-1_loss_cls: 0.2977  layer_-1_loss_bbox: 0.6661  matched_ious: 0.2446  moe_importance_loss: 0.0007  moe_router_z_loss: 0.0030  moe_ctx_aux_loss_weighted: 0.0420  sec_per_iter: 0.6371  iters_per_sec: 1.5700  samples_per_sec: 25.1200  samples_per_sec_per_gpu: 6.2800  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:26:08 - mmengine - INFO - Epoch(train)  [1][2700/5000]  base_lr: 5.5036e-05 lr: 5.5036e-05  eta: 1 day, 2:02:16  time: 0.6153  data_time: 0.0105  memory: 16109  grad_norm: 16.6839  loss: 2.0326  loss_heatmap: 0.8919  layer_-1_loss_cls: 0.2809  layer_-1_loss_bbox: 0.8116  matched_ious: 0.2600  moe_importance_loss: 0.0007  moe_router_z_loss: 0.0027  moe_ctx_aux_loss_weighted: 0.0448  sec_per_iter: 0.6368  iters_per_sec: 1.5700  samples_per_sec: 25.1300  samples_per_sec_per_gpu: 6.2800  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:26:39 - mmengine - INFO - Epoch(train)  [1][2750/5000]  base_lr: 5.5224e-05 lr: 5.5224e-05  eta: 1 day, 2:00:50  time: 0.6163  data_time: 0.0104  memory: 16116  grad_norm: 17.3446  loss: 1.9312  loss_heatmap: 0.9161  layer_-1_loss_cls: 0.2887  layer_-1_loss_bbox: 0.6779  matched_ious: 0.3428  moe_importance_loss: 0.0008  moe_router_z_loss: 0.0027  moe_ctx_aux_loss_weighted: 0.0451  sec_per_iter: 0.6364  iters_per_sec: 1.5700  samples_per_sec: 25.1400  samples_per_sec_per_gpu: 6.2900  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:27:12 - mmengine - INFO - Epoch(train)  [1][2800/5000]  base_lr: 5.5415e-05 lr: 5.5415e-05  eta: 1 day, 2:01:16  time: 0.6579  data_time: 0.0157  memory: 15955  grad_norm: 15.5864  loss: 1.7643  loss_heatmap: 0.8457  layer_-1_loss_cls: 0.2735  layer_-1_loss_bbox: 0.5984  matched_ious: 0.2726  moe_importance_loss: 0.0008  moe_router_z_loss: 0.0028  moe_ctx_aux_loss_weighted: 0.0432  sec_per_iter: 0.6360  iters_per_sec: 1.5700  samples_per_sec: 25.1600  samples_per_sec_per_gpu: 6.2900  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:27:44 - mmengine - INFO - Epoch(train)  [1][2850/5000]  base_lr: 5.5609e-05 lr: 5.5609e-05  eta: 1 day, 2:00:47  time: 0.6372  data_time: 0.0134  memory: 16031  grad_norm: 20.6253  loss: 1.9605  loss_heatmap: 0.9123  layer_-1_loss_cls: 0.2738  layer_-1_loss_bbox: 0.7287  matched_ious: 0.1801  moe_importance_loss: 0.0007  moe_router_z_loss: 0.0024  moe_ctx_aux_loss_weighted: 0.0424  sec_per_iter: 0.6364  iters_per_sec: 1.5700  samples_per_sec: 25.1400  samples_per_sec_per_gpu: 6.2900  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000
+05/22 20:28:15 - mmengine - INFO - Epoch(train)  [1][2900/5000]  base_lr: 5.5807e-05 lr: 5.5807e-05  eta: 1 day, 1:59:50  time: 0.6267  data_time: 0.0110  memory: 16052  grad_norm: 19.4334  loss: 1.8482  loss_heatmap: 0.8694  layer_-1_loss_cls: 0.2812  layer_-1_loss_bbox: 0.6510  matched_ious: 0.1884  moe_importance_loss: 0.0006  moe_router_z_loss: 0.0025  moe_ctx_aux_loss_weighted: 0.0435  sec_per_iter: 0.6364  iters_per_sec: 1.5700  samples_per_sec: 25.1400  samples_per_sec_per_gpu: 6.2900  max_mem_allocated_mb: 479.3000  max_mem_reserved_mb: 18604.0000

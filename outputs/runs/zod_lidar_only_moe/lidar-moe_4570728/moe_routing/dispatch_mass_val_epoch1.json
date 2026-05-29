@@ -1,0 +1,92 @@
+{
+  "epoch": 1,
+  "split": "val",
+  "num_samples": 2500,
+  "dispatch_mass_per_expert": {
+    "expert_0": 0.12911527,
+    "expert_1": 0.24976007,
+    "expert_2": 0.42758778,
+    "expert_3": 0.19353687
+  },
+  "dense_mean_prob_per_expert": {
+    "expert_0": 0.12911527,
+    "expert_1": 0.24976007,
+    "expert_2": 0.42758778,
+    "expert_3": 0.19353687
+  },
+  "top1_selection_freq_per_expert": {
+    "expert_0": 0.0,
+    "expert_1": 0.0372,
+    "expert_2": 0.722,
+    "expert_3": 0.2408
+  },
+  "topk_selection_freq_per_expert": {
+    "expert_0": 1.0,
+    "expert_1": 1.0,
+    "expert_2": 1.0,
+    "expert_3": 1.0
+  },
+  "mean_gate_entropy": 1.197726,
+  "clean_top1_selection_freq_per_expert": {
+    "expert_0": 0.0,
+    "expert_1": 0.0372,
+    "expert_2": 0.722,
+    "expert_3": 0.2408
+  },
+  "clean_topk_selection_freq_per_expert": {
+    "expert_0": 1.0,
+    "expert_1": 1.0,
+    "expert_2": 1.0,
+    "expert_3": 1.0
+  },
+  "importance_loss": 0.00165002,
+  "load_loss": 0.0,
+  "switch_balance_loss": 0.0,
+  "router_z_loss": 0.00134814,
+  "ctx_aux_loss": 1.53998401,
+  "ctx_aux_loss_weighted": 0.04619952,
+  "ctx_aux_acc": 0.604,
+  "ctx_loss_type": "weighted_ce",
+  "ctx_class_weights": [
+    0.8586626139817628,
+    0.3571428571428571,
+    0.13677811550151975,
+    1.3677811550151975,
+    2.2796352583586623
+  ],
+  "router_scale_diagnostics": {
+    "clean_logits_mean": -0.79382616,
+    "clean_logits_std": 0.61472847,
+    "clean_logits_abs_mean": 0.89257984,
+    "clean_logits_min": -1.71319019,
+    "clean_logits_max": 0.22924976,
+    "clean_logits_lse_mean": 0.80200954,
+    "ctx_logits_mean_abs": 0.72145998,
+    "router_temperature": 1.0
+  },
+  "ctx_target_field": "road_type",
+  "ctx_pred_hist": [
+    203,
+    176,
+    1686,
+    300,
+    135
+  ],
+  "ctx_label_hist": [
+    240,
+    592,
+    1267,
+    266,
+    135
+  ],
+  "ctx_aux_acc_per_class_lower_bound": [
+    0.4,
+    0.172297,
+    0.908445,
+    0.721805,
+    0.237037
+  ],
+  "ctx_aux_acc_overall_lower_bound": 0.6292
+}332
+}
+}

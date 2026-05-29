@@ -1,0 +1,60 @@
+{
+  "epoch": 25,
+  "split": "train",
+  "num_samples": 20000,
+  "dispatch_mass_per_expert": {
+    "expert_0": 0.25701952,
+    "expert_1": 0.26506157,
+    "expert_2": 0.23301936,
+    "expert_3": 0.24489954
+  },
+  "dense_mean_prob_per_expert": {
+    "expert_0": 0.25701952,
+    "expert_1": 0.26506157,
+    "expert_2": 0.23301936,
+    "expert_3": 0.24489954
+  },
+  "top1_selection_freq_per_expert": {
+    "expert_0": 0.2236,
+    "expert_1": 0.30675,
+    "expert_2": 0.17685,
+    "expert_3": 0.2928
+  },
+  "topk_selection_freq_per_expert": {
+    "expert_0": 1.0,
+    "expert_1": 1.0,
+    "expert_2": 1.0,
+    "expert_3": 1.0
+  },
+  "mean_gate_entropy": 1.204747,
+  "clean_top1_selection_freq_per_expert": {
+    "expert_0": 0.2236,
+    "expert_1": 0.30675,
+    "expert_2": 0.17685,
+    "expert_3": 0.2928
+  },
+  "clean_topk_selection_freq_per_expert": {
+    "expert_0": 1.0,
+    "expert_1": 1.0,
+    "expert_2": 1.0,
+    "expert_3": 1.0
+  },
+  "importance_loss": 0.00044504,
+  "load_loss": 0.0,
+  "switch_balance_loss": 0.0,
+  "router_z_loss": 4.424e-05,
+  "ctx_aux_loss": 0.0,
+  "ctx_aux_loss_weighted": 0.0,
+  "ctx_aux_acc": 0.0,
+  "ctx_loss_type": "ce",
+  "router_scale_diagnostics": {
+    "clean_logits_mean": -1.4499666,
+    "clean_logits_std": 0.72858318,
+    "clean_logits_abs_mean": 1.45869219,
+    "clean_logits_min": -2.94779668,
+    "clean_logits_max": -0.20898099,
+    "clean_logits_lse_mean": 0.16806907,
+    "ctx_logits_mean_abs": 0.0,
+    "router_temperature": 1.0
+  }
+}}

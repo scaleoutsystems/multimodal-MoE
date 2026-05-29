@@ -1,0 +1,88 @@
+{
+  "checkpoint": "/mnt/tier2/users/u103958/projects/multimodal-MoE/outputs/runs/zod_bevfusion_finetune/bevfusion-finetune_4456392/best_mAP_0.50_epoch_12.pth",
+  "config": "mmdetection3d/configs/zod/zod_bevfusion_finetune_camzero.py",
+  "run_name": "zod_bevfusion_finetune",
+  "eval_dir": "/mnt/tier2/users/u103958/projects/multimodal-MoE/outputs/runs/zod_bevfusion_finetune/bevfusion-finetune_4456392/ablation/camera_zero",
+  "groups": {
+    "full_test": [
+      {
+        "split_name": "test",
+        "group": "full_test",
+        "label": "test",
+        "split_file": "/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/splits/test.txt",
+        "ann_file": "/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_test.pkl",
+        "work_dir": "/mnt/tier2/users/u103958/projects/multimodal-MoE/outputs/runs/zod_bevfusion_finetune/bevfusion-finetune_4456392/ablation/camera_zero/raw/test",
+        "status": "success",
+        "metrics": {
+          "pedestrian_AP_0.25": 0.6771,
+          "mAP_0.25": 0.6771,
+          "pedestrian_rec_0.25": 0.8713,
+          "mAR_0.25": 0.8713,
+          "pedestrian_AP_0.50": 0.4061,
+          "mAP_0.50": 0.4061,
+          "pedestrian_rec_0.50": 0.6156,
+          "mAR_0.50": 0.6156,
+          "pedestrian_AP_0.5m": 0.698,
+          "pedestrian_rec_0.5m": 0.893,
+          "pedestrian_AP_1.0m": 0.7063,
+          "pedestrian_rec_1.0m": 0.8989,
+          "pedestrian_AP_2.0m": 0.7115,
+          "pedestrian_rec_2.0m": 0.9032,
+          "pedestrian_AP_4.0m": 0.721,
+          "pedestrian_rec_4.0m": 0.9109,
+          "mAP_0.5m": 0.698,
+          "mAR_0.5m": 0.893,
+          "mAP_1.0m": 0.7063,
+          "mAR_1.0m": 0.8989,
+          "mAP_2.0m": 0.7115,
+          "mAR_2.0m": 0.9032,
+          "mAP_4.0m": 0.721,
+          "mAR_4.0m": 0.9109,
+          "data_time": 0.0095,
+          "time": 0.2702
+        },
+        "metrics_file": "/mnt/tier2/users/u103958/projects/multimodal-MoE/outputs/runs/zod_bevfusion_finetune/bevfusion-finetune_4456392/ablation/camera_zero/raw/test/metrics.json"
+      }
+    ]
+  },
+  "flat_results": [
+    {
+      "split_name": "test",
+      "group": "full_test",
+      "label": "test",
+      "split_file": "/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/splits/test.txt",
+      "ann_file": "/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_test.pkl",
+      "work_dir": "/mnt/tier2/users/u103958/projects/multimodal-MoE/outputs/runs/zod_bevfusion_finetune/bevfusion-finetune_4456392/ablation/camera_zero/raw/test",
+      "status": "success",
+      "metrics": {
+        "pedestrian_AP_0.25": 0.6771,
+        "mAP_0.25": 0.6771,
+        "pedestrian_rec_0.25": 0.8713,
+        "mAR_0.25": 0.8713,
+        "pedestrian_AP_0.50": 0.4061,
+        "mAP_0.50": 0.4061,
+        "pedestrian_rec_0.50": 0.6156,
+        "mAR_0.50": 0.6156,
+        "pedestrian_AP_0.5m": 0.698,
+        "pedestrian_rec_0.5m": 0.893,
+        "pedestrian_AP_1.0m": 0.7063,
+        "pedestrian_rec_1.0m": 0.8989,
+        "pedestrian_AP_2.0m": 0.7115,
+        "pedestrian_rec_2.0m": 0.9032,
+        "pedestrian_AP_4.0m": 0.721,
+        "pedestrian_rec_4.0m": 0.9109,
+        "mAP_0.5m": 0.698,
+        "mAR_0.5m": 0.893,
+        "mAP_1.0m": 0.7063,
+        "mAR_1.0m": 0.8989,
+        "mAP_2.0m": 0.7115,
+        "mAR_2.0m": 0.9032,
+        "mAP_4.0m": 0.721,
+        "mAR_4.0m": 0.9109,
+        "data_time": 0.0095,
+        "time": 0.2702
+      },
+      "metrics_file": "/mnt/tier2/users/u103958/projects/multimodal-MoE/outputs/runs/zod_bevfusion_finetune/bevfusion-finetune_4456392/ablation/camera_zero/raw/test/metrics.json"
+    }
+  ]
+}

@@ -1,0 +1,190 @@
+=== Slurm job 4617106 on mel2165 ===
+CONFIG      : mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py
+CKPT        : outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth
+SPLITS_ROOT : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/splits
+SPLITS      : <default – all DEFAULT_SPLITS>
+ANN_KEY     : test_dataloader.dataset.ann_file
+OUT_DIR     : outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval
+INFOS_DIR   : <inferred from SPLITS_ROOT/../infos>
+EXTRA_ARGS  : <none>
+NVIDIA A100-SXM4-40GB
+
+Command: /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python scripts/bev_scripts/run_multi_split_eval.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --splits-root /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/splits --ann-key test_dataloader.dataset.ann_file --launcher none --out-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval 
+
+Run name  : zod_lidar_only_moe
+Eval dir  : outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval
+Infos dir : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos
+Ann key   : test_dataloader.dataset.ann_file
+
+Will evaluate 20 split(s):
+  test  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_test.pkl
+  complexity_test_low  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_complexity_test_low.pkl
+  complexity_test_medium  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_complexity_test_medium.pkl
+  complexity_test_high  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_complexity_test_high.pkl
+  lighting_test_day  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_lighting_test_day.pkl
+  lighting_test_night  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_lighting_test_night.pkl
+  road_type_test_highway  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_road_type_test_highway.pkl
+  road_type_test_smaller_rural  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_road_type_test_smaller_rural.pkl
+  road_type_test_arterial_rural  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_road_type_test_arterial_rural.pkl
+  road_type_test_arterial_urban  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_road_type_test_arterial_urban.pkl
+  road_type_test_city  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_road_type_test_city.pkl
+  weather_test_clear_day  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_clear_day.pkl
+  weather_test_clear_night  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_clear_night.pkl
+  weather_test_cloudy  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_cloudy.pkl
+  weather_test_partly_cloudy_day  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_partly_cloudy_day.pkl
+  weather_test_partly_cloudy_night  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_partly_cloudy_night.pkl
+  weather_test_fog  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_fog.pkl
+  weather_test_precipitation  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_precipitation.pkl
+  weather_group_test_clear_like  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_group_test_clear_like.pkl
+  weather_group_test_cloud_like  →  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_group_test_cloud_like.pkl
+
+======================================================================
+  Split : test
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_test.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/test --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_test.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/test/metrics.json
+
+======================================================================
+  Split : complexity_test_low
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_complexity_test_low.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/complexity_test_low --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_complexity_test_low.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/complexity_test_low/metrics.json
+
+======================================================================
+  Split : complexity_test_medium
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_complexity_test_medium.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/complexity_test_medium --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_complexity_test_medium.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/complexity_test_medium/metrics.json
+
+======================================================================
+  Split : complexity_test_high
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_complexity_test_high.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/complexity_test_high --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_complexity_test_high.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/complexity_test_high/metrics.json
+
+======================================================================
+  Split : lighting_test_day
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_lighting_test_day.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/lighting_test_day --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_lighting_test_day.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/lighting_test_day/metrics.json
+
+======================================================================
+  Split : lighting_test_night
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_lighting_test_night.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/lighting_test_night --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_lighting_test_night.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/lighting_test_night/metrics.json
+
+======================================================================
+  Split : road_type_test_highway
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_road_type_test_highway.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/road_type_test_highway --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_road_type_test_highway.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/road_type_test_highway/metrics.json
+
+======================================================================
+  Split : road_type_test_smaller_rural
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_road_type_test_smaller_rural.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/road_type_test_smaller_rural --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_road_type_test_smaller_rural.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/road_type_test_smaller_rural/metrics.json
+
+======================================================================
+  Split : road_type_test_arterial_rural
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_road_type_test_arterial_rural.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/road_type_test_arterial_rural --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_road_type_test_arterial_rural.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/road_type_test_arterial_rural/metrics.json
+
+======================================================================
+  Split : road_type_test_arterial_urban
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_road_type_test_arterial_urban.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/road_type_test_arterial_urban --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_road_type_test_arterial_urban.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/road_type_test_arterial_urban/metrics.json
+
+======================================================================
+  Split : road_type_test_city
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_road_type_test_city.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/road_type_test_city --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_road_type_test_city.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/road_type_test_city/metrics.json
+
+======================================================================
+  Split : weather_test_clear_day
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_clear_day.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_test_clear_day --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_clear_day.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_test_clear_day/metrics.json
+
+======================================================================
+  Split : weather_test_clear_night
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_clear_night.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_test_clear_night --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_clear_night.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_test_clear_night/metrics.json
+
+======================================================================
+  Split : weather_test_cloudy
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_cloudy.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_test_cloudy --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_cloudy.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_test_cloudy/metrics.json
+
+======================================================================
+  Split : weather_test_partly_cloudy_day
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_partly_cloudy_day.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_test_partly_cloudy_day --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_partly_cloudy_day.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_test_partly_cloudy_day/metrics.json
+
+======================================================================
+  Split : weather_test_partly_cloudy_night
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_partly_cloudy_night.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_test_partly_cloudy_night --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_partly_cloudy_night.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_test_partly_cloudy_night/metrics.json
+
+======================================================================
+  Split : weather_test_fog
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_fog.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_test_fog --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_fog.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_test_fog/metrics.json
+
+======================================================================
+  Split : weather_test_precipitation
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_precipitation.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_test_precipitation --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_test_precipitation.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_test_precipitation/metrics.json
+
+======================================================================
+  Split : weather_group_test_clear_like
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_group_test_clear_like.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_group_test_clear_like --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_group_test_clear_like.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_group_test_clear_like/metrics.json
+
+======================================================================
+  Split : weather_group_test_cloud_like
+  Ann   : /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_group_test_cloud_like.pkl
+  Cmd   : /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python /mnt/tier2/users/u103958/projects/multimodal-MoE/mmdetection3d/tools/test.py mmdetection3d/configs/zod/zod_lidar_only_moe_dense4_taskdriven_30ep.py outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/best_mAP_0.50_epoch_30.pth --work-dir outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_group_test_cloud_like --launcher none --cfg-options test_dataloader.dataset.ann_file=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_weather_group_test_cloud_like.pkl
+======================================================================
+  [OK] 22 metric key(s) parsed → outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/raw/weather_group_test_cloud_like/metrics.json
+
+======================================================================
+Writing aggregated outputs …
+  Saved: outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/aggregated_results.json
+  Saved: outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/aggregated_results.csv
+  Saved: outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval/aggregated_results.md
+
+Done.  20/20 succeeded, 0 failed, 0 parsed no metrics.
+Results: outputs/runs/zod_lidar_only_moe/lidar-moe-td-30_4610583/eval
+
+=== Done. Results in outputs/runs/lidar-moe-td-30_4610583/eval/ ===
