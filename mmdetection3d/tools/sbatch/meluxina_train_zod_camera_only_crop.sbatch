@@ -22,7 +22,7 @@
 # =============================================================================
 
 #SBATCH --job-name=zod-cam-crop
-#SBATCH --account=p201222
+#SBATCH --account=p201392
 #SBATCH --qos=default
 #SBATCH --partition=gpu
 #SBATCH --nodes=1

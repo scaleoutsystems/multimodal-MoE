@@ -14,7 +14,7 @@
 #   CONFIG=mmdetection3d/configs/zod/zod_lidar_only.py \
 #   CKPT=outputs/runs/zod_lidar_only/zod-lidar-only_4454825/best_mAP_0.50_epoch_18.pth \
 #   SPLIT=lighting_test_night.txt \
-#   SPLITS_ROOT=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/splits \
+#   SPLITS_ROOT=/mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/splits \
 #   TASK=lidar_det \
 #     sbatch mmdetection3d/tools/sbatch/meluxina_single_split_visual_eval.sbatch
 #
@@ -33,7 +33,7 @@
 # =============================================================================
 
 #SBATCH --job-name=eval_vis
-#SBATCH --account=p201222
+#SBATCH --account=p201392
 #SBATCH --qos=default
 #SBATCH --partition=gpu
 #SBATCH --nodes=1

@@ -93,7 +93,7 @@ SOURCE_PARQUET = Path(
 )
 
 
-OUT_ROOT = Path("/mnt/tier2/project/p201222/u103958/zod_moe")
+OUT_ROOT = Path("/mnt/tier2/project/p201392/u103958/zod_moe")
 OUT_IMAGES = OUT_ROOT / "bev_images"
 OUT_LIDAR = OUT_ROOT / "lidar"
 OUT_CALIBS = OUT_ROOT / "calibs"

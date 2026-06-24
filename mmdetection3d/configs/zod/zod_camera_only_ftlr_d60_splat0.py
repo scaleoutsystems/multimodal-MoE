@@ -39,7 +39,7 @@ out_size_factor = 8
 class_names = ['pedestrian']
 metainfo = dict(classes=class_names, box_type_3d='LiDAR')
 dataset_type = 'ZODDataset'
-data_root = '/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/'
+data_root = '/mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/'
 data_prefix = dict(pts='', CAM_FRONT='')
 # LiDAR is still needed for DepthLSSTransform depth supervision.
 input_modality = dict(use_lidar=True, use_camera=True)
@@ -76,7 +76,7 @@ model = dict(
         convert_weights=True,
         init_cfg=dict(
             type='Pretrained',
-            checkpoint='/mnt/tier2/project/p201222/u103958/checkpoints/'
+            checkpoint='/mnt/tier2/project/p201392/u103958/checkpoints/'
                        'swin_tiny_patch4_window7_224.pth')),
     img_neck=dict(
         type='GeneralizedLSSFPN',

@@ -37,7 +37,7 @@ Evaluate only the lighting splits:
       mmdetection3d/configs/zod/zod_lidar_only.py \\
       outputs/runs/zod_lidar_only/zod-lidar-only_4454825/best_mAP_0.50_epoch_18.pth \\
       --splits lighting_test_day.txt lighting_test_night.txt lighting_test_day.txt \\
-      --splits-root /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/splits
+      --splits-root /mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/splits
 
 Dry-run (print commands without executing):
 
@@ -47,20 +47,20 @@ Dry-run (print commands without executing):
 SBATCH submission lidar only on all splits:
 CONFIG=mmdetection3d/configs/zod/zod_lidar_only.py \
 CKPT=outputs/runs/zod_lidar_only/zod-lidar-only_4454825/best_mAP_0.50_epoch_18.pth \
-SPLITS_ROOT=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/splits \
+SPLITS_ROOT=/mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/splits \
   sbatch mmdetection3d/tools/sbatch/meluxina_multi_split_eval.sbatch
 
 SBATCH submission camera only on all splits:
 CONFIG= mmdetection3d/configs/zod/zod_camera_only.py \
 CKPT=outputs/runs/zod_camera_only/zod-cam-only_4469392/best_mAP_0.50_epoch_11.pth \
-SPLITS_ROOT=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/splits \
+SPLITS_ROOT=/mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/splits \
   sbatch mmdetection3d/tools/sbatch/meluxina_multi_split_eval.sbatch
 
 
 SBATCH submission bevfusion_dual_initialization on all splits:
 CONFIG=mmdetection3d/configs/zod/zod_bevfusion_dualinit.py \
 CKPT=outputs/runs/zod_bevfusion_dualinit/bevfusion-dualinit_4481497/best_mAP_0.50_epoch_12.pth \
-SPLITS_ROOT=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/splits \
+SPLITS_ROOT=/mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/splits \
   sbatch mmdetection3d/tools/sbatch/meluxina_multi_split_eval.sbatch
 """
 

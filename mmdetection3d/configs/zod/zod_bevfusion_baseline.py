@@ -47,7 +47,7 @@ custom_imports = dict(
 # MMEngine loads with strict=False — camera/fusion layers are absent in
 # the checkpoint and start from scratch; Swin-T loads ImageNet via init_cfg.
 # ---------------------------------------------------------------------------
-load_from = '/mnt/tier2/project/p201222/u103958/checkpoints/bevfusion_lidar_voxel0075_second_secfpn_8xb4-cyclic-20e_nus-3d-2628f933.pth'
+load_from = '/mnt/tier2/project/p201392/u103958/checkpoints/bevfusion_lidar_voxel0075_second_secfpn_8xb4-cyclic-20e_nus-3d-2628f933.pth'
 
 # ===== geometry =====
 voxel_size = [0.075, 0.075, 0.2]
@@ -60,7 +60,7 @@ out_size_factor = 8
 class_names = ['pedestrian']
 metainfo = dict(classes=class_names, box_type_3d='LiDAR')
 dataset_type = 'ZODDataset'
-data_root = '/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/'
+data_root = '/mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/'
 data_prefix = dict(pts='', CAM_FRONT='')
 input_modality = dict(use_lidar=True, use_camera=True)
 backend_args = None
@@ -101,7 +101,7 @@ model = dict(
         convert_weights=True,
         init_cfg=dict(
             type='Pretrained',
-            checkpoint='/mnt/tier2/project/p201222/u103958/checkpoints/swin_tiny_patch4_window7_224.pth')),
+            checkpoint='/mnt/tier2/project/p201392/u103958/checkpoints/swin_tiny_patch4_window7_224.pth')),
     img_neck=dict(
         # camera feature extractor, which takes the camera features and extracts the features for the BEV
         type='GeneralizedLSSFPN',

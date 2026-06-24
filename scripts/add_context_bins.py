@@ -31,7 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-INDEX_DIR = Path("/mnt/tier2/project/p201222/u103958/zod_moe/index")
+INDEX_DIR = Path("/mnt/tier2/project/p201392/u103958/zod_moe/index")
 DEFAULT_IN = INDEX_DIR / "zod_moe_dataset_bev108.parquet"
 DEFAULT_OUT = INDEX_DIR / "zod_moe_dataset_bev108_with_complexity_bin.parquet"
 

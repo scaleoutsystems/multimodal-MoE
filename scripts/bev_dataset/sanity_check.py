@@ -21,7 +21,7 @@ Example
 python scripts/bev_dataset/sanity_check.py
 
 python scripts/bev_dataset/sanity_check.py \\
-    --dataset-root /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes \\
+    --dataset-root /mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes \\
     --info-pkl     infos/zod_nuscenes_infos_train.pkl
 """
 
@@ -69,10 +69,10 @@ class _Tee(io.TextIOBase):
 # Defaults
 # ==================================================================
 DEFAULT_DATASET_ROOT = Path(
-    "/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes"
+    "/mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes"
 )
 DEFAULT_SOURCE_ROOT = Path(
-    "/mnt/tier2/project/p201222/u103958/zod_moe"
+    "/mnt/tier2/project/p201392/u103958/zod_moe"
 )
 DEFAULT_INFO_PKL = "infos/zod_nuscenes_infos_train.pkl"
 DEFAULT_OUT_DIR = Path(

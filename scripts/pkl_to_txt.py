@@ -18,7 +18,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--input-dir",
-        default="/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos",
+        default="/mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/infos",
         help="Directory containing .pkl files.",
     )
     parser.add_argument(

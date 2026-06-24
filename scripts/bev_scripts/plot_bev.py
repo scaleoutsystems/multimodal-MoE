@@ -3,7 +3,7 @@
 
 Usage:
     srun --partition=gpu --nodes=1 --ntasks=1 --gres=gpu:1 \
-     --account=p201222 --qos=default --time=01:00:00 --pty \
+     --account=p201392 --qos=default --time=01:00:00 --pty \
      /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python \
      scripts/bev_scripts/plot_bev.py \
      outputs/runs/zod_lidar_only/zod-lidar-only_4440636/best_mAP_1.0m_epoch_14.pth \
@@ -133,7 +133,7 @@ def main():
             '\n'
             'Run on a GPU node instead, e.g.:\n'
             '  srun --partition=gpu --nodes=1 --ntasks=1 --gres=gpu:1 \\\n'
-            '       --account=p201222 --qos=default --pty \\\n'
+            '       --account=p201392 --qos=default --pty \\\n'
             '       /home/users/u103958/miniconda3/envs/multimodal-moe/bin/python \\\n'
             '       scripts/bev_scripts/plot_bev.py <checkpoint> [--score-thr 0.2]\n'
             '\n'

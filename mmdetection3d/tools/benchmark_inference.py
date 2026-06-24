@@ -16,7 +16,7 @@ Usage (single GPU, after training):
 
 On Slurm (interactive):
     srun --partition=gpu --gres=gpu:1 --cpus-per-task=8 \\
-        --constraint=40ga100 --time=00:30:00 --account=p201222 --qos=default \\
+        --constraint=40ga100 --time=00:30:00 --account=p201392 --qos=default \\
         python tools/benchmark_inference.py \\
             configs/zod/zod_lidar_only.py /path/to/checkpoint.pth
 

@@ -260,6 +260,14 @@ _INVERSE_FREQUENCY_FALLBACK: Dict[str, List[float]] = {
     # ZOD_FIELD_REGISTRY order:
     # ['arterial-rural', 'arterial-urban', 'city', 'highway', 'smaller-rural']
     'road_type': [1.13, 0.47, 0.18, 1.8, 3.0],
+    # ZOD_FIELD_REGISTRY order:
+    # ['clear-day', 'clear-night', 'cloudy', 'fog', 'partly-cloudy-day',
+    #  'partly-cloudy-night', 'rain', 'snow', 'wind']
+    # Computed from the ZOD training split (79 999 samples).  'wind' is
+    # very rare (397 samples, ~0.5%) so its weight is high (5.13); 'snow'
+    # and 'fog' are also uncommon (~2%) and receive weights > 1.
+    'scraped_weather': [0.155, 0.6356, 0.1348, 1.1872, 0.0873,
+                        0.2281, 0.1615, 1.2821, 5.1284],
 }
 
 

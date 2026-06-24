@@ -18,7 +18,7 @@ Example
         --y-min -54.0 --y-max 54.0
 
 If --input points to the weather-group version, use that path instead:
-    --input /mnt/tier2/project/p201222/u103958/zod_moe/index/zod_moe_dataset_with_weather_group.parquet
+    --input /mnt/tier2/project/p201392/u103958/zod_moe/index/zod_moe_dataset_with_weather_group.parquet
 """
 from __future__ import annotations
 

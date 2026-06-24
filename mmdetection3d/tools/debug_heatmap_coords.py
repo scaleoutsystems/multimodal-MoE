@@ -39,7 +39,7 @@ print(f"                   = (C, {feature_map_size[1].item()}, {feature_map_size
 print()
 
 # ── load one sample's GT boxes ──────────────────────────────────────────
-pkl_path = "/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_train_overfit20.pkl"
+pkl_path = "/mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_train_overfit20.pkl"
 with open(pkl_path, "rb") as f:
     infos = pickle.load(f)
 

@@ -41,11 +41,11 @@ from sklearn.model_selection import train_test_split
 # Defaults
 # ------------------------------------------------------------------
 DEFAULT_INPUT = Path(
-    "/mnt/tier2/project/p201222/u103958/zod_moe/index/"
+    "/mnt/tier2/project/p201392/u103958/zod_moe/index/"
     "zod_moe_dataset_bev108_with_complexity_bin.parquet"
 )
 DEFAULT_OUTPUT_DIR = Path(
-    "/mnt/tier2/project/p201222/u103958/zod_moe/index"
+    "/mnt/tier2/project/p201392/u103958/zod_moe/index"
 )
 
 

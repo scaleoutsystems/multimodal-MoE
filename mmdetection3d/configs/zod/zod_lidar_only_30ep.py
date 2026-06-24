@@ -16,7 +16,7 @@ custom_imports = dict(
 # here for a fair comparison.
 # ---------------------------------------------------------------------------
 
-load_from = '/mnt/tier2/project/p201222/u103958/checkpoints/bevfusion_lidar_voxel0075_second_secfpn_8xb4-cyclic-20e_nus-3d-2628f933.pth'
+load_from = '/mnt/tier2/project/p201392/u103958/checkpoints/bevfusion_lidar_voxel0075_second_secfpn_8xb4-cyclic-20e_nus-3d-2628f933.pth'
 
 voxel_size = [0.075, 0.075, 0.2]
 point_cloud_range = [0.0, -54.0, -5.0, 108.0, 54.0, 3.0]
@@ -27,7 +27,7 @@ out_size_factor = 8
 class_names = ['pedestrian']
 metainfo = dict(classes=class_names, box_type_3d='LiDAR')
 dataset_type = 'ZODDataset'
-data_root = '/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/'
+data_root = '/mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/'
 data_prefix = dict(pts='')
 input_modality = dict(use_lidar=True, use_camera=False)
 backend_args = None

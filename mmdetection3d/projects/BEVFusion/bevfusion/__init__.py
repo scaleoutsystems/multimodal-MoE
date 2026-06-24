@@ -1,6 +1,7 @@
 from .sparse_encoder import BEVFusionSparseEncoder
+from .hooks import MinEpochEarlyStoppingHook
 
-__all__ = ['BEVFusionSparseEncoder']
+__all__ = ['BEVFusionSparseEncoder', 'MinEpochEarlyStoppingHook']
 
 # Some BEVFusion modules require custom CUDA extensions (e.g., bev_pool_ext).
 # Keep sparse encoder importable even if those optional ops are unavailable.

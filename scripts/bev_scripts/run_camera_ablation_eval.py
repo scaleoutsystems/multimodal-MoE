@@ -27,7 +27,7 @@ From the repo root (multimodal-MoE/):
       mmdetection3d/configs/zod/zod_bevfusion_finetune.py \\
       mmdetection3d/configs/zod/zod_bevfusion_finetune_camzero.py \\
       outputs/runs/zod_bevfusion_finetune/bevfusion-finetune_4456392/best_mAP_0.50_epoch_12.pth \\
-      --splits-root /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/splits
+      --splits-root /mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/splits
 
 Dry-run (print commands, skip subprocess execution):
 

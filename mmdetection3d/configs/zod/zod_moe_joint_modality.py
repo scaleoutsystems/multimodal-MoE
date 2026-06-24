@@ -131,30 +131,54 @@ optim_wrapper = dict(
     accumulative_counts=2,
 )
 
+# Converge-to-plateau schedule: 0–8 epoch LR ramp, 8–75 epoch cosine decay.
+# Max 75 epochs; early stopping (patience 15, min 40 epochs) halts the run once the
+# validation AP@50 plateaus, so the cosine tail is rarely fully traversed.
 param_scheduler = [
     # 500-iter linear warmup (start_factor=1/3 → lr goes 5e-5/3 → 5e-5)
     dict(type='LinearLR',
          start_factor=0.33333333, begin=0, end=500,
          by_epoch=False),
-    # Cosine ramp-up: 5e-5 → 5e-4 over epochs 0-4
+    # Cosine ramp-up: 5e-5 → 5e-4 over epochs 0-8
     dict(type='CosineAnnealingLR',
-         T_max=4, begin=0, end=4,
+         T_max=8, begin=0, end=8,
          eta_min=5e-4, by_epoch=True, convert_to_iter_based=True),
-    # Cosine decay: 5e-4 → 5e-9 over epochs 4-28
+    # Cosine decay: 5e-4 → 5e-9 over epochs 8-75
     dict(type='CosineAnnealingLR',
-         T_max=24, begin=4, end=28,
+         T_max=67, begin=8, end=75,
          eta_min=5e-9, by_epoch=True, convert_to_iter_based=True),
     # Coupled momentum annealing
     dict(type='CosineAnnealingMomentum',
-         T_max=4, begin=0, end=4,
+         T_max=8, begin=0, end=8,
          eta_min=0.8947368421052632, by_epoch=True,
          convert_to_iter_based=True),
     dict(type='CosineAnnealingMomentum',
-         T_max=24, begin=4, end=28,
+         T_max=67, begin=8, end=75,
          eta_min=1, by_epoch=True, convert_to_iter_based=True),
 ]
 
-train_cfg = dict(by_epoch=True, max_epochs=28, val_interval=1)
+train_cfg = dict(by_epoch=True, max_epochs=75, val_interval=1)
+
+# ── Best-checkpoint + early stopping ───────────────────────────────────────
+# Validate every epoch (val_interval=1 above); keep the best checkpoint by
+# AP@50 IoU (mAP_0.50); stop early once mAP_0.50 fails to improve by at least
+# min_delta for `patience` consecutive validations.  Early stopping is
+# disabled for the first min_epochs epochs to ensure a minimum training run.
+default_hooks = dict(
+    logger=dict(type='LoggerHook', interval=50),
+    checkpoint=dict(
+        type='CheckpointHook',
+        interval=5,
+        save_best='mAP_0.50',
+        rule='greater'),
+    early_stopping=dict(
+        type='MinEpochEarlyStoppingHook',
+        monitor='mAP_0.50',
+        rule='greater',
+        patience=15,
+        min_delta=0.001,
+        min_epochs=40),
+)
 
 # ─────────────────────────────────────────────────────────────────────────
 # Pipelines — base config + 'context' meta key, identical otherwise.

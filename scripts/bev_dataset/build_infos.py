@@ -64,8 +64,8 @@ Example
 python scripts/dataset/build_infos.py
 
 python scripts/dataset/build_infos.py \\
-    --source-root /mnt/tier2/project/p201222/u103958/zod_moe \\
-    --final-root  /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes \\
+    --source-root /mnt/tier2/project/p201392/u103958/zod_moe \\
+    --final-root  /mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes \\
     --limit 100
 """
 
@@ -86,7 +86,7 @@ import pandas as pd
 # ==================================================================
 # Defaults — change these if your mount point differs
 # ==================================================================
-_MNT = Path("/mnt/tier2/project/p201222/u103958/zod_moe")
+_MNT = Path("/mnt/tier2/project/p201392/u103958/zod_moe")
 
 DEFAULT_SOURCE_ROOT = _MNT
 DEFAULT_FINAL_ROOT = _MNT / "zod_nuscenes"
@@ -136,7 +136,7 @@ def parse_args() -> argparse.Namespace:
         "--path-remap-to",
         type=str,
         default=None,
-        help="Replacement path prefix (e.g. /mnt/tier2/project/p201222/u103958/zod_moe).",
+        help="Replacement path prefix (e.g. /mnt/tier2/project/p201392/u103958/zod_moe).",
     )
     return p.parse_args()
 

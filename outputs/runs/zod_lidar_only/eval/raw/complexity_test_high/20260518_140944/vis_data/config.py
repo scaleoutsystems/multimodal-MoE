@@ -22,7 +22,7 @@ custom_imports = dict(
         'projects.BEVFusion.bevfusion',
     ])
 data_prefix = dict(pts='')
-data_root = '/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/'
+data_root = '/mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/'
 dataset_type = 'ZODDataset'
 default_hooks = dict(
     checkpoint=dict(
@@ -364,11 +364,11 @@ test_dataloader = dict(
     batch_size=2,
     dataset=dict(
         ann_file=
-        '/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_complexity_test_high.pkl',
+        '/mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/infos/zod_nuscenes_infos_complexity_test_high.pkl',
         backend_args=None,
         box_type_3d='LiDAR',
         data_prefix=dict(pts=''),
-        data_root='/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/',
+        data_root='/mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/',
         metainfo=dict(box_type_3d='LiDAR', classes=[
             'pedestrian',
         ]),
@@ -457,7 +457,7 @@ train_dataloader = dict(
         ann_file='infos/zod_nuscenes_infos_train.pkl',
         box_type_3d='LiDAR',
         data_prefix=dict(pts=''),
-        data_root='/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/',
+        data_root='/mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/',
         filter_empty_gt=False,
         metainfo=dict(box_type_3d='LiDAR', classes=[
             'pedestrian',
@@ -608,7 +608,7 @@ val_dataloader = dict(
         backend_args=None,
         box_type_3d='LiDAR',
         data_prefix=dict(pts=''),
-        data_root='/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/',
+        data_root='/mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/',
         metainfo=dict(box_type_3d='LiDAR', classes=[
             'pedestrian',
         ]),

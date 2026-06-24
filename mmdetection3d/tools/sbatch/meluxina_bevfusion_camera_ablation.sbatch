@@ -23,7 +23,7 @@
 # =============================================================================
 
 #SBATCH --job-name=bev_cam_ablation
-#SBATCH --account=p201222
+#SBATCH --account=p201392
 #SBATCH --qos=default
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
@@ -85,7 +85,7 @@ echo "Using PYTHON=${PYTHON}"
 FULL_CONFIG="${FULL_CONFIG:-mmdetection3d/configs/zod/zod_bevfusion_finetune.py}"
 ZERO_CONFIG="${ZERO_CONFIG:-mmdetection3d/configs/zod/zod_bevfusion_finetune_camzero.py}"
 CKPT="${CKPT:-outputs/runs/zod_bevfusion_finetune/bevfusion-finetune_4456392/best_mAP_0.50_epoch_12.pth}"
-SPLITS_ROOT="${SPLITS_ROOT:-/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/splits}"
+SPLITS_ROOT="${SPLITS_ROOT:-/mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/splits}"
 EXTRA_ARGS="${EXTRA_ARGS:-}"
 
 echo "=== Slurm job ${SLURM_JOB_ID} on $(hostname) ==="

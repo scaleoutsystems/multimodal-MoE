@@ -21,7 +21,7 @@
 #   MMDET3D_ROOT=$HOME/other/mmdetection3d MOE_ROOT=$HOME/other/multimodal-MoE sbatch ...
 #
 # Slurm account + QOS: default Slurm account is "nocredit" here, which does not
-# combine with the gpu partition. We set account p201222 and QOS explicitly.
+# combine with the gpu partition. We set account p201392 and QOS explicitly.
 # Override: sbatch -A other_proj --qos=long ...
 #
 # Override defaults when submitting:
@@ -37,7 +37,7 @@
 # =============================================================================
 
 #SBATCH --job-name=zod-bevfusion-fixlidar
-#SBATCH --account=p201222
+#SBATCH --account=p201392
 #SBATCH --qos=default
 #SBATCH --partition=gpu
 #SBATCH --nodes=1

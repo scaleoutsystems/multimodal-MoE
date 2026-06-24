@@ -233,7 +233,7 @@ Identical to `zod_bevfusion_finetune.py` except the LiDAR branch is **hard-froze
 
 ### 12. `tools/sbatch/meluxina_train_zod_bevfusion.sbatch`
 
-Slurm batch script for Meluxina (4 × A100 40 GB, single node, `gpu` partition, account `p201222`). Features:
+Slurm batch script for Meluxina (4 × A100 40 GB, single node, `gpu` partition, account `p201392`). Features:
 - Robust conda env detection (searches `miniforge3`, `miniconda3`, `anaconda3`, `mambaforge`; no `conda activate`)
 - Strips broken Slurm-forwarded `CONDA_EXE` / `_CONDA_ROOT` env vars before activation
 - Python sanity check at launch: imports `BEVFusion`, `DepthLSSTransform`, `ConvFuser`, `GeneralizedLSSFPN`

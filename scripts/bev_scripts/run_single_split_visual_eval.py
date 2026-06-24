@@ -29,7 +29,7 @@ LiDAR-only model on the night lighting split:
       mmdetection3d/configs/zod/zod_lidar_only.py \\
       outputs/runs/zod_lidar_only/zod-lidar-only_4454825/best_mAP_0.50_epoch_18.pth \\
       lighting_test_night.txt \\
-      --splits-root /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/splits \\
+      --splits-root /mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/splits \\
       --task lidar_det \\
       --score-thr 0.25
 
@@ -39,7 +39,7 @@ BEVFusion model on the full test split:
       mmdetection3d/configs/zod/zod_bevfusion.py \\
       outputs/runs/zod_bevfusion/zod-bevfusion_4454826/best_mAP_0.50_epoch_10.pth \\
       test.txt \\
-      --splits-root /mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/splits \\
+      --splits-root /mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/splits \\
       --task multi-modality_det \\
       --score-thr 0.3 \\
       --dry-run
@@ -47,7 +47,7 @@ SBATCH submission lidar only on the night lighting split:
 CONFIG=mmdetection3d/configs/zod/zod_lidar_only.py \
 CKPT=outputs/runs/zod_lidar_only/zod-lidar-only_4454825/best_mAP_0.50_epoch_18.pth \
 SPLIT=lighting_test_day.txt \
-SPLITS_ROOT=/mnt/tier2/project/p201222/u103958/zod_moe/zod_nuscenes/splits \
+SPLITS_ROOT=/mnt/tier2/project/p201392/u103958/zod_moe/zod_nuscenes/splits \
 TASK=lidar_det \
   sbatch mmdetection3d/tools/sbatch/meluxina_single_split_visual_eval.sbatch
 """

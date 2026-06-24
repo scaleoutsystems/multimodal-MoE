@@ -9,7 +9,7 @@
 #   CONFIG=... CKPT=... OUT_DIR=... NUM_SAMPLES=16 SCORE_THR=0.3 sbatch ...
 #
 #SBATCH --job-name=vis3d
-#SBATCH --account=p201222
+#SBATCH --account=p201392
 #SBATCH --qos=default
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
