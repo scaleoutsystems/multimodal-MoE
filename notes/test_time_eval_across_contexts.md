@@ -201,7 +201,7 @@ Models compared:
 - **Road Type CaMoE Joint-Modality** and **Task-driven Modality-Specific MoE** both reach **0.4257 AP@0.50** on **smaller_rural**, slightly above Fusion at **0.4204**.
 - Weather-based improvements are small and localized. **Road Type CaMoE Fusion-then** improves **fog AP@0.50** over Fusion (**0.6032** vs **0.5979**), **Task-driven Modality-Specific MoE** improves **clear_night AP@0.50** (**0.5693** vs **0.5668**), and **Road Type CaMoE Joint-Modality** slightly improves **partly_cloudy_night AP@0.50** (**0.6047** vs **0.6030**).
 - Overall, these multimodal MoE results do not outperform the strong Fusion baseline globally. The main positive signal is subset-specific robustness: different MoE designs improve different difficult regimes, especially **night**, **arterial_rural**, **highway**, **smaller_rural**, **fog**, and **partly_cloudy_night**.
-- The results suggest that adaptive multimodal routing is promising for context-specific robustness, but the current selected MoE variants still trade away too much overall localization quality compared with the non-adaptive Fusion baseline.
+- The results suggest that adaptive multimodal routing is promising for context-specific robustness, but the current selected MoE runs trade away too much overall localization quality compared with the non-adaptive Fusion baseline, purely due to longer training time to ensure convergence on AP 0.5 IOU --> overfit on the 0.5m metric which saturates much more quickly. 
 
 ---
 
