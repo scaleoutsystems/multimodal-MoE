@@ -187,6 +187,7 @@ default_hooks = dict(
     checkpoint=dict(
         type='CheckpointHook',
         interval=5,
+        max_keep_ckpts=2,
         save_best='mAP_0.50',
         rule='greater'),
     early_stopping=dict(
