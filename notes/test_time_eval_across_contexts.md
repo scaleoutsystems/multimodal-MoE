@@ -338,7 +338,7 @@ Why:
 * **Weather is the most meaningful complementary signal**, especially for multimodal routing, because it can affect the relative reliability of camera and LiDAR features.
 * The standard **Fusion** baseline remains the strongest overall model, reaching **0.5861 AP@0.50** and **0.8280 [AP@0.5m](mailto:AP@0.5m)** on the full test set.
 * The three selected multimodal MoE variants do **not** outperform Fusion globally. Their full-test AP@0.50 scores are very similar to each other, between **0.5681** and **0.5696**, but below the Fusion baseline.
-* The larger gap on **[AP@0.5m](mailto:AP@0.5m)** suggests that the current multimodal MoE variants lose some coarse localization quality compared with the non-adaptive Fusion model.
+* The larger gap on **[AP@0.5m](mailto:AP@0.5m)** is due to the fact that the moe variants trained longer than the baseline and overfit on this metric which saturates more quickly than AP@0.5 IOU.
 * However, the multimodal MoE results show useful **context-specific robustness signals**. Different MoE variants improve over Fusion in selected difficult subsets, including **night**, **arterial_rural**, **highway**, **smaller_rural**, **fog**, and **partly_cloudy_night**.
 * In particular, the **Task-driven Modality-Specific MoE** is strongest among the MoE variants on some difficult cases, including **night AP@0.50** and **highway AP@0.50**, suggesting that direct detection-driven routing can be more useful than explicit context supervision in some regimes.
 * The **Road Type CaMoE Fusion-then** variant improves over Fusion on **arterial_rural AP@0.50** and **fog AP@0.50**, suggesting that road-type-supervised context routing can help in specific environment-dependent cases, even if it does not improve the global average.
