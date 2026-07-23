@@ -44,9 +44,9 @@ This is especially useful because:
 
 ## Lighting
 
-Count  
-day: 7743  
-night: 1875  
+Count
+day: 7743
+night: 1875
 
 | Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
 |---|---:|---:|---:|---:|---:|---:|
@@ -62,12 +62,12 @@ night: 1875
 
 ## Road type
 
-Count  
-arterial_rural: 993  
-arterial_urban: 2402  
-city: 5022  
-highway: 1070  
-smaller_rural: 513  
+Count
+arterial_rural: 993
+arterial_urban: 2402
+city: 5022
+highway: 1070
+smaller_rural: 513
 
 | Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
 |---|---:|---:|---:|---:|---:|---:|
@@ -87,14 +87,14 @@ smaller_rural: 513
 
 ## Scraped weather
 
-Count  
-clear_day: 1643  
-clear_night: 400  
-partly_cloudy_day: 2915  
-partly_cloudy_night: 1113  
-cloudy: 1900  
-precipitation: 1768  
-fog: 212 
+Count
+clear_day: 1643
+clear_night: 400
+partly_cloudy_day: 2915
+partly_cloudy_night: 1113
+cloudy: 1900
+precipitation: 1768
+fog: 212
 
 | Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
 |---|---:|---:|---:|---:|---:|---:|
@@ -116,9 +116,9 @@ fog: 212
 
 ## Weather group
 
-Count  
-clear_like: 2043  
-cloud_like: 5928  
+Count
+clear_like: 2043
+cloud_like: 5928
 
 | Context | LiDAR AP@0.50 | LiDAR AP@0.5m | Camera AP@0.50 | Camera AP@0.5m | Fusion AP@0.50 | Fusion AP@0.5m |
 |---|---:|---:|---:|---:|---:|---:|
@@ -133,75 +133,80 @@ cloud_like: 5928
 
 ## Multimodal MoE fusion comparison
 
-This comparison evaluates the strongest selected multimodal MoE variant from each fusion design against the standard Fusion baseline. Based on the model-selection runs, the best **Fusion-then-MoE** and **Joint-Modality MoE** variants use **road-type context supervision**, while the best **Modality-Specific MoE** variant is the fully **task-driven** variant.
-
 Models compared:
 
 - **Fusion baseline:** `outputs/runs/zod_bevfusion_dualinit_28ep/bevfusion-dualinit-28ep_4585695/best_mAP_0.50_epoch_26.pth`
-- **Road Type CaMoE Fusion-then checkpoint:** `outputs/runs/zod_moe_fusion_then/moe-fusion-then_4758769/best_mAP_0.50_epoch_69.pth`
-- **Road Type CaMoE Fusion-then config:** `mmdetection3d/configs/zod/zod_moe_fusion_then.py`
-- **Road Type CaMoE Joint-Modality checkpoint:** `outputs/runs/zod_moe_joint_modality/moe-joint-modality_4758770/best_mAP_0.50_epoch_71.pth`
-- **Road Type CaMoE Joint-Modality config:** `mmdetection3d/configs/zod/zod_moe_joint_modality.py`
-- **Task-driven Modality-Specific MoE checkpoint:** `outputs/runs/zod_moe_modality_specific_taskdriven/moe-modality-specific-td_4758777/best_mAP_0.50_epoch_70.pth`
-- **Task-driven Modality-Specific MoE config:** `mmdetection3d/configs/zod/zod_moe_modality_specific_taskdriven.py`
+- **Fusion-then MoE (road-type context supervised) checkpoint:** `outputs/runs/zod_moe_fusion_then/moe-fusion-then_4832791/best_mAP_0.50_epoch_27.pth`
+- **Fusion-then MoE config:** `mmdetection3d/configs/zod/zod_moe_fusion_then.py`
+- **Joint-Modality MoE (task-driven) checkpoint:** `outputs/runs/zod_moe_joint_modality_taskdriven/moe-joint-modality-td_4832795/best_mAP_0.50_epoch_25.pth`
+- **Joint-Modality MoE config:** `mmdetection3d/configs/zod/zod_moe_joint_modality_taskdriven.py`
+- **Modality-Specific MoE (task-driven) checkpoint:** `outputs/runs/zod_moe_modality_specific_taskdriven/moe-modality-specific-td_4832798/best_mAP_0.50_epoch_26.pth`
+- **Modality-Specific MoE config:** `mmdetection3d/configs/zod/zod_moe_modality_specific_taskdriven.py`
 
 ### Full test
 
-| Model | AP@0.50 | AP@0.5m |
-|---|---:|---:|
-| Fusion | 0.5861 | 0.8280 |
-| Road Type CaMoE Fusion-then | 0.5696 | 0.7846 |
-| Road Type CaMoE Joint-Modality | 0.5681 | 0.7874 |
-| Task-driven Modality-Specific MoE | 0.5693 | 0.7882 |
+| Model | AP@0.50 | Δ vs Fusion | AP@0.5m | Δ vs Fusion |
+|---|---:|---:|---:|---:|
+| Fusion | 0.5861 | — | 0.8280 | — |
+| Fusion-then MoE | 0.5669 | -0.0192 | 0.8114 | -0.0166 |
+| Joint-Modality MoE | 0.5722 | -0.0139 | 0.8225 | -0.0055 |
+| Modality-Specific MoE | 0.5706 | -0.0155 | 0.8171 | -0.0109 |
 
 ### Lighting
 
-| Context | Fusion AP@0.50 | Fusion AP@0.5m | Road Type CaMoE Fusion-then AP@0.50 | Road Type CaMoE Fusion-then AP@0.5m | Road Type CaMoE Joint-Modality AP@0.50 | Road Type CaMoE Joint-Modality AP@0.5m | Task-driven Modality-Specific MoE AP@0.50 | Task-driven Modality-Specific MoE AP@0.5m |
+| Context | Fusion 0.50 | Fusion-then | Joint-Mod | Mod-Spec | Fusion 0.5m | Fusion-then | Joint-Mod | Mod-Spec |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| day | 0.5842 | 0.8318 | 0.5687 | 0.7886 | 0.5658 | 0.7908 | 0.5664 | 0.7911 |
-| night | 0.6269 | 0.7761 | 0.6025 | 0.7331 | 0.6091 | 0.7443 | 0.6329 | 0.7598 |
+| day | 0.5842 | 0.5638 | 0.5701 | 0.5678 | 0.8318 | 0.8150 | 0.8263 | 0.8202 |
+| night | 0.6269 | 0.6218 | 0.6212 | 0.6196 | 0.7761 | 0.7709 | 0.7701 | 0.7736 |
 
 ### Road type
 
-| Context | Fusion AP@0.50 | Fusion AP@0.5m | Road Type CaMoE Fusion-then AP@0.50 | Road Type CaMoE Fusion-then AP@0.5m | Road Type CaMoE Joint-Modality AP@0.50 | Road Type CaMoE Joint-Modality AP@0.5m | Task-driven Modality-Specific MoE AP@0.50 | Task-driven Modality-Specific MoE AP@0.5m |
+| Context | Fusion 0.50 | Fusion-then | Joint-Mod | Mod-Spec | Fusion 0.5m | Fusion-then | Joint-Mod | Mod-Spec |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| arterial_rural | 0.3949 | 0.5645 | 0.4061 | 0.5289 | 0.3353 | 0.5511 | 0.3875 | 0.5476 |
-| arterial_urban | 0.5930 | 0.8115 | 0.5668 | 0.7667 | 0.5699 | 0.7706 | 0.5726 | 0.7660 |
-| city | 0.5870 | 0.8342 | 0.5732 | 0.7917 | 0.5703 | 0.7939 | 0.5713 | 0.7961 |
-| highway | 0.2208 | 0.2851 | 0.1467 | 0.3450 | 0.2000 | 0.2898 | 0.2250 | 0.2392 |
-| smaller_rural | 0.4204 | 0.7930 | 0.4218 | 0.7216 | 0.4257 | 0.7573 | 0.4257 | 0.7468 |
+| arterial_rural | 0.3949 | 0.3533 | 0.3811 | **0.4137** | 0.5645 | 0.5373 | **0.5715** | 0.5309 |
+| arterial_urban | 0.5930 | 0.5710 | 0.5812 | 0.5809 | 0.8115 | 0.7880 | 0.8082 | 0.8027 |
+| city | 0.5870 | 0.5684 | 0.5726 | 0.5704 | 0.8342 | 0.8194 | 0.8283 | 0.8229 |
+| highway | 0.2208 | 0.2108 | **0.2233** | **0.2334** | 0.2851 | **0.3577** | 0.2287 | 0.2533 |
+| smaller_rural | 0.4204 | 0.3953 | **0.4555** | **0.4285** | 0.7930 | 0.7766 | 0.7788 | 0.7686 |
+
+Bold marks a variant beating Fusion in that cell.
 
 ### Scraped weather
 
-| Context | Fusion AP@0.50 | Fusion AP@0.5m | Road Type CaMoE Fusion-then AP@0.50 | Road Type CaMoE Fusion-then AP@0.5m | Road Type CaMoE Joint-Modality AP@0.50 | Road Type CaMoE Joint-Modality AP@0.5m | Task-driven Modality-Specific MoE AP@0.50 | Task-driven Modality-Specific MoE AP@0.5m |
+| Context | Fusion 0.50 | Fusion-then | Joint-Mod | Mod-Spec | Fusion 0.5m | Fusion-then | Joint-Mod | Mod-Spec |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| clear_day | 0.5677 | 0.8169 | 0.5560 | 0.7655 | 0.5449 | 0.7713 | 0.5543 | 0.7713 |
-| clear_night | 0.5668 | 0.7721 | 0.5455 | 0.7209 | 0.5460 | 0.7177 | 0.5693 | 0.7413 |
-| cloudy | 0.5882 | 0.8410 | 0.5825 | 0.8020 | 0.5709 | 0.8034 | 0.5737 | 0.8001 |
-| fog | 0.5979 | 0.8252 | 0.6032 | 0.7652 | 0.5661 | 0.7673 | 0.5843 | 0.7460 |
-| partly_cloudy_day | 0.5961 | 0.8375 | 0.5730 | 0.7927 | 0.5777 | 0.7968 | 0.5766 | 0.7988 |
-| partly_cloudy_night | 0.6030 | 0.7882 | 0.5748 | 0.7508 | 0.6047 | 0.7645 | 0.6002 | 0.7605 |
-| precipitation | 0.5782 | 0.8171 | 0.5621 | 0.7828 | 0.5596 | 0.7760 | 0.5587 | 0.7824 |
+| clear_day | 0.5677 | 0.5516 | 0.5531 | 0.5508 | 0.8169 | 0.8021 | 0.8104 | 0.8029 |
+| clear_night | 0.5668 | **0.5686** | 0.5572 | **0.5912** | 0.7721 | 0.7503 | 0.7627 | **0.7748** |
+| cloudy | 0.5882 | 0.5674 | 0.5778 | 0.5708 | 0.8410 | 0.8242 | 0.8343 | 0.8319 |
+| fog | 0.5979 | 0.5868 | **0.6004** | **0.6202** | 0.8252 | 0.7925 | 0.8168 | 0.7983 |
+| partly_cloudy_day | 0.5961 | 0.5704 | 0.5822 | 0.5775 | 0.8375 | 0.8211 | 0.8332 | 0.8273 |
+| partly_cloudy_night | 0.6030 | 0.5833 | 0.5898 | 0.6013 | 0.7882 | 0.7759 | 0.7871 | 0.7847 |
+| precipitation | 0.5782 | 0.5689 | 0.5584 | 0.5664 | 0.8171 | 0.7992 | 0.8124 | 0.8042 |
 
 ### Weather group
 
-| Context | Fusion AP@0.50 | Fusion AP@0.5m | Road Type CaMoE Fusion-then AP@0.50 | Road Type CaMoE Fusion-then AP@0.5m | Road Type CaMoE Joint-Modality AP@0.50 | Road Type CaMoE Joint-Modality AP@0.5m | Task-driven Modality-Specific MoE AP@0.50 | Task-driven Modality-Specific MoE AP@0.5m |
+| Context | Fusion 0.50 | Fusion-then | Joint-Mod | Mod-Spec | Fusion 0.5m | Fusion-then | Joint-Mod | Mod-Spec |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| clear_like | 0.5675 | 0.8135 | 0.5547 | 0.7625 | 0.5445 | 0.7675 | 0.5548 | 0.7689 |
-| cloud_like | 0.5928 | 0.8348 | 0.5765 | 0.7925 | 0.5768 | 0.7964 | 0.5765 | 0.7962 |
+| clear_like | 0.5675 | 0.5534 | 0.5537 | 0.5530 | 0.8135 | 0.7988 | 0.8070 | 0.8004 |
+| cloud_like | 0.5928 | 0.5699 | 0.5806 | 0.5766 | 0.8348 | 0.8185 | 0.8299 | 0.8253 |
 
-### Quick read
+### Interpretation
 
-- The standard **Fusion** baseline remains the strongest model on the full test set, with **0.5861 AP@0.50** and **0.8280 AP@0.5m**.
-- All three multimodal MoE variants are close to each other on the full test set, reaching **0.5681–0.5696 AP@0.50**, but all remain below the Fusion baseline.
-- The AP@0.50 gap to Fusion is modest: **Road Type CaMoE Fusion-then** is lower by **0.0165**, **Road Type CaMoE Joint-Modality** by **0.0180**, and **Task-driven Modality-Specific MoE** by **0.0168**.
-- The AP@0.5m gap is larger: the MoE variants reach **0.7846–0.7882 AP@0.5m**, compared with **0.8280** for Fusion. This suggests that the multimodal MoE variants do not improve coarse localization relative to the strong Fusion baseline.
-- The **Task-driven Modality-Specific MoE** variant gives the best MoE result on **night AP@0.50**, reaching **0.6329**, slightly above the Fusion baseline at **0.6269**.
-- Road-type subsets show the most interesting MoE behavior. **Road Type CaMoE Fusion-then** improves **arterial_rural AP@0.50** over Fusion (**0.4061** vs **0.3949**), while **Task-driven Modality-Specific MoE** improves **highway AP@0.50** over Fusion (**0.2250** vs **0.2208**).
-- **Road Type CaMoE Joint-Modality** and **Task-driven Modality-Specific MoE** both reach **0.4257 AP@0.50** on **smaller_rural**, slightly above Fusion at **0.4204**.
-- Weather-based improvements are small and localized. **Road Type CaMoE Fusion-then** improves **fog AP@0.50** over Fusion (**0.6032** vs **0.5979**), **Task-driven Modality-Specific MoE** improves **clear_night AP@0.50** (**0.5693** vs **0.5668**), and **Road Type CaMoE Joint-Modality** slightly improves **partly_cloudy_night AP@0.50** (**0.6047** vs **0.6030**).
-- Overall, these multimodal MoE results do not outperform the strong Fusion baseline globally. The main positive signal is subset-specific robustness: different MoE designs improve different difficult regimes, especially **night**, **arterial_rural**, **highway**, **smaller_rural**, **fog**, and **partly_cloudy_night**.
-- The results suggest that adaptive multimodal routing is promising for context-specific robustness, but the current selected MoE runs trade away too much overall localization quality compared with the non-adaptive Fusion baseline, purely due to longer training time to ensure convergence on AP 0.5 IOU --> overfit on the 0.5m metric which saturates much more quickly. 
+**None of the three MoE variants beats Fusion on the full test set**, on either metric. All three variants sit 0.014–0.019 below Fusion on AP@0.50 and 0.006–0.017 below on AP@0.5m. Any robustness story has to be read against that backdrop, not instead of it.
+
+**Where subset-level "wins" appear, most are small relative to plausible noise.** A few are large enough to be worth taking seriously:
+- Joint-Modality on smaller_rural AP@0.50: **+0.035** — the single largest win, and on a mid-sized subset (n=513).
+- Modality-Specific on clear_night AP@0.50: **+0.024**, and on fog: **+0.022**.
+- Modality-Specific on arterial_rural AP@0.50: **+0.019**.
+
+The rest of the "wins" in the tables above are +0.001 to +0.013 — close enough to noise-level that they shouldn't be leaned on individually. Several of the subsets where wins appear are also small (fog n=212, clear_night n=400, highway n=1070, arterial_rural n=993, smaller_rural n=513), so a swing of 0.02–0.03 AP on a few hundred frames is well within what run-to-run seed variance could produce. There is no repeated-seed or bootstrap significance evidence behind any of these deltas — they are single point estimates.
+
+**On the subsets with the most data (city n=5022, arterial_urban n=2402, day n=7743), Fusion wins clearly and consistently**, by a wider margin than any of the "robustness" gains above. Since these dominate the full-test average, they are the reason all three MoE variants still land below Fusion overall.
+
+**What the pattern does support, cautiously:**
+- MoE routing is not catastrophically worse than Fusion in hard/rare regimes — it's competitive, and occasionally ahead, particularly at night, in fog, and on rural/highway road types.
+- Joint-Modality and Modality-Specific are the more promising of the three designs; Fusion-then trails Fusion on AP@0.50 in every road-type bin and shows its only real edge on highway AP@0.5m (+0.073), a metric/bin combination that should be treated as a single noisy data point rather than a trend.
+- The net effect across the full dataset remains negative for every MoE variant. "Adaptive routing helps in hard cases" is a plausible read of the data, not an established one — the next step to actually support it would be multiple seeds per variant (for error bars) or a bootstrap significance test over the test set, rather than more single-run subset breakdowns.
 
 ---
 
@@ -336,11 +341,9 @@ Why:
 
 * **Road type is the dominant context signal** across all models, and it remains the clearest axis along which model performance varies.
 * **Weather is the most meaningful complementary signal**, especially for multimodal routing, because it can affect the relative reliability of camera and LiDAR features.
-* The standard **Fusion** baseline remains the strongest overall model, reaching **0.5861 AP@0.50** and **0.8280 [AP@0.5m](mailto:AP@0.5m)** on the full test set.
-* The three selected multimodal MoE variants do **not** outperform Fusion globally. Their full-test AP@0.50 scores are very similar to each other, between **0.5681** and **0.5696**, but below the Fusion baseline.
-* The larger gap on **[AP@0.5m](mailto:AP@0.5m)** is due to the fact that the moe variants trained longer than the baseline and overfit on this metric which saturates more quickly than AP@0.5 IOU.
-* However, the multimodal MoE results show useful **context-specific robustness signals**. Different MoE variants improve over Fusion in selected difficult subsets, including **night**, **arterial_rural**, **highway**, **smaller_rural**, **fog**, and **partly_cloudy_night**.
-* In particular, the **Task-driven Modality-Specific MoE** is strongest among the MoE variants on some difficult cases, including **night AP@0.50** and **highway AP@0.50**, suggesting that direct detection-driven routing can be more useful than explicit context supervision in some regimes.
-* The **Road Type CaMoE Fusion-then** variant improves over Fusion on **arterial_rural AP@0.50** and **fog AP@0.50**, suggesting that road-type-supervised context routing can help in specific environment-dependent cases, even if it does not improve the global average.
-* Taken together, the results suggest that adaptive multimodal MoE routing is promising for **context-specific robustness**, but the current implementations do not yet improve over the strong non-adaptive Fusion baseline in overall detection accuracy.
-* Therefore, the main conclusion is not that multimodal MoE is globally better than Fusion, but that it reveals targeted robustness gains that motivate further work on routing objectives, expert placement, training stability, and localization-preserving regularization.
+* The standard **Fusion** baseline remains the strongest overall model, reaching **0.5861 AP@0.50** and **0.8280 AP@0.5m** on the full test set.
+* The three multimodal MoE variants land reasonably close to Fusion, especially on **AP@0.5m** (gaps of 0.006–0.017). AP@0.50 gaps are somewhat larger (0.014–0.019 below Fusion).
+* **None of the three MoE variants outperforms Fusion on the full test set** on either metric. This is the primary result.
+* Subset-level results show a mix of small, plausibly-noise-level differences and a handful of larger, more notable gains: **Joint-Modality on smaller_rural AP@0.50 (+0.035)**, and **Modality-Specific on clear_night (+0.024) and fog (+0.022) AP@0.50**. These sit on subsets with limited sample sizes (n=213–1070) and are single point estimates with no repeated-seed or significance testing behind them.
+* On the largest, most common subsets (city, arterial_urban, day), Fusion wins clearly and by a wider margin than any MoE subset win — this is why the full-test average still favors Fusion.
+* Taken together: adaptive MoE routing is **not yet demonstrated to improve overall detection accuracy**, and the case for context-specific robustness gains is **suggestive but not statistically established**. The right next step is multiple seeds per variant or a bootstrap significance test over the full test set, rather than further single-run subset breakdowns.
